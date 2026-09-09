@@ -1,0 +1,117 @@
+version: 2
+
+project_name: nem
+
+before:
+  hooks:
+    - go test -race ./...
+
+builds:
+  - id: nem
+    main: ./cmd/nem
+    binary: nem
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version=v{{ .Version }}
+      - -X main.buildTime={{ .Date }}
+      - -X main.channel=stable
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: nem
+    name_template: "{{ .ProjectName }}_v{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - README.md
+      - LICENSE
+
+dockers_v2:
+  - id: nem
+    images:
+      - ghcr.io/vi-dev/nem
+    tags:
+      - "v{{ .Version }}"
+      - "{{ if eq .Prerelease \"\" }}v{{ .Major }}.{{ .Minor }}{{ end }}"
+      - "{{ if eq .Prerelease \"\" }}v{{ .Major }}{{ end }}"
+      - "{{ if eq .Prerelease \"\" }}latest{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    dockerfile: Dockerfile
+    sbom: true
+    labels:
+      org.opencontainers.image.source: https://github.com/vi-dev/nem
+      org.opencontainers.image.version: "v{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.licenses: MPL-2.0
+      org.opencontainers.image.description: "Reproducible dev environments. For you, your teams, and your agents."
+
+  - id: nem-rootless
+    images:
+      - ghcr.io/vi-dev/nem
+    tags:
+      - "v{{ .Version }}-rootless"
+      - "{{ if eq .Prerelease \"\" }}v{{ .Major }}.{{ .Minor }}-rootless{{ end }}"
+      - "{{ if eq .Prerelease \"\" }}v{{ .Major }}-rootless{{ end }}"
+      - "{{ if eq .Prerelease \"\" }}rootless{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    dockerfile: Dockerfile
+    flags:
+      - "--target=rootless"
+    sbom: true
+    labels:
+      org.opencontainers.image.source: https://github.com/vi-dev/nem
+      org.opencontainers.image.version: "v{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.licenses: MPL-2.0
+      org.opencontainers.image.description: "Reproducible dev environments. For you, your teams, and your agents."
+
+docker_signs:
+  - id: ghcr-cosign
+    cmd: cosign
+    args: ["sign", "--yes", "${artifact}@${digest}"]
+    output: true
+
+docker_digest:
+  name_template: "digests.txt"
+
+sboms:
+  - id: archive-sboms
+    artifacts: archive
+    documents:
+      - "{{ .ArtifactName }}.sbom.spdx.json"
+    cmd: syft
+    args: ["${artifact}", "--output", "spdx-json=${document}"]
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+signs:
+  - id: checksums
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    cmd: cosign
+    args: ["sign-blob", "--yes", "--bundle=${signature}", "${artifact}"]
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: vi-dev
+    name: nem
+  draft: false
+  prerelease: auto
+  mode: keep-existing

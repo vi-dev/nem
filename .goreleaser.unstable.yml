@@ -1,0 +1,77 @@
+version: 2
+
+project_name: nem
+
+before:
+  hooks:
+    - go test -race ./...
+
+builds:
+  - id: nem
+    main: ./cmd/nem
+    binary: nem
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Summary }}
+      - -X main.buildTime={{ .Date }}
+      - -X main.channel=unstable
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: nem
+    name_template: "{{ .ProjectName }}_unstable_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+dockers_v2:
+  - id: nem
+    images:
+      - ghcr.io/vi-dev/nem
+    tags:
+      - "unstable"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    dockerfile: Dockerfile
+    labels:
+      org.opencontainers.image.source: https://github.com/vi-dev/nem
+      org.opencontainers.image.version: "unstable"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.licenses: MPL-2.0
+      org.opencontainers.image.description: "Reproducible dev environments. For you, your teams, and your agents."
+
+  - id: nem-rootless
+    images:
+      - ghcr.io/vi-dev/nem
+    tags:
+      - "unstable-rootless"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    dockerfile: Dockerfile
+    flags:
+      - "--target=rootless"
+    labels:
+      org.opencontainers.image.source: https://github.com/vi-dev/nem
+      org.opencontainers.image.version: "unstable"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.licenses: MPL-2.0
+      org.opencontainers.image.description: "Reproducible dev environments. For you, your teams, and your agents."
+
+changelog:
+  disable: true
+
+release:
+  disable: true

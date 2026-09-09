@@ -1,10 +1,10 @@
 .idea
+.git
 .worktrees
 .claude
 .superpowers
 .codegraph
 docs/superpowers
-dist
 out
 bin
 *.log

@@ -19,3 +19,7 @@ build:
 .PHONY: install
 install:
 	go install -ldflags "$(LDFLAGS)" ./cmd/nem
+
+.PHONY: snapshot
+snapshot:
+	env -u GOROOT goreleaser release --snapshot --clean --skip=sign
