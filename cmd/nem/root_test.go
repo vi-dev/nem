@@ -1,0 +1,103 @@
+package main
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/vi-dev/nem/internal/report"
+)
+
+func TestRootHelpGroups(t *testing.T) {
+	var buf bytes.Buffer
+	if err := execNem(t, t.TempDir(), nil, &buf, new(bytes.Buffer), "--help"); err != nil {
+		t.Fatalf("--help: %v", err)
+	}
+	out := buf.String()
+	titles := []string{"Environment:", "Discovery:", "Catalogs:", "Shell integration:"}
+	last := -1
+	for _, title := range titles {
+		i := strings.Index(out, title)
+		if i < 0 {
+			t.Fatalf("help output missing group %q:\n%s", title, out)
+		}
+		if i < last {
+			t.Fatalf("group %q listed out of order:\n%s", title, out)
+		}
+		last = i
+	}
+}
+
+func TestEveryRootCommandGrouped(t *testing.T) {
+	root := newRoot()
+	for _, c := range root.Commands() {
+		if c.Name() == "version" {
+			continue
+		}
+		if c.GroupID == "" {
+			t.Errorf("command %q has no group", c.Name())
+		}
+	}
+}
+
+func TestUnknownCommandIsUsageError(t *testing.T) {
+	var buf bytes.Buffer
+	if err := execNem(t, t.TempDir(), nil, &buf, &buf, "definitely-not-a-command"); err == nil {
+		t.Fatal("want error for unknown command")
+	}
+	if ranHook {
+		t.Fatal("hook ran for unknown command; usage errors must exit 2")
+	}
+}
+
+func TestRootHookWarnsOnMalformedConfigAndKeepsRunning(t *testing.T) {
+	nemHomeDir := t.TempDir()
+	if err := os.MkdirAll(nemHomeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nemHomeDir, "config.yaml"), []byte("hosts: [this is not: valid yaml"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, errb, err := runNem(t, nemHomeDir, "version")
+	if err != nil {
+		t.Fatalf("version must still succeed on a malformed config: %v\nstderr: %s", err, errb)
+	}
+	if !strings.Contains(errb, "host settings") {
+		t.Fatalf("stderr = %q, want a host settings warning", errb)
+	}
+}
+
+func TestResolveColorMode(t *testing.T) {
+	cases := []struct {
+		name    string
+		flag    string
+		noColor bool
+		want    report.Mode
+		wantErr bool
+	}{
+		{name: "auto without NO_COLOR", flag: "auto", noColor: false, want: report.ColorAuto},
+		{name: "auto with NO_COLOR downgrades to never", flag: "auto", noColor: true, want: report.ColorNever},
+		{name: "always with NO_COLOR still wins", flag: "always", noColor: true, want: report.ColorAlways},
+		{name: "never with NO_COLOR stays never", flag: "never", noColor: true, want: report.ColorNever},
+		{name: "invalid value errors", flag: "sometimes", noColor: false, wantErr: true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := resolveColorMode(c.flag, c.noColor)
+			if c.wantErr {
+				if err == nil {
+					t.Fatalf("want error for flag %q", c.flag)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveColorMode(%q, %v): %v", c.flag, c.noColor, err)
+			}
+			if got != c.want {
+				t.Fatalf("resolveColorMode(%q, %v) = %v, want %v", c.flag, c.noColor, got, c.want)
+			}
+		})
+	}
+}

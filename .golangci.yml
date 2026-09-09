@@ -1,0 +1,45 @@
+version: "2"
+
+linters:
+  enable:
+    - unparam
+    - forbidigo
+  settings:
+    forbidigo:
+      forbid:
+        - pattern: ^fmt\.F?[Pp]rint(f|ln)?$
+          msg: terminal output goes through report.Console (narration to stderr, Data/JSON/Table to stdout)
+        - pattern: ^print(ln)?$
+          msg: the print builtins bypass report.Console
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        # os.Root postdates the upstream list; same intent as *os.File above.
+        - (*os.Root).Close
+        - (*compress/gzip.Reader).Close
+        - (*archive/zip.ReadCloser).Close
+        - os.Remove
+        - os.RemoveAll
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+  exclusions:
+    rules:
+      - path: _test\.go$
+        linters:
+          - errcheck
+          - forbidigo
+          - unparam
+      - path-except: ^cmd/nem/
+        linters:
+          - forbidigo
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/vi-dev/nem

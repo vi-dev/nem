@@ -1,0 +1,126 @@
+package install
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/goccy/go-yaml"
+
+	"github.com/vi-dev/nem/internal/home"
+	"github.com/vi-dev/nem/internal/spec"
+	"github.com/vi-dev/nem/internal/usage"
+)
+
+const metaFileName = ".nem-meta.yaml"
+
+type Meta struct {
+	Package     string           `yaml:"package"`
+	Version     string           `yaml:"version"`
+	Catalog     string           `yaml:"catalog"`
+	Bins        []string         `yaml:"bins"`
+	Libs        []string         `yaml:"libs,omitempty"`
+	Env         []spec.EnvExport `yaml:"env,omitempty"`
+	InstalledAt time.Time        `yaml:"installed_at"`
+}
+
+func Install(ctx context.Context, h home.Home, pkg *spec.Package, version, catalog, artifactPath string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	installDir, err := h.PackageDir(pkg.Name, version)
+	if err != nil {
+		return fmt.Errorf("install %s@%s: %w", pkg.Name, version, err)
+	}
+	if _, err := os.Lstat(installDir); err == nil {
+		return commitExistsErr(pkg.Name, version)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("stat install dir: %w", err)
+	}
+
+	parent := filepath.Dir(installDir)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return fmt.Errorf("create packages dir: %w", err)
+	}
+	staging, err := os.MkdirTemp(parent, version+"-*"+home.TmpSuffix)
+	if err != nil {
+		return fmt.Errorf("create staging dir: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+
+			os.RemoveAll(staging)
+		}
+	}()
+
+	if err := RunActions(pkg, staging, artifactPath, version, spec.Current()); err != nil {
+		return fmt.Errorf("install %s@%s: %w", pkg.Name, version, err)
+	}
+	if err := writeMeta(staging, pkg, version, catalog); err != nil {
+		return fmt.Errorf("install %s@%s: %w", pkg.Name, version, err)
+	}
+
+	if err := os.Rename(staging, installDir); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return commitExistsErr(pkg.Name, version)
+		}
+		return fmt.Errorf("commit %s@%s: %w", pkg.Name, version, err)
+	}
+	committed = true
+	usage.Stamp(h, time.Now(), []string{usage.Key(pkg.Name, version)})
+	return nil
+}
+
+func commitExistsErr(name, version string) error {
+	return fmt.Errorf("commit %s@%s: install dir already exists", name, version)
+}
+
+func writeMeta(staging string, pkg *spec.Package, version, catalog string) error {
+	meta := Meta{
+		Package:     pkg.Name,
+		Version:     version,
+		Catalog:     catalog,
+		Bins:        pkg.Bins,
+		Libs:        pkg.Libs,
+		Env:         pkg.Env,
+		InstalledAt: time.Now().UTC(),
+	}
+	data, err := yaml.Marshal(meta)
+	if err != nil {
+		return fmt.Errorf("render sidecar: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, metaFileName), data, 0o644); err != nil {
+		return fmt.Errorf("write sidecar: %w", err)
+	}
+	return nil
+}
+
+func IsInstalled(h home.Home, name, version string) bool {
+	installDir, err := h.PackageDir(name, version)
+	if err != nil {
+		return false
+	}
+	_, err = os.Lstat(installDir)
+	return err == nil
+}
+
+func ReadMeta(h home.Home, name, version string) (*Meta, error) {
+	installDir, err := h.PackageDir(name, version)
+	if err != nil {
+		return nil, fmt.Errorf("read meta %s@%s: %w", name, version, err)
+	}
+	data, err := os.ReadFile(filepath.Join(installDir, metaFileName))
+	if err != nil {
+		return nil, fmt.Errorf("read meta %s@%s: %w", name, version, err)
+	}
+	var meta Meta
+	if err := yaml.UnmarshalWithOptions(data, &meta, yaml.Strict()); err != nil {
+		return nil, fmt.Errorf("parse meta %s@%s: %w", name, version, err)
+	}
+	return &meta, nil
+}

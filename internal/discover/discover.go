@@ -1,0 +1,47 @@
+package discover
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/vi-dev/nem/internal/netx"
+	"github.com/vi-dev/nem/internal/spec"
+)
+
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }
+
+func List(ctx context.Context, pkg *spec.Package) ([]string, error) {
+	d := pkg.VersionDiscovery
+	switch {
+	case d == nil:
+		return nil, fmt.Errorf("%s has no versionDiscovery", pkg.Name)
+	case d.GitHub != nil:
+		return githubVersions(ctx, netx.Client(), d.GitHub)
+	case d.GitLab != nil:
+		return gitlabVersions(ctx, netx.Client(), d.GitLab)
+	case d.Git != nil:
+		return gitVersions(ctx, netx.Client(), d.Git.URL, d.Git.Filter, d.Git.Prefix, d.Git.Suffix)
+	case d.HTTP != nil:
+		return httpVersions(ctx, netx.Client(), d.HTTP)
+	case d.OCI != "":
+		return ociTags(ctx, d.OCI)
+	}
+	return nil, fmt.Errorf("%s has no versionDiscovery source", pkg.Name)
+}
+
+func Latest(ctx context.Context, pkg *spec.Package) (string, error) {
+	vs, err := List(ctx, pkg)
+	if err != nil {
+		return "", err
+	}
+	if len(vs) == 0 {
+		return "", fmt.Errorf("%s: no versions discovered", pkg.Name)
+	}
+	best := vs[0]
+	for _, v := range vs[1:] {
+		if spec.CompareVersions(v, best) > 0 {
+			best = v
+		}
+	}
+	return best, nil
+}
