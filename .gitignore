@@ -8,3 +8,6 @@ dist
 out
 bin
 *.log
+website/public/
+website/resources/
+website/.hugo_build.lock
