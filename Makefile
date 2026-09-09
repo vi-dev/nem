@@ -23,3 +23,7 @@ install:
 .PHONY: snapshot
 snapshot:
 	env -u GOROOT goreleaser release --snapshot --clean --skip=sign
+
+.PHONY: test-install
+test-install:
+	bats test/install.bats
