@@ -5,6 +5,7 @@
     ":semanticCommits"
   ],
   "labels": ["dependencies"],
+  "commitMessageLowerCase": "never",
   "postUpdateOptions": ["gomodTidy"],
   "packageRules": [
     {
