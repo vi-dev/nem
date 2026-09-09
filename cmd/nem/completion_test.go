@@ -20,7 +20,7 @@ func writeTestConfig(t *testing.T, nemHomeDir string) {
 	cfg := `catalogs:
   - name: official
     type: oci
-    ref: ghcr.io/vi-dev/nem-official-catalog:v2
+    ref: ghcr.io/vi-dev/nem-catalog:v2
   - name: extras
     type: oci
     ref: ghcr.io/x/extras:v2
@@ -302,7 +302,7 @@ func TestCompleteUseDedupeFirstCatalogWins(t *testing.T) {
 	cfg := fmt.Sprintf(`catalogs:
   - name: official
     type: oci
-    ref: ghcr.io/vi-dev/nem-official-catalog:v2
+    ref: ghcr.io/vi-dev/nem-catalog:v2
   - name: local
     type: dir
     path: %s

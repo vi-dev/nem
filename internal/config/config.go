@@ -14,7 +14,7 @@ import (
 	"github.com/vi-dev/nem/internal/spec"
 )
 
-const OfficialRef = "ghcr.io/vi-dev/nem-official-catalog:v2"
+const OfficialRef = "ghcr.io/vi-dev/nem-catalog:v2"
 
 type CatalogEntry struct {
 	Name     string `yaml:"name"`

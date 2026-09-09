@@ -85,7 +85,7 @@ replaces the old one.
 
 > [!NOTE]
 > On first run, `nem` configures the official package catalog,
-> [`ghcr.io/vi-dev/nem-official-catalog`](https://github.com/vi-dev/nem-official-catalog).
+> [`ghcr.io/vi-dev/nem-catalog`](https://github.com/vi-dev/nem-catalog).
 > Turn it off with `nem catalog disable official`, or manage your own catalogs
 > with `nem catalog add`.
 
