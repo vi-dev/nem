@@ -29,7 +29,7 @@ func newRoot() *cobra.Command {
 	nemHome = home.Home{}
 	root := &cobra.Command{
 		Use:           "nem",
-		Short:         "Manage your development environment",
+		Short:         "Reproducible dev environments. For you, your teams, and your agents.",
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
