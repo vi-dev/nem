@@ -47,7 +47,6 @@ func TestSaveAndReload(t *testing.T) {
 
 func TestOpenConfigValidation(t *testing.T) {
 	cases := []struct{ name, yaml, want string }{
-		{"unknown field", "catalogs:\n  - name: a\n    type: dir\n    path: /x\n    bogus: 1\n", "bogus"},
 		{"bad name", "catalogs:\n  - name: BAD\n    type: dir\n    path: /x\n", "name"},
 		{"dup name", "catalogs:\n  - name: a\n    type: dir\n    path: /x\n  - name: a\n    type: dir\n    path: /y\n", "duplicate"},
 		{"oci needs ref", "catalogs:\n  - name: a\n    type: oci\n", "ref"},

@@ -119,7 +119,7 @@ func ReadMeta(h home.Home, name, version string) (*Meta, error) {
 		return nil, fmt.Errorf("read meta %s@%s: %w", name, version, err)
 	}
 	var meta Meta
-	if err := yaml.UnmarshalWithOptions(data, &meta, yaml.Strict()); err != nil {
+	if err := yaml.Unmarshal(data, &meta); err != nil {
 		return nil, fmt.Errorf("parse meta %s@%s: %w", name, version, err)
 	}
 	return &meta, nil

@@ -68,7 +68,7 @@ func defaultConfig() *Config {
 
 func parseConfig(h home.Home, data []byte) (*Config, error) {
 	var cfg Config
-	if err := yaml.UnmarshalWithOptions(data, &cfg, yaml.Strict()); err != nil {
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", h.Config(), err)
 	}
 	if err := cfg.validate(); err != nil {
