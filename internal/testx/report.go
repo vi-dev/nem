@@ -67,16 +67,16 @@ func (r *Reporter) Infos() []string {
 	return append([]string(nil), r.infos...)
 }
 
-type CountCall struct{ Done, Total int }
-
-type ProgressCall struct{ Done, Total int64 }
+type ProgressCall struct {
+	Done, Total int64
+	Unit        report.Unit
+}
 
 type Task struct {
 	Label string
 
 	mu        sync.Mutex
 	statuses  []string
-	counts    []CountCall
 	progress  []ProgressCall
 	done      bool
 	failed    bool
@@ -86,22 +86,16 @@ type Task struct {
 
 var _ report.Task = (*Task)(nil)
 
-func (t *Task) Status(segment string) {
+func (t *Task) Segment(segment string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.statuses = append(t.statuses, segment)
 }
 
-func (t *Task) Progress(done, total int64) {
+func (t *Task) Progress(done, total int64, unit report.Unit) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.progress = append(t.progress, ProgressCall{done, total})
-}
-
-func (t *Task) Count(done, total int) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.counts = append(t.counts, CountCall{done, total})
+	t.progress = append(t.progress, ProgressCall{done, total, unit})
 }
 
 func (t *Task) Done(outcome string) {
@@ -134,12 +128,6 @@ func (t *Task) Discarded() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.discarded
-}
-
-func (t *Task) Counts() []CountCall {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return append([]CountCall(nil), t.counts...)
 }
 
 func (t *Task) Statuses() []string {

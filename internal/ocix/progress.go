@@ -1,3 +1,5 @@
 package ocix
 
-type ProgressFunc func(done, total int64)
+import "github.com/vi-dev/nem/internal/report"
+
+type ProgressFunc = report.ProgressFunc

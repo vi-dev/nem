@@ -100,9 +100,9 @@ func runClean(cmd *cobra.Command, opts clean.Options, dryRun, yes bool) error {
 	var freedSoFar int64
 	obs := clean.Observer{
 		Removing: func(e clean.Entry) {
-			task.Status(entryLabel(e))
+			task.Segment(entryLabel(e))
 			freedSoFar += e.Size
-			task.Progress(freedSoFar, -1)
+			task.Progress(freedSoFar, -1, report.Bytes)
 		},
 		Skipped: func(e clean.Entry, reason string) {
 			console.Warn("skipped %s: %s", entryLabel(e), reason)

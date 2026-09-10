@@ -10,10 +10,10 @@ import (
 
 func TestRunTaskSetsStatusBeforeFnSoCountRenders(t *testing.T) {
 	c, _, errb := newLiveTest(Options{IsTTY: true, Color: ColorNever})
-	labels := TaskLabels{Run: "Pulling catalog", Status: "copying", Done: "Pulled catalog", Fail: "Pull failed"}
+	labels := TaskLabels{Run: "Pulling catalog", Segment: "copying", Done: "Pulled catalog", Fail: "Pull failed"}
 
-	err := RunTask(c, labels, func(count func(done, total int64)) error {
-		count(3, 10)
+	err := RunTask(c, labels, func(count ProgressFunc) error {
+		count(3, 10, Items)
 		c.repaint()
 		got := errb.String()
 		if !strings.Contains(got, "Pulling catalog") || !strings.Contains(got, "copying 3/10") {
@@ -31,10 +31,10 @@ func TestRunTaskSetsStatusBeforeFnSoCountRenders(t *testing.T) {
 
 func TestRunTaskFailReturnsErrUnchanged(t *testing.T) {
 	c, _, errb := newTest(Options{Color: ColorNever})
-	labels := TaskLabels{Run: "Pushing catalog", Status: "copying", Done: "Pushed catalog", Fail: "Push failed"}
+	labels := TaskLabels{Run: "Pushing catalog", Segment: "copying", Done: "Pushed catalog", Fail: "Push failed"}
 	sentinel := errors.New("boom")
 
-	err := RunTask(c, labels, func(func(done, total int64)) error { return sentinel })
+	err := RunTask(c, labels, func(ProgressFunc) error { return sentinel })
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("RunTask error = %v, want sentinel unchanged", err)
 	}

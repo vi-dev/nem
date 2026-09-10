@@ -468,10 +468,10 @@ func TestRunCtxCancelledBeforeStartAborts(t *testing.T) {
 	}
 }
 
-func wantStableProgress(t *testing.T, taskName string, counts []testx.CountCall, wantTotal int) {
+func wantStableProgress(t *testing.T, taskName string, counts []testx.ProgressCall, wantTotal int64) {
 	t.Helper()
 	if len(counts) == 0 {
-		t.Fatalf("no Count calls recorded on the %s task", taskName)
+		t.Fatalf("no Progress calls recorded on the %s task", taskName)
 	}
 	last := counts[len(counts)-1]
 	if last.Done != wantTotal || last.Total != wantTotal {
@@ -506,9 +506,9 @@ func TestPullCatalogReportsProgressOnPullingTask(t *testing.T) {
 		t.Fatal("no Pulling catalog task")
 	}
 	if len(task.Statuses()) == 0 {
-		t.Fatal("no Status call recorded on the pull task: Count alone never renders (segment stays \"\")")
+		t.Fatal("no Status call recorded on the pull task: Progress alone never renders (segment stays \"\")")
 	}
-	wantStableProgress(t, "Pulling catalog", task.Counts(), n+1)
+	wantStableProgress(t, "Pulling catalog", task.ProgressCalls(), n+1)
 
 	if rep.TaskFor("Pushing catalog") != nil {
 		t.Fatal("dry run must never create a Pushing catalog task")
@@ -537,9 +537,9 @@ func TestPushCatalogReportsProgressOnPushingTask(t *testing.T) {
 		t.Fatal("no Pushing catalog task")
 	}
 	if len(task.Statuses()) == 0 {
-		t.Fatal("no Status call recorded on the push task: Count alone never renders (segment stays \"\")")
+		t.Fatal("no Status call recorded on the push task: Progress alone never renders (segment stays \"\")")
 	}
-	wantStableProgress(t, "Pushing catalog", task.Counts(), n+1)
+	wantStableProgress(t, "Pushing catalog", task.ProgressCalls(), n+1)
 
 	if done, failed, outcome := task.Snapshot(); !done || failed || outcome != "Pushed catalog" {
 		t.Fatalf("push task done=%v failed=%v outcome=%q, want done \"Pushed catalog\"", done, failed, outcome)

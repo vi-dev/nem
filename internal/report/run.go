@@ -6,13 +6,15 @@ import (
 )
 
 type TaskLabels struct {
-	Run, Status, Done, Fail string
+	Run, Segment, Done, Fail string
 }
 
-func RunTask(rep Reporter, labels TaskLabels, fn func(progress func(done, total int64)) error) error {
+type ProgressFunc func(done, total int64, unit Unit)
+
+func RunTask(rep Reporter, labels TaskLabels, fn func(progress ProgressFunc) error) error {
 	task := rep.Task(labels.Run)
-	task.Status(labels.Status)
-	err := fn(func(done, total int64) { task.Count(int(done), int(total)) })
+	task.Segment(labels.Segment)
+	err := fn(task.Progress)
 	if err != nil {
 		task.Fail(labels.Fail)
 		return err

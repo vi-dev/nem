@@ -13,10 +13,16 @@ type Reporter interface {
 	Task(label string) Task
 }
 
+type Unit int
+
+const (
+	Items Unit = iota
+	Bytes
+)
+
 type Task interface {
-	Status(segment string)
-	Progress(done, total int64)
-	Count(done, total int)
+	Segment(segment string)
+	Progress(done, total int64, unit Unit)
 	Done(outcome string)
 	Fail(outcome string)
 	Discard()
@@ -34,8 +40,7 @@ type task struct {
 	segmentStart time.Time
 	done         int64
 	total        int64
-	cdone        int
-	ctotal       int
+	unit         Unit
 	completed    bool
 }
 
@@ -47,23 +52,17 @@ func (c *Console) Task(label string) Task {
 	return t
 }
 
-func (t *task) Status(segment string) {
+func (t *task) Segment(segment string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.segment = segment
 	t.segmentStart = t.console.now()
 }
 
-func (t *task) Progress(done, total int64) {
+func (t *task) Progress(done, total int64, unit Unit) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.done, t.total = done, total
-}
-
-func (t *task) Count(done, total int) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.cdone, t.ctotal = done, total
+	t.done, t.total, t.unit = done, total, unit
 }
 
 func (t *task) Done(outcome string) {
@@ -72,7 +71,7 @@ func (t *task) Done(outcome string) {
 	}
 	elapsed := t.console.now().Sub(t.start)
 	t.console.completeTask(t, func() {
-		t.console.successLocked(outcome + DurSuffix(elapsed))
+		t.console.successLocked(outcome + FormatDuration(elapsed))
 	})
 }
 
@@ -107,7 +106,7 @@ func (t *task) markCompleted() bool {
 	return true
 }
 
-func DurSuffix(d time.Duration) string {
+func FormatDuration(d time.Duration) string {
 	if d < time.Second {
 		return ""
 	}

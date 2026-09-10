@@ -196,12 +196,12 @@ func autoSyncUnsyncedCatalogs(ctx context.Context, cfg *config.Config, sources [
 			return err
 		}
 		labels := report.TaskLabels{
-			Run:    "Syncing catalog " + n.Name,
-			Status: "copying",
-			Done:   "Synced catalog " + n.Name,
-			Fail:   "Sync failed",
+			Run:     "Syncing catalog " + n.Name,
+			Segment: "copying",
+			Done:    "Synced catalog " + n.Name,
+			Fail:    "Sync failed",
 		}
-		if err := report.RunTask(console, labels, func(count func(done, total int64)) error {
+		if err := report.RunTask(console, labels, func(count report.ProgressFunc) error {
 			return syncCatalogStore(ctx, e.Ref, store, count)
 		}); err != nil {
 			console.Warn("Could not sync catalog %s: %v", n.Name, err)

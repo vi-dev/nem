@@ -10,6 +10,8 @@ import (
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
+
+	"github.com/vi-dev/nem/internal/report"
 )
 
 func CopyIndexClosure(ctx context.Context, src oras.ReadOnlyTarget, srcRef string, dst oras.Target, dstRef string) (ocispec.Descriptor, error) {
@@ -32,7 +34,7 @@ func CopyIndexClosureWithProgress(ctx context.Context, src oras.ReadOnlyTarget, 
 				return
 			}
 			total.Store(int64(len(idx.Manifests)) + 1)
-			fn(done.Load(), total.Load())
+			fn(done.Load(), total.Load(), report.Items)
 		},
 	}
 
@@ -42,7 +44,7 @@ func CopyIndexClosureWithProgress(ctx context.Context, src oras.ReadOnlyTarget, 
 		if desc.MediaType != ocispec.MediaTypeImageIndex && desc.MediaType != ocispec.MediaTypeImageManifest {
 			return nil
 		}
-		fn(done.Add(1), total.Load())
+		fn(done.Add(1), total.Load(), report.Items)
 		return nil
 	}
 	opts.PostCopy = tick

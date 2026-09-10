@@ -58,7 +58,7 @@ func runJob(gctx context.Context, h home.Home, rep report.Reporter, job Job) err
 		return nil
 	}
 
-	task.Status("downloading")
+	task.Segment("downloading")
 	artifact, err := acquire(gctx, job.Pkg, version, spec.Current(), job.Source, h.Tmp(), task)
 	if err != nil {
 		if isCancellation(gctx, err) {
@@ -71,7 +71,7 @@ func runJob(gctx context.Context, h home.Home, rep report.Reporter, job Job) err
 
 	defer os.Remove(artifact)
 
-	task.Status("extracting")
+	task.Segment("extracting")
 	if err := Install(gctx, h, job.Pkg, version, job.Catalog, artifact); err != nil {
 		if isCancellation(gctx, err) {
 			task.Fail(cancelled)

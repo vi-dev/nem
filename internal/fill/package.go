@@ -22,7 +22,7 @@ func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledM
 	failedOutcome := fmt.Sprintf("Failed %s", nm.Title)
 
 	task := rep.Task(label)
-	task.Status("probing")
+	task.Segment("probing")
 
 	data, _, err := store.PkgBytes(ctx, nm.Title)
 	if err != nil {
@@ -189,10 +189,10 @@ func doFill(ctx context.Context, h home.Home, archives oras.Target, pkg *spec.Pa
 	}
 
 	if dryRun {
-		task.Status(fmt.Sprintf("%s %s %s", wouldVerb, version, plat))
+		task.Segment(fmt.Sprintf("%s %s %s", wouldVerb, version, plat))
 		return outcome, ocispec.Descriptor{}
 	}
-	task.Status(fmt.Sprintf("%s %s %s", verb, version, plat))
+	task.Segment(fmt.Sprintf("%s %s %s", verb, version, plat))
 
 	url, err := fetch.UpstreamURL(pkg, version, plat)
 	if err != nil {

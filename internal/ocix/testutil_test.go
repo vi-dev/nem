@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/vi-dev/nem/internal/ocix/ocixtest"
+	"github.com/vi-dev/nem/internal/report"
 )
 
 type progressCall struct{ done, total int64 }
@@ -14,7 +15,7 @@ type progressRecorder struct {
 	calls []progressCall
 }
 
-func (r *progressRecorder) record(done, total int64) {
+func (r *progressRecorder) record(done, total int64, _ report.Unit) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.calls = append(r.calls, progressCall{done, total})

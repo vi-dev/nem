@@ -122,9 +122,9 @@ func Run(ctx context.Context, h home.Home, opts Options, rep report.Reporter) (S
 }
 
 func stageCatalog(ctx context.Context, ref string, rep report.Reporter) (*ocix.Store, error) {
-	labels := report.TaskLabels{Run: "Pulling catalog", Status: "copying", Done: "Pulled catalog", Fail: "Pull failed"}
+	labels := report.TaskLabels{Run: "Pulling catalog", Segment: "copying", Done: "Pulled catalog", Fail: "Pull failed"}
 	var store *ocix.Store
-	err := report.RunTask(rep, labels, func(count func(done, total int64)) error {
+	err := report.RunTask(rep, labels, func(count report.ProgressFunc) error {
 		src, srcTag, err := openCatalog(ref)
 		if err != nil {
 			return err

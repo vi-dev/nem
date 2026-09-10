@@ -124,22 +124,24 @@ func (t *task) trailingText(now time.Time) string {
 	if t.segment == "" {
 		return ""
 	}
-	if p := progressText(t.done, t.total, t.cdone, t.ctotal); p != "" {
+	if p := progressText(t.done, t.total, t.unit); p != "" {
 		return t.segment + " " + p
 	}
 	if elapsed := now.Sub(t.segmentStart); elapsed >= autoElapsedAfter {
-		return t.segment + DurSuffix(elapsed)
+		return t.segment + FormatDuration(elapsed)
 	}
 	return t.segment
 }
 
-func progressText(done, total int64, cdone, ctotal int) string {
+func progressText(done, total int64, unit Unit) string {
 	switch {
-	case ctotal > 0:
-		return fmt.Sprintf("%d/%d", cdone, ctotal)
-	case total > 0:
+	case unit == Items && total > 0:
+		return fmt.Sprintf("%d/%d", done, total)
+	case unit == Items && total < 0:
+		return fmt.Sprintf("%d", done)
+	case unit == Bytes && total > 0:
 		return fmt.Sprintf("%d%%", int(float64(done)/float64(total)*100))
-	case total < 0:
+	case unit == Bytes && total < 0:
 		return FormatBytes(done)
 	default:
 		return ""

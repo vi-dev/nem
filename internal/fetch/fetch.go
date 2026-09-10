@@ -103,7 +103,7 @@ func digest(resp *http.Response, w io.Writer, task report.Task) (string, error) 
 	}
 	written, err := io.Copy(dst, resp.Body)
 	if task != nil {
-		task.Progress(written, resp.ContentLength)
+		task.Progress(written, resp.ContentLength, report.Bytes)
 	}
 	if err != nil {
 		return "", err
@@ -127,7 +127,7 @@ func (w *progressWriter) Write(p []byte) (int, error) {
 	w.written += int64(n)
 	if w.written-w.reported >= progressChunk {
 		w.reported = w.written
-		w.task.Progress(w.written, w.total)
+		w.task.Progress(w.written, w.total, report.Bytes)
 	}
 	return n, nil
 }

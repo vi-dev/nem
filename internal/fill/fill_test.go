@@ -785,13 +785,13 @@ func TestStageCatalogReportsProgressOnStagingTask(t *testing.T) {
 		t.Fatal("no Pulling catalog task")
 	}
 	if len(task.Statuses()) == 0 {
-		t.Fatal("no Status call recorded on the staging task: Count alone never renders (segment stays \"\")")
+		t.Fatal("no Status call recorded on the staging task: Progress alone never renders (segment stays \"\")")
 	}
-	counts := task.Counts()
+	counts := task.ProgressCalls()
 	if len(counts) == 0 {
-		t.Fatal("no Count calls recorded on the staging task")
+		t.Fatal("no Progress calls recorded on the staging task")
 	}
-	wantTotal := n + 1
+	wantTotal := int64(n + 1)
 	last := counts[len(counts)-1]
 	if last.Done != wantTotal || last.Total != wantTotal {
 		t.Fatalf("final count = %+v, want done=total=%d", last, wantTotal)

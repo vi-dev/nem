@@ -32,7 +32,7 @@ func stripANSI(s string) string {
 func TestLiveSingleTaskShowsLabelAndSegment(t *testing.T) {
 	c, _, errb := newLiveTest(Options{IsTTY: true, Color: ColorNever})
 	tk := c.Task("Installing go v1.26.5")
-	tk.Status("downloading")
+	tk.Segment("downloading")
 	c.repaint()
 
 	got := errb.String()
@@ -45,20 +45,20 @@ func TestLiveSingleTaskShowsLabelAndSegment(t *testing.T) {
 	tk.Done("Installed go v1.26.5")
 }
 
-func TestLiveCountAloneRendersNothingUntilStatusIsSet(t *testing.T) {
+func TestLiveProgressAloneRendersNothingUntilStatusIsSet(t *testing.T) {
 	c, _, errb := newLiveTest(Options{IsTTY: true, Color: ColorNever})
 	tk := c.Task("Syncing catalog")
-	tk.Count(3, 10)
+	tk.Progress(3, 10, Items)
 	c.repaint()
 
 	if got := errb.String(); strings.Contains(got, "3/10") {
-		t.Fatalf("Count alone must not render: %q", got)
+		t.Fatalf("Progress alone must not render: %q", got)
 	}
 
-	tk.Status("copying")
+	tk.Segment("copying")
 	c.repaint()
 	if got := errb.String(); !strings.Contains(got, "copying 3/10") {
-		t.Fatalf("Status set after Count must render the count alongside it: %q", got)
+		t.Fatalf("Status set after Progress must render the count alongside it: %q", got)
 	}
 	tk.Done("Synced catalog")
 }
@@ -66,9 +66,9 @@ func TestLiveCountAloneRendersNothingUntilStatusIsSet(t *testing.T) {
 func TestLiveDiscardShrinksBlockWithNoCompletionLine(t *testing.T) {
 	c, _, errb := newLiveTest(Options{IsTTY: true, Color: ColorNever})
 	first := c.Task("Mirroring curl")
-	first.Status("probing")
+	first.Segment("probing")
 	second := c.Task("Mirroring go")
-	second.Status("copying 1.26.5")
+	second.Segment("copying 1.26.5")
 	c.repaint()
 	errb.Reset()
 
@@ -91,9 +91,9 @@ func TestLiveDiscardShrinksBlockWithNoCompletionLine(t *testing.T) {
 func TestLiveTwoTasksInStartOrder(t *testing.T) {
 	c, _, errb := newLiveTest(Options{IsTTY: true, Color: ColorNever})
 	first := c.Task("Installing go v1.26.5")
-	first.Status("downloading")
+	first.Segment("downloading")
 	second := c.Task("Installing kubectl v1.34.1")
-	second.Status("extracting")
+	second.Segment("extracting")
 	c.repaint()
 
 	got := errb.String()
@@ -113,9 +113,9 @@ func TestLiveTwoTasksInStartOrder(t *testing.T) {
 func TestLiveDonePrintsCompletionAboveAndRemovesLine(t *testing.T) {
 	c, _, errb := newLiveTest(Options{IsTTY: true, Color: ColorAlways})
 	first := c.Task("Installing go v1.26.5")
-	first.Status("downloading")
+	first.Segment("downloading")
 	second := c.Task("Installing kubectl v1.34.1")
-	second.Status("extracting")
+	second.Segment("extracting")
 	c.repaint()
 	errb.Reset()
 
@@ -155,7 +155,7 @@ func TestLiveTruncatesAtWidth(t *testing.T) {
 	c, _, errb := newLiveTest(Options{IsTTY: true, Color: ColorNever})
 	c.width = func() int { return 20 }
 	tk := c.Task("Installing go v1.26.5")
-	tk.Status("downloading a very long segment name")
+	tk.Segment("downloading a very long segment name")
 	c.repaint()
 
 	got := errb.String()
@@ -174,7 +174,7 @@ func TestLiveAutoElapsedAfterTenSeconds(t *testing.T) {
 	c.now = now
 
 	tk := c.Task("Building erlang v27.2")
-	tk.Status("./make.bash")
+	tk.Segment("./make.bash")
 	advance(11 * time.Second)
 	c.repaint()
 
@@ -188,7 +188,7 @@ func TestLiveAutoElapsedAfterTenSeconds(t *testing.T) {
 func TestInfoDuringLiveBlockClearsPrintsAndRepaints(t *testing.T) {
 	c, _, errb := newLiveTest(Options{IsTTY: true, Color: ColorNever})
 	tk := c.Task("Installing go v1.26.5")
-	tk.Status("downloading")
+	tk.Segment("downloading")
 	c.repaint()
 	errb.Reset()
 
@@ -222,7 +222,7 @@ func TestInfoDuringLiveBlockClearsPrintsAndRepaints(t *testing.T) {
 func TestLiveBlockAbsentWhenNotTTY(t *testing.T) {
 	c, _, errb := newLiveTest(Options{IsTTY: false, Color: ColorNever})
 	tk := c.Task("Installing go v1.26.5")
-	tk.Status("downloading")
+	tk.Segment("downloading")
 	c.repaint()
 
 	if errb.Len() != 0 {
@@ -234,7 +234,7 @@ func TestLiveBlockAbsentWhenNotTTY(t *testing.T) {
 func TestLiveBlockAbsentWhenQuiet(t *testing.T) {
 	c, _, errb := newLiveTest(Options{IsTTY: true, Quiet: true, Color: ColorNever})
 	tk := c.Task("Installing go v1.26.5")
-	tk.Status("downloading")
+	tk.Segment("downloading")
 	c.repaint()
 
 	if strings.Contains(errb.String(), "downloading") {

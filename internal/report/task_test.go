@@ -73,7 +73,7 @@ func TestTaskDoneAfterFailIsNoOp(t *testing.T) {
 func TestTaskDiscardEmitsNothing(t *testing.T) {
 	c, _, errb := newTest(Options{Color: ColorNever})
 	task := c.Task("Mirroring curl")
-	task.Status("probing")
+	task.Segment("probing")
 
 	task.Discard()
 
@@ -92,7 +92,7 @@ func TestDurSuffix(t *testing.T) {
 		{83 * time.Second, " (1m23s)"},
 	}
 	for _, c := range cases {
-		if got := DurSuffix(c.d); got != c.want {
+		if got := FormatDuration(c.d); got != c.want {
 			t.Errorf("DurSuffix(%v) = %q, want %q", c.d, got, c.want)
 		}
 	}
@@ -107,9 +107,9 @@ func TestTaskConcurrentUpdatesRaceClean(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			task.Status("downloading")
-			task.Progress(int64(i), 100)
-			task.Count(i, 10)
+			task.Segment("downloading")
+			task.Progress(int64(i), 100, Bytes)
+			task.Progress(int64(i), 10, Items)
 		}(i)
 	}
 	wg.Wait()

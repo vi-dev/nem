@@ -128,9 +128,9 @@ func syncCatalog(ctx context.Context, opts Options, rep report.Reporter) (*ocix.
 }
 
 func pullCatalog(ctx context.Context, srcRef string, rep report.Reporter) (*ocix.Store, error) {
-	labels := report.TaskLabels{Run: "Pulling catalog", Status: "copying", Done: "Pulled catalog", Fail: "Pull failed"}
+	labels := report.TaskLabels{Run: "Pulling catalog", Segment: "copying", Done: "Pulled catalog", Fail: "Pull failed"}
 	var store *ocix.Store
-	err := report.RunTask(rep, labels, func(progress func(done, total int64)) error {
+	err := report.RunTask(rep, labels, func(progress report.ProgressFunc) error {
 		src, srcTag, err := openSrcCatalog(srcRef)
 		if err != nil {
 			return err
@@ -148,8 +148,8 @@ func pullCatalog(ctx context.Context, srcRef string, rep report.Reporter) (*ocix
 }
 
 func pushCatalog(ctx context.Context, store *ocix.Store, dstRef string, rep report.Reporter) error {
-	labels := report.TaskLabels{Run: "Pushing catalog", Status: "copying", Done: "Pushed catalog", Fail: "Push failed"}
-	return report.RunTask(rep, labels, func(progress func(done, total int64)) error {
+	labels := report.TaskLabels{Run: "Pushing catalog", Segment: "copying", Done: "Pushed catalog", Fail: "Push failed"}
+	return report.RunTask(rep, labels, func(progress report.ProgressFunc) error {
 		dst, dstTag, err := openDstCatalog(dstRef)
 		if err != nil {
 			return err

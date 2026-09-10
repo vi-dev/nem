@@ -18,7 +18,7 @@ func mirrorPackage(ctx context.Context, opts Options, manifest ocix.TitledManife
 	failedOutcome := fmt.Sprintf("Failed %s", manifest.Title)
 
 	task := rep.Task(label)
-	task.Status("probing")
+	task.Segment("probing")
 
 	data, _, err := store.PkgBytes(ctx, manifest.Title)
 	if err != nil {
@@ -145,10 +145,10 @@ func mirrorVersion(ctx context.Context, src oras.ReadOnlyTarget, dst oras.Target
 	}
 
 	if dryRun {
-		task.Status(fmt.Sprintf("would copy %s", version))
+		task.Segment(fmt.Sprintf("would copy %s", version))
 		return outcomeCopied
 	}
-	task.Status(fmt.Sprintf("copying %s", version))
+	task.Segment(fmt.Sprintf("copying %s", version))
 	if _, err := ocix.CopyTag(ctx, src, dst, version); err != nil {
 		if report.IsCancellation(err) {
 			return outcomeCancelled
