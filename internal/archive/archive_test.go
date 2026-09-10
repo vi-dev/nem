@@ -440,14 +440,46 @@ func TestExtractAbsoluteSymlinkRejected(t *testing.T) {
 	}
 }
 
-func TestExtractHardlinkRejected(t *testing.T) {
+func TestExtractHardlink(t *testing.T) {
 	data := gzipBytes(t, buildTar(t, []tarEntry{
-		{name: "real", content: []byte("data")},
-		{name: "hard", typeflag: tar.TypeLink, linkname: "real"},
+		{name: "pkg-1.0/real", content: []byte("data")},
+		{name: "pkg-1.0/sub/hard", typeflag: tar.TypeLink, linkname: "pkg-1.0/real"},
+	}))
+	dest, _, err := extractBytes(t, data, archive.Options{Strip: 1})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	mustFile(t, filepath.Join(dest, "sub", "hard"), "data")
+	real, err := os.Stat(filepath.Join(dest, "real"))
+	if err != nil {
+		t.Fatalf("stat real: %v", err)
+	}
+	hard, err := os.Stat(filepath.Join(dest, "sub", "hard"))
+	if err != nil {
+		t.Fatalf("stat hard: %v", err)
+	}
+	if !os.SameFile(real, hard) {
+		t.Fatalf("hard is not a hardlink of real")
+	}
+}
+
+func TestExtractEscapingHardlinkTargetRejected(t *testing.T) {
+	data := gzipBytes(t, buildTar(t, []tarEntry{
+		{name: "hard", typeflag: tar.TypeLink, linkname: "../outside"},
 	}))
 	_, _, err := extractBytes(t, data, archive.Options{})
-	if err == nil || !strings.Contains(err.Error(), "hardlinks are not supported") {
-		t.Fatalf("error = %v, want hardlink error", err)
+	if err == nil || !strings.Contains(err.Error(), "escapes extraction root") {
+		t.Fatalf("error = %v, want escape error", err)
+	}
+}
+
+func TestExtractHardlinkTargetStrippedAwayRejected(t *testing.T) {
+	data := gzipBytes(t, buildTar(t, []tarEntry{
+		{name: "pkg-1.0/hard", typeflag: tar.TypeLink, linkname: "real"},
+	}))
+	_, _, err := extractBytes(t, data, archive.Options{Strip: 1})
+	if err == nil || !strings.Contains(err.Error(), "escapes extraction root") {
+		t.Fatalf("error = %v, want escape error", err)
 	}
 }
 

@@ -2,7 +2,6 @@ package archive
 
 import (
 	"archive/tar"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -58,7 +57,16 @@ func extractTar(tr *tar.Reader, root *os.Root, opts Options) (Result, error) {
 				return Result{}, fmt.Errorf("create symlink %s: %w", relPath, err)
 			}
 		case tar.TypeLink:
-			return Result{}, errors.New("hardlinks are not supported")
+			_, linkRel, ok := splitEntryPath(hdr.Linkname, opts.Strip)
+			if !ok || !filepath.IsLocal(linkRel) {
+				return Result{}, fmt.Errorf("hardlink %q target %q escapes extraction root", hdr.Name, hdr.Linkname)
+			}
+			if err := mkdirParent(root, relPath); err != nil {
+				return Result{}, err
+			}
+			if err := root.Link(linkRel, relPath); err != nil {
+				return Result{}, fmt.Errorf("create hardlink %s: %w", relPath, err)
+			}
 		default:
 			return Result{}, fmt.Errorf("entry %q: unsupported tar type %v", hdr.Name, hdr.Typeflag)
 		}
@@ -69,7 +77,7 @@ func splitEntryPath(name string, strip int) (parts []string, relPath string, ok 
 	if strip < 0 {
 		strip = 0
 	}
-	for _, p := range strings.Split(name, "/") {
+	for p := range strings.SplitSeq(name, "/") {
 		if p != "" {
 			parts = append(parts, p)
 		}
