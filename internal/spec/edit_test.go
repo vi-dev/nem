@@ -224,3 +224,49 @@ func TestInsertVersionWithMeta(t *testing.T) {
 		t.Errorf("round-trip lost meta: %+v", p.Versions[0])
 	}
 }
+
+func TestInsertVersionMissingNode(t *testing.T) {
+	src := []byte("schema: 2\nname: jq\nartifact:\n  url: \"https://x/{{.Version}}\"\n")
+	out, err := InsertVersion(src, VersionEntry{Version: "1.9.0", Sha256: map[string]string{"darwin/arm64": "a"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Parse(out)
+	if err != nil {
+		t.Fatalf("re-parse: %v\n%s", err, out)
+	}
+	if len(p.Versions) != 1 || p.Versions[0].Version != "1.9.0" || p.Versions[0].Sha256["darwin/arm64"] != "a" {
+		t.Fatalf("versions = %+v", p.Versions)
+	}
+}
+
+func TestInsertVersionEmptyFlowNode(t *testing.T) {
+	src := []byte("schema: 2\nname: jq\nversions: []\n\ntest:\n  - run: jq --version\n")
+	out, err := InsertVersion(src, VersionEntry{Version: "1.9.0", Sha256: map[string]string{"darwin/arm64": "a"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Parse(out)
+	if err != nil {
+		t.Fatalf("re-parse: %v\n%s", err, out)
+	}
+	if len(p.Versions) != 1 || p.Versions[0].Version != "1.9.0" {
+		t.Fatalf("versions = %+v", p.Versions)
+	}
+	s := string(out)
+	if !strings.Contains(s, "versions:\n") || strings.Index(s, "versions:") > strings.Index(s, "test:") {
+		t.Fatalf("versions node not replaced in place:\n%s", s)
+	}
+}
+
+func TestValidateEditableShapes(t *testing.T) {
+	if err := ValidateEditable([]byte("schema: 2\nname: jq\n")); err != nil {
+		t.Errorf("missing versions should be editable: %v", err)
+	}
+	if err := ValidateEditable([]byte("schema: 2\nversions: []\n")); err != nil {
+		t.Errorf("empty flow versions should be editable: %v", err)
+	}
+	if err := ValidateEditable([]byte("schema: 2\nversions: [1.0.0]\n")); err == nil {
+		t.Error("non-empty flow versions must be rejected")
+	}
+}

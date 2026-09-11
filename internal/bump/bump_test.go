@@ -936,3 +936,43 @@ func TestBumpVersionFlagSkipsDiscoveryWithoutMetaTemplates(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBumpFreshManifestVersionFlag(t *testing.T) {
+	srv, sums := bumpMultiArtifactServer(t, "1.9.0")
+	dir := writeFixture(t, map[string]string{"jq": jqFixture(srv.URL, "")})
+	path := filepath.Join(dir, "pkgs", "jq", "pkg.yaml")
+
+	if _, _, err := runBump(t, Options{Version: "1.9.0"}, path); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	pkg, err := spec.Parse(data)
+	if err != nil {
+		t.Fatalf("re-parse: %v\n%s", err, data)
+	}
+	if len(pkg.Versions) != 1 || pkg.Versions[0].Version != "1.9.0" {
+		t.Fatalf("versions = %+v", pkg.Versions)
+	}
+	if got := pkg.Versions[0].Sha256["darwin/arm64"]; got != sums["1.9.0 darwin/arm64"] {
+		t.Errorf("sha256 = %q", got)
+	}
+}
+
+func TestBumpFreshManifestSeedsLatestOnly(t *testing.T) {
+	srv, _ := bumpMultiArtifactServer(t, "1.8.2", "1.9.0")
+	stubList(t, "1.8.2", "1.9.0")
+	dir := writeFixture(t, map[string]string{"jq": jqFixture(srv.URL, "")})
+	path := filepath.Join(dir, "pkgs", "jq", "pkg.yaml")
+
+	if _, _, err := runBump(t, Options{}, path); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	pkg, err := spec.Parse(data)
+	if err != nil {
+		t.Fatalf("re-parse: %v\n%s", err, data)
+	}
+	if len(pkg.Versions) != 1 || pkg.Versions[0].Version != "1.9.0" {
+		t.Fatalf("versions = %+v, want just 1.9.0", pkg.Versions)
+	}
+}

@@ -3,6 +3,7 @@ package spec
 import (
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -20,9 +21,18 @@ func InsertVersionAt(data []byte, e VersionEntry, pos int) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse yaml: %w", err)
 	}
-	seq, err := locateVersions(f)
+	seq, shape, err := versionsNode(f)
 	if err != nil {
 		return nil, err
+	}
+	if shape != versionsBlock {
+		if pos != 0 {
+			return nil, fmt.Errorf("insert position %d out of range [0,0]", pos)
+		}
+		if shape == versionsEmptyFlow {
+			return replaceEmptyFlowVersions(data, seq, e)
+		}
+		return appendVersionsBlock(data, e), nil
 	}
 	if pos < 0 || pos > len(seq.Values) {
 		return nil, fmt.Errorf("insert position %d out of range [0,%d]", pos, len(seq.Values))
@@ -63,24 +73,57 @@ func ValidateEditable(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("parse yaml: %w", err)
 	}
-	_, err = locateVersions(f)
+	_, _, err = versionsNode(f)
 	return err
 }
 
-func locateVersions(f *ast.File) (*ast.SequenceNode, error) {
+type versionsShape int
+
+const (
+	versionsBlock versionsShape = iota
+	versionsMissing
+	versionsEmptyFlow
+)
+
+func versionsNode(f *ast.File) (*ast.SequenceNode, versionsShape, error) {
 	p, err := yaml.PathString("$.versions")
 	if err != nil {
-		return nil, fmt.Errorf("versions path: %w", err)
+		return nil, versionsBlock, fmt.Errorf("versions path: %w", err)
 	}
 	node, err := p.FilterFile(f)
 	if err != nil {
-		return nil, fmt.Errorf("locate versions: %w", err)
+		return nil, versionsMissing, nil
 	}
 	seq, ok := node.(*ast.SequenceNode)
-	if !ok || seq.IsFlowStyle {
+	if !ok {
+		return nil, versionsBlock, fmt.Errorf("versions is not a block sequence")
+	}
+	if seq.IsFlowStyle {
+		if len(seq.Values) == 0 {
+			return seq, versionsEmptyFlow, nil
+		}
+		return nil, versionsBlock, fmt.Errorf("versions is not a block sequence")
+	}
+	return seq, versionsBlock, nil
+}
+
+func appendVersionsBlock(data []byte, e VersionEntry) []byte {
+	body := strings.TrimRight(string(data), "\n")
+	block := "versions:\n" + renderVersionEntry(e)
+	if body == "" {
+		return []byte(block)
+	}
+	return []byte(body + "\n\n" + block)
+}
+
+func replaceEmptyFlowVersions(data []byte, seq *ast.SequenceNode, e VersionEntry) ([]byte, error) {
+	lines := strings.SplitAfter(string(data), "\n")
+	idx := seq.GetToken().Position.Line - 1
+	if idx < 0 || idx >= len(lines) || !emptyFlowVersionsRE.MatchString(lines[idx]) {
 		return nil, fmt.Errorf("versions is not a block sequence")
 	}
-	return seq, nil
+	lines[idx] = "versions:\n" + renderVersionEntry(e)
+	return []byte(strings.Join(lines, "")), nil
 }
 
 func renderVersionEntry(e VersionEntry) string {
@@ -110,3 +153,5 @@ func renderVersionEntry(e VersionEntry) string {
 	}
 	return b.String()
 }
+
+var emptyFlowVersionsRE = regexp.MustCompile(`^versions:\s*\[\s*\]\s*$`)

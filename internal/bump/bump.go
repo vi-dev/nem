@@ -316,6 +316,9 @@ func candidateVersions(ctx context.Context, pkg *spec.Package, backfill int) ([]
 		}
 		out = append(out, v)
 	}
+	if current == "" && backfill <= 0 && len(out) == 0 && len(all) > 0 {
+		out = []string{all[0]}
+	}
 	sort.Slice(out, func(i, j int) bool { return spec.CompareVersions(out[i], out[j]) < 0 })
 	return out, metas, nil
 }
