@@ -93,7 +93,15 @@ func Extract(artifactPath string, root *os.Root, opts Options) (Result, error) {
 	case looksLikeTar(peek):
 		return extractTar(tar.NewReader(br), root, opts)
 	default:
-		return Result{}, errors.New("unrecognized archive format")
+		info, err := f.Stat()
+		if err != nil {
+			return Result{}, fmt.Errorf("stat artifact: %w", err)
+		}
+		zr, err := zip.NewReader(f, info.Size())
+		if err != nil {
+			return Result{}, errors.New("unrecognized archive format")
+		}
+		return extractZip(zr, root, opts)
 	}
 }
 

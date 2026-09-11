@@ -701,3 +701,16 @@ func TestExtractZipDotPrefixedEntries(t *testing.T) {
 	}
 	mustFile(t, filepath.Join(dest, "tool"), "bin")
 }
+
+func TestExtractZipWithPrependedData(t *testing.T) {
+	data := buildZip(t, []zipEntry{
+		{name: "qsv-1.0/", isDir: true},
+		{name: "qsv-1.0/qsv", content: []byte("bin"), mode: 0o755},
+	})
+	signed := append([]byte("\x0c\x04\x01ed25519ph fake signature block"), data...)
+	dest, _, err := extractBytes(t, signed, archive.Options{Strip: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustFile(t, filepath.Join(dest, "qsv"), "bin")
+}
