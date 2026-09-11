@@ -157,3 +157,60 @@ func TestCatalogTestSkipsAPackageUnsupportedHere(t *testing.T) {
 		t.Fatalf("want an unsupported-platform notice, got:\n%s\n%s", out, errb)
 	}
 }
+
+func TestCatalogTestResolvesUnconfiguredCheckout(t *testing.T) {
+	nemHome := t.TempDir()
+	catalogRoot := downloadableDirCatalog(t, `test:
+  - run: 'test -f "$NEM_PREFIX/bin/tool"'
+`)
+
+	recipe := filepath.Join(catalogRoot, "pkgs", "tool", "pkg.yaml")
+	out, errb, err := runNem(t, nemHome, "catalog", "test", recipe)
+	if err != nil {
+		t.Fatalf("catalog test: %v\nstdout: %s\nstderr: %s", err, out, errb)
+	}
+	if !strings.Contains(errb, "Tested tool v1.0.0 (1 step)") {
+		t.Fatalf("want a tested-successfully notice, got:\n%s\n%s", out, errb)
+	}
+}
+
+func TestCatalogTestStandaloneManifest(t *testing.T) {
+	nemHome := t.TempDir()
+	archive := makeTarGz(t, map[string]string{"bin/tool": "tool binary bytes"})
+	sum := sha256.Sum256(archive)
+	sha := hex.EncodeToString(sum[:])
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(archive)
+	}))
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	recipe := filepath.Join(dir, "pkg.yaml")
+	writeFile(t, recipe, `
+schema: 2
+name: tool
+description: a test tool
+artifact:
+  url: "`+srv.URL+`"
+install:
+  - extract: {}
+versions:
+  - version: v1.0.0
+    sha256:
+      darwin/arm64: "`+sha+`"
+      darwin/amd64: "`+sha+`"
+      linux/arm64: "`+sha+`"
+      linux/amd64: "`+sha+`"
+
+test:
+  - run: 'test -f "$NEM_PREFIX/bin/tool"'
+`)
+
+	out, errb, err := runNem(t, nemHome, "catalog", "test", recipe)
+	if err != nil {
+		t.Fatalf("catalog test: %v\nstdout: %s\nstderr: %s", err, out, errb)
+	}
+	if !strings.Contains(errb, "Tested tool v1.0.0 (1 step)") {
+		t.Fatalf("want a tested-successfully notice, got:\n%s\n%s", out, errb)
+	}
+}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -52,6 +53,7 @@ func newCatalogTestCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			sources = append(sources, manifestSource(args[0], pkg))
 
 			result, err := resolve.Resolve(cmd.Context(),
 				[]resolve.Tool{{Key: project.ToolKey{Name: pkg.Name}, Version: version}}, sources)
@@ -100,4 +102,15 @@ func newCatalogTestCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&version, "version", "", "version to test (default: the catalog's latest)")
 	return cmd
+}
+
+func manifestSource(path string, pkg *spec.Package) catalog.Named {
+	if abs, err := filepath.Abs(path); err == nil {
+		pkgDir := filepath.Dir(abs)
+		if filepath.Base(pkgDir) == pkg.Name && filepath.Base(filepath.Dir(pkgDir)) == "pkgs" {
+			root := filepath.Dir(filepath.Dir(pkgDir))
+			return catalog.Named{Name: root, Source: catalog.NewDir(root)}
+		}
+	}
+	return catalog.Named{Name: path, Source: catalog.NewFile(pkg)}
 }
