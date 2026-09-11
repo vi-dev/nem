@@ -18,7 +18,7 @@ build:
 
 .PHONY: install
 install:
-	go install -ldflags "$(LDFLAGS)" ./cmd/nem
+	go build -ldflags "$(LDFLAGS)" -o $(HOME)/.local/bin/nem ./cmd/nem
 
 .PHONY: snapshot
 snapshot:
