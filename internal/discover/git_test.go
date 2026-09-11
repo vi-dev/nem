@@ -105,7 +105,7 @@ func TestGithubVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"1.25.1", "1.26.5"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+	if len(got) != len(want) || got[0].Version != want[0] || got[1].Version != want[1] {
 		t.Fatalf("versions = %v, want %v", got, want)
 	}
 }
@@ -132,7 +132,7 @@ func TestGitVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"1.98.0", "1.99.0"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+	if len(got) != len(want) || got[0].Version != want[0] || got[1].Version != want[1] {
 		t.Fatalf("versions = %v, want %v", got, want)
 	}
 }
@@ -173,7 +173,32 @@ func TestGithubVersionsSuffix(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"0.12.0", "0.13.0"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+	if len(got) != len(want) || got[0].Version != want[0] || got[1].Version != want[1] {
 		t.Fatalf("versions = %v, want %v", got, want)
+	}
+}
+
+func TestGitVersionsNamedCaptures(t *testing.T) {
+	adv := advertisement(
+		oid+" HEAD\x00symref=HEAD:refs/heads/master\n",
+		oid+" refs/tags/v1.11.9\n",
+		oid+" refs/tags/v1.12.1\n",
+		oid+" refs/tags/weekly.2026.01\n",
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, adv)
+	}))
+	defer srv.Close()
+
+	got, err := gitVersions(context.Background(), srv.Client(), srv.URL+"/julia.git",
+		`^v(?P<version>(?P<majmin>\d+\.\d+)\.\d+)$`, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d versions, want 2: %v", len(got), got)
+	}
+	if got[1].Version != "1.12.1" || got[1].Meta["majmin"] != "1.12" {
+		t.Errorf("got[1] = %+v", got[1])
 	}
 }

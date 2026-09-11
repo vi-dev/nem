@@ -40,7 +40,7 @@ func TestListDispatchesGitAndGitLab(t *testing.T) {
 		if err != nil {
 			t.Fatalf("List(%+v): %v", d, err)
 		}
-		if len(got) != 2 || got[0] != "2.0.0" || got[1] != "2.1.0" {
+		if len(got) != 2 || got[0].Version != "2.0.0" || got[1].Version != "2.1.0" {
 			t.Fatalf("List(%+v) = %v, want [2.0.0 2.1.0]", d, got)
 		}
 	}

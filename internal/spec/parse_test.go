@@ -436,3 +436,24 @@ func TestParseTestStepRejectsBadPlatform(t *testing.T) {
 		t.Fatalf("want a test[1] platform error, got %v", err)
 	}
 }
+
+func TestParseVersionMeta(t *testing.T) {
+	data := []byte(`
+schema: 2
+name: python
+artifact:
+  url: "https://x/{{.Meta.date}}/py-{{.Version}}.tar.gz"
+versions:
+  - version: 3.14.7
+    meta: {date: "20260814"}
+    sha256:
+      darwin/arm64: "a"
+`)
+	p, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Versions[0].Meta["date"]; got != "20260814" {
+		t.Errorf("meta date = %q, want %q", got, "20260814")
+	}
+}

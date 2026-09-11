@@ -35,6 +35,7 @@ type Dep struct {
 
 type VersionEntry struct {
 	Version      string
+	Meta         map[string]string
 	Sha256       map[string]string
 	SourceSha256 string
 }

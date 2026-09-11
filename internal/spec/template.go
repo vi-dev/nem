@@ -10,6 +10,7 @@ type templateCtx struct {
 	Version string
 	OS      string
 	Arch    string
+	Meta    map[string]string
 }
 
 const ArtifactToken = "{{.Artifact}}"
@@ -22,9 +23,19 @@ type actionCtx struct {
 }
 
 var helperFuncs = template.FuncMap{
-	"trimPrefix": func(s, prefix string) string { return strings.TrimPrefix(s, prefix) },
-	"trimSuffix": func(s, suffix string) string { return strings.TrimSuffix(s, suffix) },
-	"replace":    func(s, old, new string) string { return strings.ReplaceAll(s, old, new) },
+	"trimPrefix":        func(s, prefix string) string { return strings.TrimPrefix(s, prefix) },
+	"trimSuffix":        func(s, suffix string) string { return strings.TrimSuffix(s, suffix) },
+	"replace":           func(s, old, new string) string { return strings.ReplaceAll(s, old, new) },
+	"versionMajor":      func(v string) string { return versionSegments(v, 1) },
+	"versionMajorMinor": func(v string) string { return versionSegments(v, 2) },
+}
+
+func versionSegments(v string, n int) string {
+	parts := strings.Split(strings.TrimPrefix(v, "v"), ".")
+	if len(parts) > n {
+		parts = parts[:n]
+	}
+	return strings.Join(parts, ".")
 }
 
 func ExpandActionPaths(a Action, version string, plat Platform) (Action, error) {
@@ -76,21 +87,32 @@ func expand(tmpl string, ctx any) (string, error) {
 }
 
 func (p *Package) ArtifactURL(version string, plat Platform) (string, error) {
-	return expand(p.Artifact.URL, templateCtx{Version: version, OS: plat.OS, Arch: plat.Arch})
+	return expand(p.Artifact.URL, p.templateCtx(version, plat))
 }
 
 func (p *Package) BuildSourceURL(version string, plat Platform) (string, error) {
 	if p.Build == nil {
 		return "", fmt.Errorf("package %s has no build section", p.Name)
 	}
-	return expand(p.Build.Source.URL, templateCtx{Version: version, OS: plat.OS, Arch: plat.Arch})
+	return expand(p.Build.Source.URL, p.templateCtx(version, plat))
 }
 
 func (p *Package) AssetName(version string, plat Platform) (string, error) {
 	if p.Artifact.GitHub == nil {
 		return "", fmt.Errorf("package %s has no github artifact", p.Name)
 	}
-	return expand(p.Artifact.GitHub.Asset, templateCtx{Version: version, OS: plat.OS, Arch: plat.Arch})
+	return expand(p.Artifact.GitHub.Asset, p.templateCtx(version, plat))
+}
+
+func (p *Package) templateCtx(version string, plat Platform) templateCtx {
+	ctx := templateCtx{Version: version, OS: plat.OS, Arch: plat.Arch, Meta: map[string]string{}}
+	for _, v := range p.Versions {
+		if v.Version == version {
+			ctx.Meta = v.Meta
+			break
+		}
+	}
+	return ctx
 }
 
 func (p *Package) Sha256(version string, plat Platform) (string, error) {

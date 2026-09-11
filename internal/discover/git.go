@@ -62,15 +62,15 @@ var (
 	gitlabBase = "https://gitlab.com"
 )
 
-func githubVersions(ctx context.Context, client *http.Client, g *spec.GitHubDiscovery) ([]string, error) {
+func githubVersions(ctx context.Context, client *http.Client, g *spec.GitHubDiscovery) ([]Discovered, error) {
 	return gitVersions(ctx, client, githubBase+"/"+g.Repo+".git", g.Filter, g.Prefix, g.Suffix)
 }
 
-func gitlabVersions(ctx context.Context, client *http.Client, g *spec.GitLabDiscovery) ([]string, error) {
+func gitlabVersions(ctx context.Context, client *http.Client, g *spec.GitLabDiscovery) ([]Discovered, error) {
 	return gitVersions(ctx, client, gitlabBase+"/"+g.Repo+".git", g.Filter, g.Prefix, g.Suffix)
 }
 
-func gitVersions(ctx context.Context, client *http.Client, repoURL, filter, prefix, suffix string) ([]string, error) {
+func gitVersions(ctx context.Context, client *http.Client, repoURL, filter, prefix, suffix string) ([]Discovered, error) {
 	var re *regexp.Regexp
 	if filter != "" {
 		var err error
@@ -95,12 +95,24 @@ func gitVersions(ctx context.Context, client *http.Client, repoURL, filter, pref
 	if err != nil {
 		return nil, fmt.Errorf("list tags for %s: %w", repoURL, err)
 	}
-	var out []string
+	vi := -1
+	if re != nil {
+		vi = versionGroupIndex(re)
+	}
+	var out []Discovered
 	for _, t := range tags {
+		if re != nil && vi >= 0 {
+			m := re.FindStringSubmatch(t)
+			if m == nil || m[vi] == "" {
+				continue
+			}
+			out = append(out, Discovered{Version: respell(m[vi]), Meta: metaFromMatch(re, m)})
+			continue
+		}
 		if re != nil && !re.MatchString(t) {
 			continue
 		}
-		out = append(out, respell(strings.TrimSuffix(strings.TrimPrefix(t, prefix), suffix)))
+		out = append(out, Discovered{Version: respell(strings.TrimSuffix(strings.TrimPrefix(t, prefix), suffix))})
 	}
 	return out, nil
 }

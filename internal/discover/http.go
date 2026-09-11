@@ -12,7 +12,7 @@ import (
 
 const maxHTTPBody = 8 << 20
 
-func httpVersions(ctx context.Context, client *http.Client, h *spec.HTTPDiscovery) ([]string, error) {
+func httpVersions(ctx context.Context, client *http.Client, h *spec.HTTPDiscovery) ([]Discovered, error) {
 	re, err := regexp.Compile(h.Filter)
 	if err != nil {
 		return nil, fmt.Errorf("discovery filter: %w", err)
@@ -36,20 +36,28 @@ func httpVersions(ctx context.Context, client *http.Client, h *spec.HTTPDiscover
 	if len(body) > maxHTTPBody {
 		return nil, fmt.Errorf("fetch %s: response exceeds %d bytes", h.URL, maxHTTPBody)
 	}
+	vi := versionGroupIndex(re)
 	seen := map[string]bool{}
-	var out []string
-	for _, m := range re.FindAllSubmatch(body, -1) {
-		v := m[0]
-		if len(m) > 1 {
+	var out []Discovered
+	for _, m := range re.FindAllStringSubmatch(string(body), -1) {
+		var v string
+		var meta map[string]string
+		switch {
+		case vi >= 0:
+			v = m[vi]
+			meta = metaFromMatch(re, m)
+		case len(m) > 1:
 			v = m[1]
+		default:
+			v = m[0]
 		}
-		if len(v) == 0 {
+		if v == "" {
 			continue
 		}
-		s := respell(string(v))
+		s := respell(v)
 		if !seen[s] {
 			seen[s] = true
-			out = append(out, s)
+			out = append(out, Discovered{Version: s, Meta: meta})
 		}
 	}
 	return out, nil

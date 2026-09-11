@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vi-dev/nem/internal/discover"
 	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
@@ -71,10 +72,16 @@ func bumpFixture(serverURL string) string {
 
 func stubList(t *testing.T, versions ...string) {
 	t.Helper()
-	stubListFunc(t, func(context.Context, *spec.Package) ([]string, error) { return versions, nil })
+	stubListFunc(t, func(context.Context, *spec.Package) ([]discover.Discovered, error) {
+		out := make([]discover.Discovered, len(versions))
+		for i, v := range versions {
+			out[i] = discover.Discovered{Version: v}
+		}
+		return out, nil
+	})
 }
 
-func stubListFunc(t *testing.T, fn func(context.Context, *spec.Package) ([]string, error)) {
+func stubListFunc(t *testing.T, fn func(context.Context, *spec.Package) ([]discover.Discovered, error)) {
 	t.Helper()
 	testx.Swap(t, &listVersions, fn)
 }
@@ -660,12 +667,16 @@ func namedBumpFixture(name, serverURL, current string) string {
 
 func stubListByName(t *testing.T, byName map[string][]string) {
 	t.Helper()
-	stubListFunc(t, func(_ context.Context, pkg *spec.Package) ([]string, error) {
+	stubListFunc(t, func(_ context.Context, pkg *spec.Package) ([]discover.Discovered, error) {
 		vs, ok := byName[pkg.Name]
 		if !ok {
 			return nil, fmt.Errorf("discovery unavailable for %s", pkg.Name)
 		}
-		return vs, nil
+		out := make([]discover.Discovered, len(vs))
+		for i, v := range vs {
+			out[i] = discover.Discovered{Version: v}
+		}
+		return out, nil
 	})
 }
 
@@ -798,7 +809,7 @@ func TestBumpDirRunsPackagesConcurrently(t *testing.T) {
 
 	gate := make(chan struct{})
 	bbDone := make(chan struct{})
-	stubListFunc(t, func(_ context.Context, pkg *spec.Package) ([]string, error) {
+	stubListFunc(t, func(_ context.Context, pkg *spec.Package) ([]discover.Discovered, error) {
 		select {
 		case gate <- struct{}{}:
 		case <-gate:
@@ -807,10 +818,10 @@ func TestBumpDirRunsPackagesConcurrently(t *testing.T) {
 		}
 		if pkg.Name == "aa" {
 			<-bbDone
-			return []string{"1.0.0"}, nil
+			return []discover.Discovered{{Version: "1.0.0"}}, nil
 		}
 		defer close(bbDone)
-		return []string{"2.0.0"}, nil
+		return []discover.Discovered{{Version: "2.0.0"}}, nil
 	})
 
 	out, errOut, err := runBump(t, Options{JSON: true}, dir)
@@ -849,4 +860,79 @@ func mustRead(t *testing.T, path string) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func metaFixture(serverURL, versionsYAML string) string {
+	return fmt.Sprintf(`schema: 2
+name: jq
+artifact:
+  url: "%s/{{.Version}}/{{.OS}}-{{.Arch}}?d={{.Meta.date}}"
+install:
+  - copy: {src: "{{.Artifact}}", dst: "bin/jq", mode: 0o755}
+versionDiscovery:
+  github:
+    repo: jqlang/jq
+    prefix: "jq-"
+%s`, serverURL, versionsYAML)
+}
+
+func TestBumpWritesDiscoveredMeta(t *testing.T) {
+	srv, _ := bumpMultiArtifactServer(t, "1.9.0")
+	stubListFunc(t, func(context.Context, *spec.Package) ([]discover.Discovered, error) {
+		return []discover.Discovered{{Version: "1.9.0", Meta: map[string]string{"date": "20260101"}}}, nil
+	})
+	yaml := metaFixture(srv.URL, "versions:\n  - version: 1.8.2\n    meta: {date: \"20250101\"}\n    sha256:\n      darwin/arm64: \"a\"\n      darwin/amd64: \"b\"\n      linux/arm64: \"c\"\n      linux/amd64: \"d\"\n")
+	dir := writeFixture(t, map[string]string{"jq": yaml})
+	path := filepath.Join(dir, "pkgs", "jq", "pkg.yaml")
+
+	if _, _, err := runBump(t, Options{}, path); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := spec.Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pkg.Versions[0].Version != "1.9.0" || pkg.Versions[0].Meta["date"] != "20260101" {
+		t.Fatalf("head entry = %+v", pkg.Versions[0])
+	}
+}
+
+func TestBumpVersionFlagDiscoversMetaWhenTemplatesNeedIt(t *testing.T) {
+	srv, _ := bumpMultiArtifactServer(t, "1.9.0")
+	stubListFunc(t, func(context.Context, *spec.Package) ([]discover.Discovered, error) {
+		return []discover.Discovered{{Version: "1.9.0", Meta: map[string]string{"date": "20260101"}}}, nil
+	})
+	yaml := metaFixture(srv.URL, "versions:\n  - version: 1.8.2\n    meta: {date: \"20250101\"}\n    sha256:\n      darwin/arm64: \"a\"\n      darwin/amd64: \"b\"\n      linux/arm64: \"c\"\n      linux/amd64: \"d\"\n")
+	dir := writeFixture(t, map[string]string{"jq": yaml})
+	path := filepath.Join(dir, "pkgs", "jq", "pkg.yaml")
+
+	if _, _, err := runBump(t, Options{Version: "1.9.0"}, path); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	pkg, err := spec.Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pkg.Versions[0].Meta["date"] != "20260101" {
+		t.Fatalf("head entry = %+v", pkg.Versions[0])
+	}
+}
+
+func TestBumpVersionFlagSkipsDiscoveryWithoutMetaTemplates(t *testing.T) {
+	srv, _ := bumpMultiArtifactServer(t, "1.9.0")
+	stubListFunc(t, func(context.Context, *spec.Package) ([]discover.Discovered, error) {
+		t.Error("discovery must not run for --version without meta templates")
+		return nil, nil
+	})
+	dir := writeFixture(t, map[string]string{"jq": bumpFixture(srv.URL)})
+	path := filepath.Join(dir, "pkgs", "jq", "pkg.yaml")
+
+	if _, _, err := runBump(t, Options{Version: "1.9.0"}, path); err != nil {
+		t.Fatal(err)
+	}
 }

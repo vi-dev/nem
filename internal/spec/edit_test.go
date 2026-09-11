@@ -205,3 +205,22 @@ func diffAddedLines(t *testing.T, before, after []byte) []string {
 	}
 	return added
 }
+
+func TestInsertVersionWithMeta(t *testing.T) {
+	src := []byte("schema: 2\nname: python\nversions:\n  - version: 3.14.6\n    sha256:\n      darwin/arm64: \"a\"\n")
+	out, err := InsertVersion(src, VersionEntry{
+		Version: "3.14.7",
+		Meta:    map[string]string{"date": "20260814", "build": "install_only"},
+		Sha256:  map[string]string{"darwin/arm64": "b"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Parse(out)
+	if err != nil {
+		t.Fatalf("re-parse: %v\n%s", err, out)
+	}
+	if p.Versions[0].Version != "3.14.7" || p.Versions[0].Meta["date"] != "20260814" || p.Versions[0].Meta["build"] != "install_only" {
+		t.Errorf("round-trip lost meta: %+v", p.Versions[0])
+	}
+}

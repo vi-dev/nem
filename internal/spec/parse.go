@@ -72,9 +72,10 @@ type rawTestStep struct {
 }
 
 type rawVersionEntry struct {
-	Version      string          `yaml:"version"`
-	Sha256       yaml.RawMessage `yaml:"sha256"`
-	SourceSha256 string          `yaml:"sourceSha256"`
+	Version      string            `yaml:"version"`
+	Meta         map[string]string `yaml:"meta"`
+	Sha256       yaml.RawMessage   `yaml:"sha256"`
+	SourceSha256 string            `yaml:"sourceSha256"`
 }
 
 func Parse(data []byte) (*Package, error) {
@@ -273,7 +274,7 @@ func shapeVersion(msg yaml.RawMessage) (VersionEntry, error) {
 	if err := yaml.UnmarshalWithOptions(msg, &raw, yaml.Strict()); err != nil {
 		return VersionEntry{}, err
 	}
-	entry := VersionEntry{Version: raw.Version, SourceSha256: raw.SourceSha256}
+	entry := VersionEntry{Version: raw.Version, Meta: raw.Meta, SourceSha256: raw.SourceSha256}
 	if len(raw.Sha256) > 0 {
 		if err := yaml.Unmarshal(raw.Sha256, &entry.Sha256); err != nil {
 			return VersionEntry{}, fmt.Errorf("sha256: must be a per-platform map: %w", err)

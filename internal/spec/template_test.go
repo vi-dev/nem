@@ -118,3 +118,52 @@ func TestExpandActionPaths(t *testing.T) {
 		t.Fatal("want error for unknown template field")
 	}
 }
+
+func TestVersionHelpers(t *testing.T) {
+	p := valid()
+	p.Artifact.URL = "https://x/{{versionMajor .Version}}/{{versionMajorMinor .Version}}/julia-{{.Version}}.tar.gz"
+	got, err := p.ArtifactURL("1.12.1", Platform{"linux", "amd64"})
+	if err != nil {
+		t.Fatalf("ArtifactURL: %v", err)
+	}
+	if got != "https://x/1/1.12/julia-1.12.1.tar.gz" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestVersionHelpersShortInput(t *testing.T) {
+	p := valid()
+	p.Artifact.URL = "https://x/{{versionMajorMinor .Version}}"
+	got, err := p.ArtifactURL("7", Platform{"linux", "amd64"})
+	if err != nil {
+		t.Fatalf("ArtifactURL: %v", err)
+	}
+	if got != "https://x/7" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestArtifactURLMeta(t *testing.T) {
+	p := valid()
+	p.Artifact.URL = "https://x/{{.Meta.date}}/py-{{.Version}}.tar.gz"
+	p.Versions = []VersionEntry{{
+		Version: "3.14.7",
+		Meta:    map[string]string{"date": "20260814"},
+		Sha256:  map[string]string{"darwin/arm64": "a"},
+	}}
+	got, err := p.ArtifactURL("3.14.7", Platform{"darwin", "arm64"})
+	if err != nil {
+		t.Fatalf("ArtifactURL: %v", err)
+	}
+	if got != "https://x/20260814/py-3.14.7.tar.gz" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestArtifactURLMetaMissingKey(t *testing.T) {
+	p := valid()
+	p.Artifact.URL = "https://x/{{.Meta.date}}/py-{{.Version}}.tar.gz"
+	if _, err := p.ArtifactURL("v1.0.0", Platform{"darwin", "arm64"}); err == nil {
+		t.Fatal("want error when version has no meta for template key")
+	}
+}

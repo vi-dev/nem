@@ -2,6 +2,8 @@ package spec
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/goccy/go-yaml"
@@ -83,11 +85,18 @@ func locateVersions(f *ast.File) (*ast.SequenceNode, error) {
 
 func renderVersionEntry(e VersionEntry) string {
 	var b strings.Builder
-	if len(e.Sha256) == 0 && e.SourceSha256 == "" {
+	if len(e.Meta) == 0 && len(e.Sha256) == 0 && e.SourceSha256 == "" {
 		fmt.Fprintf(&b, "  - %s\n", e.Version)
 		return b.String()
 	}
 	fmt.Fprintf(&b, "  - version: %s\n", e.Version)
+	if len(e.Meta) > 0 {
+		pairs := make([]string, 0, len(e.Meta))
+		for _, k := range slices.Sorted(maps.Keys(e.Meta)) {
+			pairs = append(pairs, fmt.Sprintf("%s: %q", k, e.Meta[k]))
+		}
+		fmt.Fprintf(&b, "    meta: {%s}\n", strings.Join(pairs, ", "))
+	}
 	if e.SourceSha256 != "" {
 		fmt.Fprintf(&b, "    sourceSha256: %q\n", e.SourceSha256)
 	}

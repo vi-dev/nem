@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 
 	"golang.org/x/sync/errgroup"
 
@@ -71,6 +72,7 @@ func Run(ctx context.Context, target string, opts Options, console *report.Conso
 	}
 
 	var targets []string
+	var metas map[string]map[string]string
 	if opts.Version != "" {
 		if pkg.HasEqualVersion(opts.Version) {
 			console.Success("%s %s already present", pkg.Name, opts.Version)
@@ -78,8 +80,13 @@ func Run(ctx context.Context, target string, opts Options, console *report.Conso
 			return emit()
 		}
 		targets = []string{opts.Version}
+		meta, err := discoverMetaFor(ctx, pkg, opts.Version)
+		if err != nil {
+			return err
+		}
+		metas = map[string]map[string]string{opts.Version: meta}
 	} else {
-		if targets, err = candidateVersions(ctx, pkg, opts.Backfill); err != nil {
+		if targets, metas, err = candidateVersions(ctx, pkg, opts.Backfill); err != nil {
 			return err
 		}
 		if len(targets) == 0 {
@@ -89,7 +96,7 @@ func Run(ctx context.Context, target string, opts Options, console *report.Conso
 		}
 	}
 
-	added, head, err := apply(ctx, path, data, pkg, targets, console)
+	added, head, err := apply(ctx, path, data, pkg, targets, metas, console)
 	if err != nil {
 		return err
 	}
@@ -161,7 +168,7 @@ func sweepOne(ctx context.Context, path string, backfill int, console *report.Co
 	if err := spec.ValidateEditable(data); err != nil {
 		return fail(err)
 	}
-	targets, err := candidateVersions(ctx, pkg, backfill)
+	targets, metas, err := candidateVersions(ctx, pkg, backfill)
 	if err != nil {
 		return fail(err)
 	}
@@ -170,7 +177,7 @@ func sweepOne(ctx context.Context, path string, backfill int, console *report.Co
 		row.Head = current
 		return row
 	}
-	added, head, err := apply(ctx, path, data, pkg, targets, console)
+	added, head, err := apply(ctx, path, data, pkg, targets, metas, console)
 	if err != nil {
 		return fail(err)
 	}
@@ -202,13 +209,13 @@ func displayVersion(v string) string {
 	return v
 }
 
-func apply(ctx context.Context, path string, data []byte, pkg *spec.Package, targets []string, console *report.Console) ([]string, string, error) {
+func apply(ctx context.Context, path string, data []byte, pkg *spec.Package, targets []string, metas map[string]map[string]string, console *report.Console) ([]string, string, error) {
 	edited := data
 	var added []string
 	var lastErr error
 	notFound, sourceBackfill := false, false
 	for _, target := range targets {
-		entry, err := buildEntry(ctx, pkg, target, console)
+		entry, err := buildEntry(ctx, pkg, target, metas[target], console)
 		if err != nil {
 			lastErr = err
 			if _, ok := errors.AsType[*fetch.ArtifactNotFoundError](err); ok {
@@ -279,17 +286,17 @@ func printResult(console *report.Console, name, current, head string, added []st
 	}
 }
 
-func candidateVersions(ctx context.Context, pkg *spec.Package, backfill int) ([]string, error) {
+func candidateVersions(ctx context.Context, pkg *spec.Package, backfill int) ([]string, map[string]map[string]string, error) {
 	discovered, err := listVersions(ctx, pkg)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	seen := map[string]bool{}
+	metas := map[string]map[string]string{}
 	var all []string
 	for _, v := range discovered {
-		if !seen[v] {
-			seen[v] = true
-			all = append(all, v)
+		if _, ok := metas[v.Version]; !ok {
+			metas[v.Version] = v.Meta
+			all = append(all, v.Version)
 		}
 	}
 	sort.Slice(all, func(i, j int) bool { return spec.CompareVersions(all[i], all[j]) > 0 })
@@ -310,7 +317,45 @@ func candidateVersions(ctx context.Context, pkg *spec.Package, backfill int) ([]
 		out = append(out, v)
 	}
 	sort.Slice(out, func(i, j int) bool { return spec.CompareVersions(out[i], out[j]) < 0 })
-	return out, nil
+	return out, metas, nil
+}
+
+// templatesUseMeta reports whether any of the package's remote references
+// expand per-version discovery metadata.
+func templatesUseMeta(pkg *spec.Package) bool {
+	if strings.Contains(pkg.Artifact.URL, ".Meta") {
+		return true
+	}
+	if g := pkg.Artifact.GitHub; g != nil && strings.Contains(g.Asset, ".Meta") {
+		return true
+	}
+	return pkg.Build != nil && strings.Contains(pkg.Build.Source.URL, ".Meta")
+}
+
+func discoverMetaFor(ctx context.Context, pkg *spec.Package, version string) (map[string]string, error) {
+	if !templatesUseMeta(pkg) {
+		return nil, nil
+	}
+	discovered, err := listVersions(ctx, pkg)
+	if err != nil {
+		return nil, err
+	}
+	for _, v := range discovered {
+		if v.Version == version {
+			return v.Meta, nil
+		}
+	}
+	return nil, nil
+}
+
+// withMeta returns a package whose head version carries the given metadata.
+func withMeta(pkg *spec.Package, version string, meta map[string]string) *spec.Package {
+	if len(meta) == 0 {
+		return pkg
+	}
+	p := *pkg
+	p.Versions = append([]spec.VersionEntry{{Version: version, Meta: meta}}, pkg.Versions...)
+	return &p
 }
 
 func insertPos(data []byte, version string) (int, error) {
@@ -326,12 +371,13 @@ func insertPos(data []byte, version string) (int, error) {
 	return len(pkg.Versions), nil
 }
 
-func buildEntry(ctx context.Context, pkg *spec.Package, target string, console *report.Console) (spec.VersionEntry, error) {
+func buildEntry(ctx context.Context, pkg *spec.Package, target string, meta map[string]string, console *report.Console) (spec.VersionEntry, error) {
+	pkg = withMeta(pkg, target, meta)
 	if pkg.Artifact.OCI != "" {
-		return buildOCIEntry(ctx, pkg, target, console)
+		return buildOCIEntry(ctx, pkg, target, meta, console)
 	}
 
-	e := spec.VersionEntry{Version: target}
+	e := spec.VersionEntry{Version: target, Meta: meta}
 	platforms := pkg.SupportedBy()
 
 	sums := make([]string, len(platforms))
@@ -344,8 +390,8 @@ func buildEntry(ctx context.Context, pkg *spec.Package, target string, console *
 			}
 			subject := pkg.Name + " " + target + " " + plat.String()
 			task := console.Task("Hashing " + subject)
-			meta := fetch.Meta{Name: pkg.Name, Version: target, Platform: plat}
-			sum, err := digestURL(gctx, netx.Client(), url, meta, task)
+			fmeta := fetch.Meta{Name: pkg.Name, Version: target, Platform: plat}
+			sum, err := digestURL(gctx, netx.Client(), url, fmeta, task)
 			if err != nil {
 				task.Fail("Download failed for " + subject)
 				return err
@@ -365,8 +411,8 @@ func buildEntry(ctx context.Context, pkg *spec.Package, target string, console *
 	return e, nil
 }
 
-func buildOCIEntry(ctx context.Context, pkg *spec.Package, target string, console *report.Console) (spec.VersionEntry, error) {
-	e := spec.VersionEntry{Version: target}
+func buildOCIEntry(ctx context.Context, pkg *spec.Package, target string, meta map[string]string, console *report.Console) (spec.VersionEntry, error) {
+	e := spec.VersionEntry{Version: target, Meta: meta}
 	if pkg.Build == nil {
 		return e, nil
 	}
@@ -376,8 +422,8 @@ func buildOCIEntry(ctx context.Context, pkg *spec.Package, target string, consol
 	}
 	subject := pkg.Name + " " + target + " source"
 	task := console.Task("Hashing " + subject)
-	meta := fetch.Meta{Name: pkg.Name, Version: target, Platform: spec.Current()}
-	sum, err := digestURL(ctx, netx.Client(), url, meta, task)
+	fmeta := fetch.Meta{Name: pkg.Name, Version: target, Platform: spec.Current()}
+	sum, err := digestURL(ctx, netx.Client(), url, fmeta, task)
 	if err != nil {
 		task.Fail("Download failed for " + subject)
 

@@ -14,6 +14,8 @@ var CompatRE = regexp.MustCompile(`^\d+(\.\d+)*$`)
 
 var TagRE = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$`)
 
+var metaKeyRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
+
 func (p *Package) SupportedBy() []Platform {
 	if len(p.Platforms) == 0 {
 		return SupportedPlatforms
@@ -96,6 +98,14 @@ func (p *Package) Validate() error {
 		}
 		if !TagRE.MatchString(v.Version) {
 			return fmt.Errorf("versions[%d] (%s): version is not a valid oci tag (it names the package's archive tag)", i, v.Version)
+		}
+		for k, val := range v.Meta {
+			if !metaKeyRE.MatchString(k) {
+				return fmt.Errorf("versions[%d] (%s): invalid meta key %q", i, v.Version, k)
+			}
+			if val == "" {
+				return fmt.Errorf("versions[%d] (%s): meta %s must not be empty", i, v.Version, k)
+			}
 		}
 		if v.Sha256 == nil {
 			if p.Artifact.OCI == "" {

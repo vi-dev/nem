@@ -34,7 +34,7 @@ func TestHTTPVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"1.23.0", "1.24.3"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+	if len(got) != len(want) || got[0].Version != want[0] || got[1].Version != want[1] {
 		t.Fatalf("versions = %v, want %v", got, want)
 	}
 }
@@ -53,7 +53,7 @@ func TestHTTPVersionsFullMatchWithoutGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"9.1", "9.2"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+	if len(got) != len(want) || got[0].Version != want[0] || got[1].Version != want[1] {
 		t.Fatalf("versions = %v, want %v", got, want)
 	}
 }
@@ -71,7 +71,7 @@ func TestListDispatchesHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0] != "3.1.0" {
+	if len(got) != 1 || got[0].Version != "3.1.0" {
 		t.Fatalf("versions = %v, want [3.1.0]", got)
 	}
 }
@@ -102,5 +102,33 @@ func TestHTTPVersionsBodyTooLarge(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("err = %v, want size-cap error", err)
+	}
+}
+
+func TestHTTPVersionsNamedCaptures(t *testing.T) {
+	page := `
+<a href="cpython-3.14.6+20260705-x86_64.tar.gz">x</a>
+<a href="cpython-3.14.7+20260814-x86_64.tar.gz">x</a>
+<a href="cpython-3.14.7+20260814-aarch64.tar.gz">x</a>`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, page)
+	}))
+	defer srv.Close()
+
+	got, err := httpVersions(context.Background(), srv.Client(), &spec.HTTPDiscovery{
+		URL:    srv.URL,
+		Filter: `cpython-(?P<version>\d+\.\d+\.\d+)\+(?P<date>\d+)-`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d versions, want 2: %v", len(got), got)
+	}
+	if got[0].Version != "3.14.6" || got[0].Meta["date"] != "20260705" {
+		t.Errorf("got[0] = %+v", got[0])
+	}
+	if got[1].Version != "3.14.7" || got[1].Meta["date"] != "20260814" {
+		t.Errorf("got[1] = %+v", got[1])
 	}
 }
