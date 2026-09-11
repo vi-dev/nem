@@ -78,11 +78,11 @@ func splitEntryPath(name string, strip int) (parts []string, relPath string, ok 
 		strip = 0
 	}
 	for p := range strings.SplitSeq(name, "/") {
-		if p != "" {
+		if p != "" && p != "." {
 			parts = append(parts, p)
 		}
 	}
-	if strip >= len(parts) {
+	if len(parts) == 0 || strip >= len(parts) {
 		return parts, "", false
 	}
 	return parts, filepath.FromSlash(strings.Join(parts[strip:], "/")), true

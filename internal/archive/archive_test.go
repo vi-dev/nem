@@ -671,3 +671,33 @@ func TestExtractUnrecognizedFormatErrors(t *testing.T) {
 		t.Fatalf("error = %v, want unrecognized-format error", err)
 	}
 }
+
+func TestExtractTarDotPrefixedEntries(t *testing.T) {
+	data := buildTar(t, []tarEntry{
+		{name: "./", typeflag: tar.TypeDir, mode: 0o755},
+		{name: "./crystal-1.0/", typeflag: tar.TypeDir, mode: 0o755},
+		{name: "./crystal-1.0/bin/", typeflag: tar.TypeDir, mode: 0o755},
+		{name: "./crystal-1.0/bin/crystal", content: []byte("bin"), mode: 0o755},
+		{name: "./crystal-1.0/bin/shards", typeflag: tar.TypeSymlink, linkname: "crystal"},
+	})
+	dest, _, err := extractBytes(t, data, archive.Options{Strip: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustFile(t, filepath.Join(dest, "bin", "crystal"), "bin")
+	if _, err := os.Lstat(filepath.Join(dest, "bin", "shards")); err != nil {
+		t.Fatalf("symlink missing: %v", err)
+	}
+}
+
+func TestExtractZipDotPrefixedEntries(t *testing.T) {
+	data := buildZip(t, []zipEntry{
+		{name: "./tool-1.0/", isDir: true},
+		{name: "./tool-1.0/tool", content: []byte("bin"), mode: 0o755},
+	})
+	dest, _, err := extractBytes(t, data, archive.Options{Strip: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustFile(t, filepath.Join(dest, "tool"), "bin")
+}
