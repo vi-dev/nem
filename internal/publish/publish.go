@@ -46,7 +46,9 @@ type pkgEntry struct {
 	Version     string
 }
 
-func Publish(ctx context.Context, dir, ref string, opts Options, r report.Reporter) error {
+func Publish(ctx context.Context, dir, ref string, opts Options) error {
+	r := report.FromContext(ctx)
+
 	if err := ocix.WithoutTagOrDigest(ref); err != nil {
 		return err
 	}
@@ -79,7 +81,7 @@ func Publish(ctx context.Context, dir, ref string, opts Options, r report.Report
 		return fmt.Errorf("push empty config: %w", err)
 	}
 
-	idxEntries, pushed, skipped, err := pushPackages(ctx, target, entries, opts.Force, r)
+	idxEntries, pushed, skipped, err := pushPackages(ctx, target, entries, opts.Force)
 	if err != nil {
 		return err
 	}
@@ -163,7 +165,7 @@ func readEntry(path string) (pkgEntry, error) {
 	return pkgEntry{Bytes: data, Name: pkg.Name, Description: pkg.Description, Version: version}, nil
 }
 
-func pushPackages(ctx context.Context, target oras.Target, entries []pkgEntry, force bool, r report.Reporter) ([]ocix.CatalogIndexEntry, int, int, error) {
+func pushPackages(ctx context.Context, target oras.Target, entries []pkgEntry, force bool) ([]ocix.CatalogIndexEntry, int, int, error) {
 	idxEntries := make([]ocix.CatalogIndexEntry, len(entries))
 	var pushed, skipped atomic.Int64
 
@@ -175,7 +177,7 @@ func pushPackages(ctx context.Context, target oras.Target, entries []pkgEntry, f
 			if err := gctx.Err(); err != nil {
 				return err
 			}
-			entry, wasPushed, err := pushOne(gctx, target, e, force, r)
+			entry, wasPushed, err := pushOne(gctx, target, e, force)
 			if err != nil {
 				return err
 			}
@@ -194,7 +196,9 @@ func pushPackages(ctx context.Context, target oras.Target, entries []pkgEntry, f
 	return idxEntries, int(pushed.Load()), int(skipped.Load()), nil
 }
 
-func pushOne(ctx context.Context, target oras.Target, e pkgEntry, force bool, r report.Reporter) (ocix.CatalogIndexEntry, bool, error) {
+func pushOne(ctx context.Context, target oras.Target, e pkgEntry, force bool) (ocix.CatalogIndexEntry, bool, error) {
+	r := report.FromContext(ctx)
+
 	_, desc, err := ocix.PackageManifest(e.Bytes)
 	if err != nil {
 		return ocix.CatalogIndexEntry{}, false, fmt.Errorf("compute manifest descriptor for %s: %w", e.Name, err)

@@ -1,34 +1,11 @@
 package report
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
 )
-
-type Reporter interface {
-	Info(format string, a ...any)
-	Warn(format string, a ...any)
-	Debug(format string, a ...any)
-	Task(label string) Task
-}
-
-type Unit int
-
-const (
-	Items Unit = iota
-	Bytes
-)
-
-type Task interface {
-	Segment(segment string)
-	Progress(done, total int64, unit Unit)
-	Done(outcome string)
-	Fail(outcome string)
-	Discard()
-}
-
-var _ Reporter = (*Console)(nil)
 
 type task struct {
 	console *Console
@@ -106,13 +83,84 @@ func (t *task) markCompleted() bool {
 	return true
 }
 
-func FormatDuration(d time.Duration) string {
-	if d < time.Second {
+const autoElapsedAfter = 10 * time.Second
+
+func (t *task) renderLine(now time.Time, width int, colored bool) string {
+	return formatTaskLine(t.label, t.trailingText(now), width, colored)
+}
+
+func (t *task) trailingText(now time.Time) string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.segment == "" {
 		return ""
 	}
-	d = d.Round(time.Second)
-	if d < time.Minute {
-		return fmt.Sprintf(" (%ds)", int(d.Seconds()))
+	if p := progressText(t.done, t.total, t.unit); p != "" {
+		return t.segment + " " + p
 	}
-	return fmt.Sprintf(" (%dm%02ds)", int(d.Minutes()), int(d.Seconds())%60)
+	if elapsed := now.Sub(t.segmentStart); elapsed >= autoElapsedAfter {
+		return t.segment + FormatDuration(elapsed)
+	}
+	return t.segment
+}
+
+func progressText(done, total int64, unit Unit) string {
+	switch {
+	case unit == Items && total > 0:
+		return fmt.Sprintf("%d/%d", done, total)
+	case unit == Items && total < 0:
+		return fmt.Sprintf("%d", done)
+	case unit == Bytes && total > 0:
+		return fmt.Sprintf("%d%%", int(float64(done)/float64(total)*100))
+	case unit == Bytes && total < 0:
+		return FormatBytes(done)
+	default:
+		return ""
+	}
+}
+
+func formatTaskLine(label, trailing string, width int, colored bool) string {
+	plain := label
+	if trailing != "" {
+		plain += "  " + trailing
+	}
+	truncated := truncateToWidth(plain, width)
+	if !colored || trailing == "" {
+		return truncated
+	}
+	labelLen := len([]rune(label))
+	truncRunes := []rune(truncated)
+	prefixLen := labelLen + 2
+	if prefixLen >= len(truncRunes) {
+		return truncated
+	}
+	return string(truncRunes[:prefixLen]) + ansiDim + string(truncRunes[prefixLen:]) + ansiReset
+}
+
+func truncateToWidth(s string, width int) string {
+	if width <= 0 {
+		width = defaultWidth
+	}
+	r := []rune(s)
+	if len(r) <= width {
+		return s
+	}
+	return string(r[:width])
+}
+
+type TaskLabels struct {
+	Run, Segment, Done, Fail string
+}
+
+type ProgressFunc func(done, total int64, unit Unit)
+
+func RunTask(ctx context.Context, labels TaskLabels, fn func(progress ProgressFunc) error) error {
+	task := FromContext(ctx).Task(labels.Run)
+	task.Segment(labels.Segment)
+	if err := fn(task.Progress); err != nil {
+		task.Fail(labels.Fail)
+		return err
+	}
+	task.Done(labels.Done)
+	return nil
 }

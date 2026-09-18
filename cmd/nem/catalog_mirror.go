@@ -13,7 +13,7 @@ func newCatalogMirrorCmd() *cobra.Command {
 		Short: "Replicate a catalog and its archives to another registry",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			summary, err := mirror.Run(cmd.Context(), mirror.Options{SrcRef: args[0], DstRef: args[1], DryRun: dryRun}, console)
+			summary, err := mirror.Run(cmd.Context(), mirror.Options{SrcRef: args[0], DstRef: args[1], DryRun: dryRun})
 			if err != nil {
 				return err
 			}

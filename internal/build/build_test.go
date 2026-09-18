@@ -46,8 +46,8 @@ func buildFixture(t *testing.T, srcFiles map[string]string, version string, step
 func runBuild(t *testing.T, h home.Home, pkg *spec.Package, opts Options) (Result, string, error) {
 	t.Helper()
 	var b bytes.Buffer
-	res, err := Build(context.Background(), h, nil, nil, pkg, opts,
-		report.New(&b, &b, report.Options{}), &b, &b)
+	ctx := report.NewContext(context.Background(), report.New(&b, &b, report.Options{}))
+	res, err := Build(ctx, h, nil, nil, pkg, opts, &b, &b)
 	return res, b.String(), err
 }
 
@@ -294,8 +294,8 @@ func TestBuildRestampsAlreadyInstalledBuildDep(t *testing.T) {
 	pkg.Build.Source.URL = srv.URL
 
 	var b bytes.Buffer
-	if _, err := Build(context.Background(), h, nil, sources, pkg, Options{Version: "v1.0.0"},
-		report.New(&b, &b, report.Options{}), &b, &b); err != nil {
+	ctx := report.NewContext(context.Background(), report.New(&b, &b, report.Options{}))
+	if _, err := Build(ctx, h, nil, sources, pkg, Options{Version: "v1.0.0"}, &b, &b); err != nil {
 		t.Fatalf("Build: %v\n%s", err, b.String())
 	}
 

@@ -84,7 +84,7 @@ func runSync(cmd *cobra.Command, global bool) error {
 	if len(jobs) == 0 {
 		return nil
 	}
-	return install.Run(cmd.Context(), nemHome, console, jobs)
+	return install.Run(cmd.Context(), nemHome, jobs)
 }
 
 func warnManifestDrift(manifestPath string, lock *project.Lockfile) {

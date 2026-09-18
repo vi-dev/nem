@@ -1,6 +1,8 @@
 package report
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -114,4 +116,44 @@ func TestTaskConcurrentUpdatesRaceClean(t *testing.T) {
 	}
 	wg.Wait()
 	task.Done("Installed go v1.26.5")
+}
+
+func TestRunTaskSetsStatusBeforeFnSoCountRenders(t *testing.T) {
+	c, _, errb := newLiveTest(Options{IsTTY: true, Color: ColorNever})
+	labels := TaskLabels{Run: "Pulling catalog", Segment: "copying", Done: "Pulled catalog", Fail: "Pull failed"}
+
+	err := RunTask(NewContext(context.Background(), c), labels, func(count ProgressFunc) error {
+		count(3, 10, Items)
+		c.repaint()
+		got := errb.String()
+		if !strings.Contains(got, "Pulling catalog") || !strings.Contains(got, "copying 3/10") {
+			t.Fatalf("live line missing label/status/count: %q", got)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("RunTask: %v", err)
+	}
+	if got := errb.String(); !strings.Contains(got, "Pulled catalog") {
+		t.Errorf("missing Done completion line: %q", got)
+	}
+}
+
+func TestRunTaskFailReturnsErrUnchanged(t *testing.T) {
+	c, _, errb := newTest(Options{Color: ColorNever})
+	labels := TaskLabels{Run: "Pushing catalog", Segment: "copying", Done: "Pushed catalog", Fail: "Push failed"}
+	sentinel := errors.New("boom")
+
+	err := RunTask(NewContext(context.Background(), c), labels, func(ProgressFunc) error { return sentinel })
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("RunTask error = %v, want sentinel unchanged", err)
+	}
+
+	got := errb.String()
+	if !strings.Contains(got, "Push failed") {
+		t.Errorf("missing Fail line: %q", got)
+	}
+	if strings.Contains(got, "Pushed catalog") {
+		t.Errorf("unexpected Done line on failure: %q", got)
+	}
 }

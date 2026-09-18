@@ -65,7 +65,8 @@ func TestRunAllJobsInstallReportDiscard(t *testing.T) {
 		jobs[i] = Job{Pkg: copyToolPkg(fmt.Sprintf("tool%d", i)), Version: "v1.0.0", Catalog: "official"}
 	}
 
-	if err := Run(context.Background(), h, report.Discard(), jobs); err != nil {
+	ctx, _ := testx.ReporterContext(context.Background())
+	if err := Run(ctx, h, jobs); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -132,13 +133,13 @@ func TestRunSkipsAlreadyInstalledAcquireNotCalled(t *testing.T) {
 		return f.Name(), nil
 	})
 
-	rep := &testx.Reporter{}
+	ctx, rep := testx.ReporterContext(context.Background())
 	jobs := []Job{
 		{Pkg: installedPkg, Version: "v1.0.0", Catalog: "official"},
 		{Pkg: freshPkg, Version: "v1.0.0", Catalog: "official"},
 	}
 
-	if err := Run(context.Background(), h, rep, jobs); err != nil {
+	if err := Run(ctx, h, jobs); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -169,7 +170,7 @@ func TestRunSkipsAlreadyInstalledAcquireNotCalled(t *testing.T) {
 
 func TestRunFailFastCancelsRestJobs(t *testing.T) {
 	h := testx.Home(t)
-	rep := &testx.Reporter{}
+	ctx, rep := testx.ReporterContext(context.Background())
 
 	const n = 4
 	jobs := make([]Job, n)
@@ -188,7 +189,7 @@ func TestRunFailFastCancelsRestJobs(t *testing.T) {
 		return "", ctx.Err()
 	})
 
-	err := Run(context.Background(), h, rep, jobs)
+	err := Run(ctx, h, jobs)
 	if !errors.Is(err, bootErr) {
 		t.Fatalf("Run error = %v, want wrapping %v", err, bootErr)
 	}
@@ -252,7 +253,7 @@ func TestRunConcurrentRealErrorsAreNotMisclassifiedAsCancelled(t *testing.T) {
 	}
 
 	h := testx.Home(t)
-	rep := &testx.Reporter{}
+	ctx, rep := testx.ReporterContext(context.Background())
 
 	errA := errors.New("checksum mismatch for joba")
 	errB := errors.New("checksum mismatch for jobb")
@@ -278,7 +279,7 @@ func TestRunConcurrentRealErrorsAreNotMisclassifiedAsCancelled(t *testing.T) {
 		{Pkg: copyToolPkg("jobb"), Version: "v1.0.0", Catalog: "official"},
 	}
 
-	err := Run(context.Background(), h, rep, jobs)
+	err := Run(ctx, h, jobs)
 	if !errors.Is(err, errA) && !errors.Is(err, errB) {
 		t.Fatalf("Run error = %v, want either errA or errB", err)
 	}
@@ -303,10 +304,10 @@ func TestRunConcurrentRealErrorsAreNotMisclassifiedAsCancelled(t *testing.T) {
 
 func TestRunReturnsCtxErrorWhenAllJobsCancelledWithoutOwnError(t *testing.T) {
 	h := testx.Home(t)
-	rep := &testx.Reporter{}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	baseCtx, cancel := context.WithCancel(context.Background())
 	cancel()
+	ctx, _ := testx.ReporterContext(baseCtx)
 
 	withAcquire(t, func(context.Context, *spec.Package, string, spec.Platform, fetch.Source, string, report.Task) (string, error) {
 		t.Fatal("acquire must not be called when ctx is already cancelled before Run starts")
@@ -318,7 +319,7 @@ func TestRunReturnsCtxErrorWhenAllJobsCancelledWithoutOwnError(t *testing.T) {
 		{Pkg: copyToolPkg("cancelled-b"), Version: "v1.0.0", Catalog: "official"},
 	}
 
-	err := Run(ctx, h, rep, jobs)
+	err := Run(ctx, h, jobs)
 	if err == nil || !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run error = %v, want context.Canceled", err)
 	}
@@ -332,7 +333,7 @@ func TestRunReturnsCtxErrorWhenAllJobsCancelledWithoutOwnError(t *testing.T) {
 
 func TestRunInstallFailureRemovesArtifact(t *testing.T) {
 	h := testx.Home(t)
-	rep := &testx.Reporter{}
+	ctx, rep := testx.ReporterContext(context.Background())
 
 	pkg := &spec.Package{
 		Name:     "badinstall",
@@ -361,7 +362,7 @@ func TestRunInstallFailureRemovesArtifact(t *testing.T) {
 
 	jobs := []Job{{Pkg: pkg, Version: "v1.0.0", Catalog: "official"}}
 
-	err := Run(context.Background(), h, rep, jobs)
+	err := Run(ctx, h, jobs)
 	if err == nil || !strings.Contains(err.Error(), "escapes staging dir") {
 		t.Fatalf("Run error = %v, want containment error", err)
 	}

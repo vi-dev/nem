@@ -20,7 +20,7 @@ func newCatalogPublishCmd() *cobra.Command {
 			if len(args) == 2 {
 				dir = args[1]
 			}
-			return publish.Publish(cmd.Context(), dir, ref, publish.Options{Tags: tags, DryRun: dryRun, Force: force}, console)
+			return publish.Publish(cmd.Context(), dir, ref, publish.Options{Tags: tags, DryRun: dryRun, Force: force})
 		},
 	}
 	cmd.Flags().StringArrayVar(&tags, "tag", nil, "tag to move to the published index (repeatable; default v2)")

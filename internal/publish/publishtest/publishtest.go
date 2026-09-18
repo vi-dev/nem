@@ -11,7 +11,6 @@ import (
 	"oras.land/oras-go/v2"
 
 	"github.com/vi-dev/nem/internal/publish"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -30,7 +29,7 @@ func PublishCatalog(t testing.TB, target oras.Target, ref string, pkgs map[strin
 
 	restore := publish.SetTargetOpener(func(context.Context, string) (oras.Target, error) { return target, nil })
 	defer restore()
-	if err := publish.Publish(context.Background(), dir, ref, publish.Options{}, report.Discard()); err != nil {
+	if err := publish.Publish(context.Background(), dir, ref, publish.Options{}); err != nil {
 		t.Fatalf("publish test catalog to %s: %v", ref, err)
 	}
 }

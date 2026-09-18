@@ -17,7 +17,8 @@ import (
 	"github.com/vi-dev/nem/internal/spec"
 )
 
-func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledManifest, store *ocix.Store, rep report.Reporter, agg *aggregator) {
+func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledManifest, store *ocix.Store, agg *aggregator) {
+	rep := report.FromContext(ctx)
 	label := fmt.Sprintf("Filling %s", nm.Title)
 	failedOutcome := fmt.Sprintf("Failed %s", nm.Title)
 
@@ -67,7 +68,7 @@ func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledM
 				cancelled = true
 				break
 			}
-			outcome, entry := fillItem(ctx, h, archives, pkg, v.Version, plat, opts.DryRun, rep, task)
+			outcome, entry := fillItem(ctx, h, archives, pkg, v.Version, plat, opts.DryRun, task)
 			if outcome == outcomeCancelled {
 				cancelled = true
 				break
@@ -157,7 +158,8 @@ type batchedManifest struct {
 	heal bool
 }
 
-func fillItem(ctx context.Context, h home.Home, archives oras.Target, pkg *spec.Package, version string, plat spec.Platform, dryRun bool, rep report.Reporter, task report.Task) (itemOutcome, ocispec.Descriptor) {
+func fillItem(ctx context.Context, h home.Home, archives oras.Target, pkg *spec.Package, version string, plat spec.Platform, dryRun bool, task report.Task) (itemOutcome, ocispec.Descriptor) {
+	rep := report.FromContext(ctx)
 	sha, err := pkg.Sha256(version, plat)
 	if err != nil {
 		rep.Warn("%s %s %s: %v", pkg.Name, version, plat, err)
@@ -168,7 +170,7 @@ func fillItem(ctx context.Context, h home.Home, archives oras.Target, pkg *spec.
 	got, err := ocix.ArchiveLayerDigest(ctx, archives, version, plat)
 	switch {
 	case errors.Is(err, ocix.ErrArchiveNotFound):
-		return doFill(ctx, h, archives, pkg, version, plat, sha, dryRun, false, rep, task)
+		return doFill(ctx, h, archives, pkg, version, plat, sha, dryRun, false, task)
 	case err != nil:
 		if report.IsCancellation(err) {
 			return outcomeCancelled, ocispec.Descriptor{}
@@ -178,11 +180,12 @@ func fillItem(ctx context.Context, h home.Home, archives oras.Target, pkg *spec.
 	case got == want:
 		return outcomePresent, ocispec.Descriptor{}
 	default:
-		return doFill(ctx, h, archives, pkg, version, plat, sha, dryRun, true, rep, task)
+		return doFill(ctx, h, archives, pkg, version, plat, sha, dryRun, true, task)
 	}
 }
 
-func doFill(ctx context.Context, h home.Home, archives oras.Target, pkg *spec.Package, version string, plat spec.Platform, sha string, dryRun, heal bool, rep report.Reporter, task report.Task) (itemOutcome, ocispec.Descriptor) {
+func doFill(ctx context.Context, h home.Home, archives oras.Target, pkg *spec.Package, version string, plat spec.Platform, sha string, dryRun, heal bool, task report.Task) (itemOutcome, ocispec.Descriptor) {
+	rep := report.FromContext(ctx)
 	outcome, verb, wouldVerb := outcomeFilled, "filling", "would fill"
 	if heal {
 		outcome, verb, wouldVerb = outcomeHealed, "healing", "would heal"

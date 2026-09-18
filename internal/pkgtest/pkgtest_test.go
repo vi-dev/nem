@@ -82,16 +82,16 @@ func runInstall(t *testing.T, h home.Home, pkg *spec.Package, artifact string) e
 func runInstallOut(t *testing.T, h home.Home, pkg *spec.Package, artifact string) (string, error) {
 	t.Helper()
 	var b bytes.Buffer
-	err := InstallAndRun(context.Background(), h, nil, pkg, "v1", "", artifact,
-		report.New(&b, &b, report.Options{}), &b, &b)
+	ctx := report.NewContext(context.Background(), report.New(&b, &b, report.Options{}))
+	err := InstallAndRun(ctx, h, nil, pkg, "v1", "", artifact, &b, &b)
 	return b.String(), err
 }
 
 func runInstallWithDeps(t *testing.T, h home.Home, deps []build.ResolvedDep, pkg *spec.Package, artifact string) (string, error) {
 	t.Helper()
 	var b bytes.Buffer
-	err := InstallAndRun(context.Background(), h, deps, pkg, "v1", "", artifact,
-		report.New(&b, &b, report.Options{}), &b, &b)
+	ctx := report.NewContext(context.Background(), report.New(&b, &b, report.Options{}))
+	err := InstallAndRun(ctx, h, deps, pkg, "v1", "", artifact, &b, &b)
 	return b.String(), err
 }
 

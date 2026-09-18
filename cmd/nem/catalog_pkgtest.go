@@ -81,7 +81,7 @@ func newCatalogTestCmd() *cobra.Command {
 				}
 				depsResult.Entries = append(depsResult.Entries, e)
 			}
-			deps, err := build.InstallResolvedDeps(cmd.Context(), nemHome, cfg, console, depsResult)
+			deps, err := build.InstallResolvedDeps(cmd.Context(), nemHome, cfg, depsResult)
 			if err != nil {
 				return err
 			}
@@ -97,7 +97,7 @@ func newCatalogTestCmd() *cobra.Command {
 			defer os.Remove(artifact)
 
 			return pkgtest.InstallAndRun(cmd.Context(), nemHome, deps, pkg, resolved,
-				root.Catalog, artifact, console, cmd.OutOrStdout(), cmd.ErrOrStderr())
+				root.Catalog, artifact, cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	}
 	cmd.Flags().StringVar(&version, "version", "", "version to test (default: the catalog's latest)")

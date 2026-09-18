@@ -11,7 +11,6 @@ import (
 
 	"github.com/vi-dev/nem/internal/build"
 	"github.com/vi-dev/nem/internal/home"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -31,7 +30,7 @@ func TestCatalogBuildSkipsTestHookWhenManifestDeclaresNoTests(t *testing.T) {
 	orig := runPkgTest
 	runPkgTest = func(ctx context.Context, h home.Home, deps []build.ResolvedDep,
 		pkg *spec.Package, version, catalogName, artifactPath string,
-		rep report.Reporter, stdout, stderr io.Writer) error {
+		stdout, stderr io.Writer) error {
 		called = true
 		return nil
 	}

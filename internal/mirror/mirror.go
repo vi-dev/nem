@@ -68,7 +68,7 @@ func SetDstArchivesOpener(f func(catalogRef, name string) (oras.Target, error)) 
 	return func() { openDstArchives = prev }
 }
 
-func Run(ctx context.Context, opts Options, rep report.Reporter) (Summary, error) {
+func Run(ctx context.Context, opts Options) (Summary, error) {
 	if err := ocix.WithTagOrDigest(opts.SrcRef); err != nil {
 		return Summary{}, err
 	}
@@ -79,7 +79,7 @@ func Run(ctx context.Context, opts Options, rep report.Reporter) (Summary, error
 		return Summary{}, err
 	}
 
-	store, err := syncCatalog(ctx, opts, rep)
+	store, err := syncCatalog(ctx, opts)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -95,7 +95,7 @@ func Run(ctx context.Context, opts Options, rep report.Reporter) (Summary, error
 			if gctx.Err() != nil {
 				return nil
 			}
-			mirrorPackage(gctx, opts, pkg, store, rep, &agg)
+			mirrorPackage(gctx, opts, pkg, store, &agg)
 			return nil
 		})
 	}
@@ -114,23 +114,23 @@ type aggregator struct {
 	copied, failed atomic.Int64
 }
 
-func syncCatalog(ctx context.Context, opts Options, rep report.Reporter) (*ocix.Store, error) {
-	store, err := pullCatalog(ctx, opts.SrcRef, rep)
+func syncCatalog(ctx context.Context, opts Options) (*ocix.Store, error) {
+	store, err := pullCatalog(ctx, opts.SrcRef)
 	if err != nil {
 		return nil, err
 	}
 	if !opts.DryRun {
-		if err := pushCatalog(ctx, store, opts.DstRef, rep); err != nil {
+		if err := pushCatalog(ctx, store, opts.DstRef); err != nil {
 			return nil, err
 		}
 	}
 	return store, nil
 }
 
-func pullCatalog(ctx context.Context, srcRef string, rep report.Reporter) (*ocix.Store, error) {
+func pullCatalog(ctx context.Context, srcRef string) (*ocix.Store, error) {
 	labels := report.TaskLabels{Run: "Pulling catalog", Segment: "copying", Done: "Pulled catalog", Fail: "Pull failed"}
 	var store *ocix.Store
-	err := report.RunTask(rep, labels, func(progress report.ProgressFunc) error {
+	err := report.RunTask(ctx, labels, func(progress report.ProgressFunc) error {
 		src, srcTag, err := openSrcCatalog(srcRef)
 		if err != nil {
 			return err
@@ -147,9 +147,9 @@ func pullCatalog(ctx context.Context, srcRef string, rep report.Reporter) (*ocix
 	return store, nil
 }
 
-func pushCatalog(ctx context.Context, store *ocix.Store, dstRef string, rep report.Reporter) error {
+func pushCatalog(ctx context.Context, store *ocix.Store, dstRef string) error {
 	labels := report.TaskLabels{Run: "Pushing catalog", Segment: "copying", Done: "Pushed catalog", Fail: "Push failed"}
-	return report.RunTask(rep, labels, func(progress report.ProgressFunc) error {
+	return report.RunTask(ctx, labels, func(progress report.ProgressFunc) error {
 		dst, dstTag, err := openDstCatalog(dstRef)
 		if err != nil {
 			return err

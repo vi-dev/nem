@@ -143,7 +143,7 @@ func runUpdate(cmd *cobra.Command, args []string, global, dryRun bool) error {
 		return nil
 	}
 
-	if err := install.Run(cmd.Context(), nemHome, console, currentPlatformJobs(cfg, result)); err != nil {
+	if err := install.Run(cmd.Context(), nemHome, currentPlatformJobs(cfg, result)); err != nil {
 		return err
 	}
 

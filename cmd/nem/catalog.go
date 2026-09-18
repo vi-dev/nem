@@ -237,7 +237,7 @@ func syncOne(ctx context.Context, e config.CatalogEntry) error {
 		Done:    "Synced catalog " + e.Name,
 		Fail:    "Sync failed",
 	}
-	return report.RunTask(console, labels, func(count report.ProgressFunc) error {
+	return report.RunTask(ctx, labels, func(count report.ProgressFunc) error {
 		_, err := syncCatalog(ctx, e.Ref, store, count)
 		return err
 	})

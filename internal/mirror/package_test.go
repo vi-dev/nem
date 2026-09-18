@@ -40,8 +40,8 @@ func TestMirrorVersionDryRunCopiesNothing(t *testing.T) {
 	ocixtest.PushFakeArchive(t, src, "1.0.0", map[string][]byte{"linux/amd64": []byte("payload")})
 	dst := memory.New()
 
-	rep := &testx.Reporter{}
-	got := mirrorVersion(ctx, src, dst, "go", "1.0.0", false, true, rep, rep.Task("test"))
+	ctx, rep := testx.ReporterContext(ctx)
+	got := mirrorVersion(ctx, src, dst, "go", "1.0.0", false, true, rep.Task("test"))
 	if got != outcomeCopied {
 		t.Fatalf("outcome = %v, want outcomeCopied (would-copy still counts)", got)
 	}

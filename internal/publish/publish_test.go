@@ -19,7 +19,7 @@ import (
 	"oras.land/oras-go/v2/errdef"
 
 	"github.com/vi-dev/nem/internal/ocix"
-	"github.com/vi-dev/nem/internal/report"
+	"github.com/vi-dev/nem/internal/testx"
 )
 
 func swapOpenTarget(f func(context.Context, string) (oras.Target, error)) (restore func()) {
@@ -95,14 +95,14 @@ func (c *countingTarget) existsCount(digest string) int {
 }
 
 func TestPublishHappyPathAndIdempotency(t *testing.T) {
-	ctx := context.Background()
+	ctx, _ := testx.ReporterContext(context.Background())
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg, "kubectl": pkgNamed("kubectl")})
 	store, storeDir := newStore(t)
 
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
 	defer swapNow(func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) })()
 
-	if err := Publish(ctx, dir, "example.com/cat", Options{Tags: []string{"v2"}}, report.Discard()); err != nil {
+	if err := Publish(ctx, dir, "example.com/cat", Options{Tags: []string{"v2"}}); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 
@@ -111,7 +111,7 @@ func TestPublishHappyPathAndIdempotency(t *testing.T) {
 
 	blobsAfterFirst := countBlobs(t, storeDir)
 
-	if err := Publish(ctx, dir, "example.com/cat", Options{Tags: []string{"v2"}}, report.Discard()); err != nil {
+	if err := Publish(ctx, dir, "example.com/cat", Options{Tags: []string{"v2"}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -123,34 +123,34 @@ func TestPublishHappyPathAndIdempotency(t *testing.T) {
 }
 
 func TestPublishLintGateBlocksAllWrites(t *testing.T) {
-	ctx := context.Background()
+	ctx, _ := testx.ReporterContext(context.Background())
 	dir := writeCatalog(t, map[string]string{"go": pkgWithEnv("PATH", "x")})
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) {
 		t.Fatal("openTarget must not be called when the lint gate blocks a publish")
 		return nil, nil
 	})()
 
-	err := Publish(ctx, dir, "example.com/cat", Options{}, report.Discard())
+	err := Publish(ctx, dir, "example.com/cat", Options{})
 	if err == nil {
 		t.Fatal("expected lint gate to fail publish")
 	}
 }
 
 func TestPublishDryRunWritesNothing(t *testing.T) {
-	ctx := context.Background()
+	ctx, _ := testx.ReporterContext(context.Background())
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) {
 		t.Fatal("openTarget must not be called during a dry run")
 		return nil, nil
 	})()
 
-	if err := Publish(ctx, dir, "example.com/cat", Options{DryRun: true}, report.Discard()); err != nil {
+	if err := Publish(ctx, dir, "example.com/cat", Options{DryRun: true}); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestPublishForceDisablesSkip(t *testing.T) {
-	ctx := context.Background()
+	ctx, _ := testx.ReporterContext(context.Background())
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
 	store, _ := newStore(t)
 	ct := newCountingTarget(store)
@@ -158,14 +158,14 @@ func TestPublishForceDisablesSkip(t *testing.T) {
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return ct, nil })()
 	defer swapNow(func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) })()
 
-	if err := Publish(ctx, dir, "example.com/cat", Options{}, report.Discard()); err != nil {
+	if err := Publish(ctx, dir, "example.com/cat", Options{}); err != nil {
 		t.Fatalf("initial publish: %v", err)
 	}
 
 	layerDigest := content.NewDescriptorFromBytes(ocix.MediaTypePkg, []byte(validGoPkg)).Digest.String()
 
 	beforeSkip := ct.existsCount(layerDigest)
-	if err := Publish(ctx, dir, "example.com/cat", Options{}, report.Discard()); err != nil {
+	if err := Publish(ctx, dir, "example.com/cat", Options{}); err != nil {
 		t.Fatalf("skip-unchanged publish: %v", err)
 	}
 	if got := ct.existsCount(layerDigest) - beforeSkip; got != 0 {
@@ -173,7 +173,7 @@ func TestPublishForceDisablesSkip(t *testing.T) {
 	}
 
 	beforeForce := ct.existsCount(layerDigest)
-	if err := Publish(ctx, dir, "example.com/cat", Options{Force: true}, report.Discard()); err != nil {
+	if err := Publish(ctx, dir, "example.com/cat", Options{Force: true}); err != nil {
 		t.Fatalf("force publish: %v", err)
 	}
 	if got := ct.existsCount(layerDigest) - beforeForce; got != 1 {
@@ -182,14 +182,14 @@ func TestPublishForceDisablesSkip(t *testing.T) {
 }
 
 func TestPublishDefaultsTagsToV2(t *testing.T) {
-	ctx := context.Background()
+	ctx, _ := testx.ReporterContext(context.Background())
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
 	store, _ := newStore(t)
 
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
 	defer swapNow(func() time.Time { return time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC) })()
 
-	if err := Publish(ctx, dir, "example.com/cat", Options{}, report.Discard()); err != nil {
+	if err := Publish(ctx, dir, "example.com/cat", Options{}); err != nil {
 		t.Fatal(err)
 	}
 	assertTagResolves(t, store, "v2")
@@ -197,14 +197,14 @@ func TestPublishDefaultsTagsToV2(t *testing.T) {
 }
 
 func TestPublishRejectsTaggedRef(t *testing.T) {
-	ctx := context.Background()
+	ctx, _ := testx.ReporterContext(context.Background())
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) {
 		t.Fatal("openTarget must not be called for an invalid ref")
 		return nil, nil
 	})()
 
-	err := Publish(ctx, dir, "example.com/cat:v2", Options{}, report.Discard())
+	err := Publish(ctx, dir, "example.com/cat:v2", Options{})
 	if err == nil {
 		t.Fatal("expected ValidateBaseRef to reject a tagged ref")
 	}
@@ -214,26 +214,26 @@ func TestPublishRejectsTaggedRef(t *testing.T) {
 }
 
 func TestPublishSingleFile(t *testing.T) {
-	ctx := context.Background()
+	ctx, _ := testx.ReporterContext(context.Background())
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
 	store, _ := newStore(t)
 
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
 	defer swapNow(func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) })()
 
-	if err := Publish(ctx, filepath.Join(dir, "pkgs", "go", "pkg.yaml"), "example.com/cat", Options{}, report.Discard()); err != nil {
+	if err := Publish(ctx, filepath.Join(dir, "pkgs", "go", "pkg.yaml"), "example.com/cat", Options{}); err != nil {
 		t.Fatal(err)
 	}
 	assertTagResolves(t, store, "v2")
 }
 
 func TestPublishTargetOpenFailureLeavesTagsUntouched(t *testing.T) {
-	ctx := context.Background()
+	ctx, _ := testx.ReporterContext(context.Background())
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
 	wantErr := errFailingOpen{}
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return nil, wantErr })()
 
-	if err := Publish(ctx, dir, "example.com/cat", Options{}, report.Discard()); err == nil {
+	if err := Publish(ctx, dir, "example.com/cat", Options{}); err == nil {
 		t.Fatal("expected the target-open failure to surface")
 	}
 }
@@ -254,14 +254,14 @@ func (f failOnManifestPushTarget) Push(ctx context.Context, d ocispec.Descriptor
 }
 
 func TestPublishMidPushFailureLeavesTagsUntouched(t *testing.T) {
-	ctx := context.Background()
+	ctx, _ := testx.ReporterContext(context.Background())
 	store, _ := newStore(t)
 
 	dirA := writeCatalog(t, map[string]string{"go": validGoPkg, "kubectl": pkgNamed("kubectl")})
 	func() {
 		defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
 		defer swapNow(func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) })()
-		if err := Publish(ctx, dirA, "example.com/cat", Options{}, report.Discard()); err != nil {
+		if err := Publish(ctx, dirA, "example.com/cat", Options{}); err != nil {
 			t.Fatalf("initial publish: %v", err)
 		}
 	}()
@@ -283,7 +283,7 @@ func TestPublishMidPushFailureLeavesTagsUntouched(t *testing.T) {
 
 	defer swapNow(func() time.Time { return time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC) })()
 
-	if err := Publish(ctx, dirB, "example.com/cat", Options{}, report.Discard()); err == nil {
+	if err := Publish(ctx, dirB, "example.com/cat", Options{}); err == nil {
 		t.Fatal("expected the mid-push manifest failure to surface")
 	}
 

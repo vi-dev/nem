@@ -57,6 +57,7 @@ func newRoot() *cobra.Command {
 				settings[host] = netx.HostSettings{CA: e.CA, PlainHTTP: e.PlainHTTP, Insecure: e.Insecure}
 			}
 			netx.Set(settings)
+			cmd.SetContext(report.NewContext(cmd.Context(), console))
 			return nil
 		},
 	}

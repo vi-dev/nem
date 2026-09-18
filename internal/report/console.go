@@ -150,6 +150,24 @@ func (c *Console) Prompt(format string, a ...any) {
 	c.narrate(func() { fmt.Fprintf(c.err, format+"\n", a...) })
 }
 
+func (c *Console) Out() io.Writer { return &guardedWriter{console: c, w: c.out} }
+
+func (c *Console) ErrOut() io.Writer { return &guardedWriter{console: c, w: c.err} }
+
+type guardedWriter struct {
+	console *Console
+	w       io.Writer
+}
+
+func (g *guardedWriter) Write(p []byte) (int, error) {
+	var (
+		n   int
+		err error
+	)
+	g.console.narrate(func() { n, err = g.w.Write(p) })
+	return n, err
+}
+
 func (c *Console) Data(format string, a ...any) {
 	fmt.Fprintf(c.out, format, a...)
 }
@@ -226,4 +244,111 @@ func capitalizeLead(s string) string {
 	}
 	r[0] = unicode.ToUpper(r[0])
 	return string(r)
+}
+
+const (
+	liveTickInterval = 100 * time.Millisecond
+
+	defaultWidth = 80
+)
+
+func (c *Console) liveActive() bool {
+	return c.opts.IsTTY && !c.opts.Quiet
+}
+
+func (c *Console) registerLiveTask(t *task) {
+	c.liveMu.Lock()
+	defer c.liveMu.Unlock()
+	c.liveTasks = append(c.liveTasks, t)
+	if len(c.liveTasks) == 1 {
+		c.startLiveTickerLocked()
+	}
+	c.repaintLocked()
+}
+
+func (c *Console) completeTask(t *task, printCompletion func()) {
+	c.liveMu.Lock()
+	defer c.liveMu.Unlock()
+
+	idx := -1
+	for i, lt := range c.liveTasks {
+		if lt == t {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		printCompletion()
+		return
+	}
+
+	c.clearBlockLocked()
+	printCompletion()
+	c.liveTasks = append(c.liveTasks[:idx], c.liveTasks[idx+1:]...)
+	if len(c.liveTasks) == 0 {
+		c.stopLiveTickerLocked()
+	}
+	c.repaintLocked()
+}
+
+func (c *Console) narrate(print func()) {
+	c.liveMu.Lock()
+	defer c.liveMu.Unlock()
+	if len(c.liveTasks) == 0 {
+		print()
+		return
+	}
+	c.clearBlockLocked()
+	print()
+	c.repaintLocked()
+}
+
+func (c *Console) repaint() {
+	c.liveMu.Lock()
+	defer c.liveMu.Unlock()
+	c.repaintLocked()
+}
+
+func (c *Console) repaintLocked() {
+	if c.liveLines > 0 {
+		fmt.Fprintf(c.err, "\x1b[%dA", c.liveLines)
+	}
+	now := c.now()
+	width := c.width()
+	for _, t := range c.liveTasks {
+		fmt.Fprintf(c.err, "\x1b[2K%s\n", t.renderLine(now, width, c.colored))
+	}
+	c.liveLines = len(c.liveTasks)
+}
+
+func (c *Console) clearBlockLocked() {
+	if c.liveLines == 0 {
+		return
+	}
+	fmt.Fprintf(c.err, "\x1b[%dA\x1b[J", c.liveLines)
+	c.liveLines = 0
+}
+
+func (c *Console) startLiveTickerLocked() {
+	stop := make(chan struct{})
+	c.liveStop = stop
+	go func() {
+		ticker := time.NewTicker(c.tick)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				c.repaint()
+			case <-stop:
+				return
+			}
+		}
+	}()
+}
+
+func (c *Console) stopLiveTickerLocked() {
+	if c.liveStop != nil {
+		close(c.liveStop)
+		c.liveStop = nil
+	}
 }

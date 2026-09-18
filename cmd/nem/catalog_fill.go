@@ -14,7 +14,7 @@ func newCatalogFillCmd() *cobra.Command {
 		Short: "Download a catalog's upstream artifacts and publish them as archives",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			summary, err := fill.Run(cmd.Context(), nemHome, fill.Options{CatalogRef: args[0], Pkgs: pkgs, DryRun: dryRun}, console)
+			summary, err := fill.Run(cmd.Context(), nemHome, fill.Options{CatalogRef: args[0], Pkgs: pkgs, DryRun: dryRun})
 			if err != nil {
 				return err
 			}

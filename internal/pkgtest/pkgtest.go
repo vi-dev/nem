@@ -22,7 +22,8 @@ import (
 
 func InstallAndRun(ctx context.Context, h home.Home, deps []build.ResolvedDep,
 	pkg *spec.Package, version, catalogName, artifactPath string,
-	rep report.Reporter, stdout, stderr io.Writer) (err error) {
+	stdout, stderr io.Writer) (err error) {
+	rep := report.FromContext(ctx)
 
 	plat := spec.Current()
 

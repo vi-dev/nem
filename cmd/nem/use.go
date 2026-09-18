@@ -201,7 +201,7 @@ func autoSyncUnsyncedCatalogs(ctx context.Context, cfg *config.Config, sources [
 			Done:    "Synced catalog " + n.Name,
 			Fail:    "Sync failed",
 		}
-		if err := report.RunTask(console, labels, func(count report.ProgressFunc) error {
+		if err := report.RunTask(ctx, labels, func(count report.ProgressFunc) error {
 			return syncCatalogStore(ctx, e.Ref, store, count)
 		}); err != nil {
 			console.Warn("Could not sync catalog %s: %v", n.Name, err)
@@ -279,7 +279,7 @@ func runUse(cmd *cobra.Command, args []string, global bool) error {
 	}
 	release()
 
-	return install.Run(cmd.Context(), nemHome, console, currentPlatformJobs(cfg, result))
+	return install.Run(cmd.Context(), nemHome, currentPlatformJobs(cfg, result))
 }
 
 func runUnuse(cmd *cobra.Command, args []string, global bool) error {

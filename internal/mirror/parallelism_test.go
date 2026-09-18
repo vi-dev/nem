@@ -67,8 +67,9 @@ func TestRunPackagesFanOutInParallel(t *testing.T) {
 	wireArchivesWithSrcDelay(t, delay, &gauge)
 
 	opts := Options{SrcRef: "example.com/cat:v2", DstRef: "internal.example.com/cat:v2"}
+	ctx, _ := testx.ReporterContext(context.Background())
 	start := time.Now()
-	summary, err := Run(context.Background(), opts, &testx.Reporter{})
+	summary, err := Run(ctx, opts)
 	elapsed := time.Since(start)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -120,11 +121,11 @@ func TestRunTasksRegisterBeforeProbingCompletes(t *testing.T) {
 	var gauge inFlightGauge
 	wireArchivesWithSrcDelay(t, delay, &gauge)
 
-	rep := &testx.Reporter{}
+	ctx, rep := testx.ReporterContext(context.Background())
 	runDone := make(chan struct{})
 	go func() {
 		defer close(runDone)
-		_, _ = Run(context.Background(), Options{SrcRef: "example.com/cat:v2", DstRef: "internal.example.com/cat:v2"}, rep)
+		_, _ = Run(ctx, Options{SrcRef: "example.com/cat:v2", DstRef: "internal.example.com/cat:v2"})
 	}()
 
 	fanOutDeadline := time.After(5 * time.Second)

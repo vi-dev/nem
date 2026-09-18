@@ -24,7 +24,7 @@ type Job struct {
 
 var acquire = fetch.Acquire
 
-func Run(ctx context.Context, h home.Home, rep report.Reporter, jobs []Job) error {
+func Run(ctx context.Context, h home.Home, jobs []Job) error {
 	if err := os.MkdirAll(h.Tmp(), 0o755); err != nil {
 		return fmt.Errorf("create tmp dir: %w", err)
 	}
@@ -33,7 +33,7 @@ func Run(ctx context.Context, h home.Home, rep report.Reporter, jobs []Job) erro
 	g.SetLimit(min(runtime.NumCPU(), 8))
 
 	for _, job := range jobs {
-		g.Go(func() error { return runJob(gctx, h, rep, job) })
+		g.Go(func() error { return runJob(gctx, h, job) })
 	}
 	if err := g.Wait(); err != nil {
 		return err
@@ -41,7 +41,8 @@ func Run(ctx context.Context, h home.Home, rep report.Reporter, jobs []Job) erro
 	return ctx.Err()
 }
 
-func runJob(gctx context.Context, h home.Home, rep report.Reporter, job Job) error {
+func runJob(gctx context.Context, h home.Home, job Job) error {
+	rep := report.FromContext(gctx)
 	name, version := job.Pkg.Name, job.Version
 	if IsInstalled(h, name, version) {
 		return nil

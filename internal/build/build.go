@@ -48,7 +48,8 @@ type Result struct {
 var archivesOpener = ocix.RemoteArchivesRW
 
 func Build(ctx context.Context, h home.Home, cfg *config.Config, sources []catalog.Named, pkg *spec.Package,
-	opts Options, rep report.Reporter, stdout, stderr io.Writer) (Result, error) {
+	opts Options, stdout, stderr io.Writer) (Result, error) {
+	rep := report.FromContext(ctx)
 	if pkg.Build == nil {
 		return Result{}, errors.New("package has no build section")
 	}
@@ -86,7 +87,7 @@ func Build(ctx context.Context, h home.Home, cfg *config.Config, sources []catal
 		return Result{}, err
 	}
 
-	deps, err := ResolveDeps(ctx, h, cfg, sources, rep, pkg, pkg.Build.Deps)
+	deps, err := ResolveDeps(ctx, h, cfg, sources, pkg, pkg.Build.Deps)
 	if err != nil {
 		return Result{}, err
 	}
@@ -165,7 +166,7 @@ func Build(ctx context.Context, h home.Home, cfg *config.Config, sources []catal
 
 	result := Result{OutputDir: final, Version: version, SourceSha256: sha, SourceVerified: verified}
 	if opts.Push != "" {
-		ref, pushed, err := pushBuiltArchive(ctx, archive, pkg.Name, version, opts, rep)
+		ref, pushed, err := pushBuiltArchive(ctx, archive, pkg.Name, version, opts)
 		if err != nil {
 			return Result{}, err
 		}
@@ -181,7 +182,8 @@ func Build(ctx context.Context, h home.Home, cfg *config.Config, sources []catal
 	return result, nil
 }
 
-func pushBuiltArchive(ctx context.Context, archive []byte, name, version string, opts Options, rep report.Reporter) (string, bool, error) {
+func pushBuiltArchive(ctx context.Context, archive []byte, name, version string, opts Options) (string, bool, error) {
+	rep := report.FromContext(ctx)
 	archivesRef, err := ocix.ArchivesRef(opts.Push, name)
 	if err != nil {
 		return "", false, err
@@ -223,7 +225,7 @@ func fetchBuildSource(ctx context.Context, pkg *spec.Package, version, shaOverri
 }
 
 func ResolveDeps(ctx context.Context, h home.Home, cfg *config.Config, sources []catalog.Named,
-	rep report.Reporter, pkg *spec.Package, deps []spec.Dep) ([]ResolvedDep, error) {
+	pkg *spec.Package, deps []spec.Dep) ([]ResolvedDep, error) {
 	if len(deps) == 0 {
 		return nil, nil
 	}
@@ -231,12 +233,12 @@ func ResolveDeps(ctx context.Context, h home.Home, cfg *config.Config, sources [
 	if err != nil {
 		return nil, err
 	}
-	return InstallResolvedDeps(ctx, h, cfg, rep, result)
+	return InstallResolvedDeps(ctx, h, cfg, result)
 }
 
 func InstallResolvedDeps(ctx context.Context, h home.Home, cfg *config.Config,
-	rep report.Reporter, result *resolve.Result) ([]ResolvedDep, error) {
-	if err := install.Run(ctx, h, rep, currentPlatformJobs(cfg, result)); err != nil {
+	result *resolve.Result) ([]ResolvedDep, error) {
+	if err := install.Run(ctx, h, currentPlatformJobs(cfg, result)); err != nil {
 		return nil, err
 	}
 	current := spec.Current().String()

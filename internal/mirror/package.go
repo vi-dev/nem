@@ -13,7 +13,8 @@ import (
 	"github.com/vi-dev/nem/internal/spec"
 )
 
-func mirrorPackage(ctx context.Context, opts Options, manifest ocix.TitledManifest, store *ocix.Store, rep report.Reporter, agg *aggregator) {
+func mirrorPackage(ctx context.Context, opts Options, manifest ocix.TitledManifest, store *ocix.Store, agg *aggregator) {
+	rep := report.FromContext(ctx)
 	label := fmt.Sprintf("Mirroring %s", manifest.Title)
 	failedOutcome := fmt.Sprintf("Failed %s", manifest.Title)
 
@@ -62,7 +63,7 @@ func mirrorPackage(ctx context.Context, opts Options, manifest ocix.TitledManife
 		if ctx.Err() != nil {
 			break
 		}
-		outcome := mirrorVersion(ctx, src, dst, manifest.Title, v.Version, prebuilt, opts.DryRun, rep, task)
+		outcome := mirrorVersion(ctx, src, dst, manifest.Title, v.Version, prebuilt, opts.DryRun, task)
 		if outcome == outcomeCancelled {
 			break
 		}
@@ -113,7 +114,8 @@ const (
 	outcomeCancelled
 )
 
-func mirrorVersion(ctx context.Context, src oras.ReadOnlyTarget, dst oras.Target, name, version string, prebuilt, dryRun bool, rep report.Reporter, task report.Task) versionOutcome {
+func mirrorVersion(ctx context.Context, src oras.ReadOnlyTarget, dst oras.Target, name, version string, prebuilt, dryRun bool, task report.Task) versionOutcome {
+	rep := report.FromContext(ctx)
 	srcDesc, err := ocix.ResolveArchiveTag(ctx, src, version)
 	switch {
 	case errors.Is(err, ocix.ErrArchiveNotFound):

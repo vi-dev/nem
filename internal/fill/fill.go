@@ -69,7 +69,7 @@ func SetHTTPClient(c *http.Client) (restore func()) {
 	return func() { httpClient = prev }
 }
 
-func Run(ctx context.Context, h home.Home, opts Options, rep report.Reporter) (Summary, error) {
+func Run(ctx context.Context, h home.Home, opts Options) (Summary, error) {
 	if err := ocix.WithTagOrDigest(opts.CatalogRef); err != nil {
 		return Summary{}, err
 	}
@@ -77,7 +77,7 @@ func Run(ctx context.Context, h home.Home, opts Options, rep report.Reporter) (S
 		return Summary{}, err
 	}
 
-	store, err := stageCatalog(ctx, opts.CatalogRef, rep)
+	store, err := stageCatalog(ctx, opts.CatalogRef)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -103,7 +103,7 @@ func Run(ctx context.Context, h home.Home, opts Options, rep report.Reporter) (S
 			if gctx.Err() != nil {
 				return nil
 			}
-			fillPackage(gctx, h, opts, nm, store, rep, &agg)
+			fillPackage(gctx, h, opts, nm, store, &agg)
 			return nil
 		})
 	}
@@ -121,10 +121,10 @@ func Run(ctx context.Context, h home.Home, opts Options, rep report.Reporter) (S
 	return summary, nil
 }
 
-func stageCatalog(ctx context.Context, ref string, rep report.Reporter) (*ocix.Store, error) {
+func stageCatalog(ctx context.Context, ref string) (*ocix.Store, error) {
 	labels := report.TaskLabels{Run: "Pulling catalog", Segment: "copying", Done: "Pulled catalog", Fail: "Pull failed"}
 	var store *ocix.Store
-	err := report.RunTask(rep, labels, func(count report.ProgressFunc) error {
+	err := report.RunTask(ctx, labels, func(count report.ProgressFunc) error {
 		src, srcTag, err := openCatalog(ref)
 		if err != nil {
 			return err

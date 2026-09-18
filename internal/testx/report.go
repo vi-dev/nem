@@ -1,17 +1,27 @@
 package testx
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"sync"
 
 	"github.com/vi-dev/nem/internal/report"
 )
 
 type Reporter struct {
-	mu    sync.Mutex
-	tasks []*Task
-	infos []string
-	warns []string
+	mu        sync.Mutex
+	tasks     []*Task
+	infos     []string
+	successes []string
+	warns     []string
+	errors    []ErrorCall
+	hints     []string
+}
+
+type ErrorCall struct {
+	Err  error
+	Hint string
 }
 
 var _ report.Reporter = (*Reporter)(nil)
@@ -28,7 +38,47 @@ func (r *Reporter) Warn(format string, a ...any) {
 	r.warns = append(r.warns, fmt.Sprintf(format, a...))
 }
 
+func (r *Reporter) Success(format string, a ...any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.successes = append(r.successes, fmt.Sprintf(format, a...))
+}
+
+func (r *Reporter) Error(err error, hint string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.errors = append(r.errors, ErrorCall{Err: err, Hint: hint})
+}
+
+func (r *Reporter) Hint(msg string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.hints = append(r.hints, msg)
+}
+
+func (r *Reporter) Successes() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.successes...)
+}
+
+func (r *Reporter) Hints() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.hints...)
+}
+
+func (r *Reporter) Errors() []ErrorCall {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]ErrorCall(nil), r.errors...)
+}
+
 func (r *Reporter) Debug(string, ...any) {}
+
+func (r *Reporter) Out() io.Writer { return io.Discard }
+
+func (r *Reporter) ErrOut() io.Writer { return io.Discard }
 
 func (r *Reporter) Task(label string) report.Task {
 	t := &Task{Label: label}
@@ -140,4 +190,11 @@ func (t *Task) ProgressCalls() []ProgressCall {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return append([]ProgressCall(nil), t.progress...)
+}
+
+// ReporterContext returns ctx carrying a fresh recording Reporter,
+// plus that Reporter for assertions.
+func ReporterContext(ctx context.Context) (context.Context, *Reporter) {
+	r := &Reporter{}
+	return report.NewContext(ctx, r), r
 }

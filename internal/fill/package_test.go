@@ -25,8 +25,8 @@ func TestFillItemShaLookupFailureWarnsAndFails(t *testing.T) {
 	pkg := testPkg(t, up.URL+"/{{.Version}}", "deadbeef")
 	archives := memory.New()
 
-	rep := &testx.Reporter{}
-	got, _ := fillItem(context.Background(), newHome(t), archives, pkg, "9.9.9", spec.SupportedPlatforms[0], false, rep, rep.Task("test"))
+	ctx, rep := testx.ReporterContext(context.Background())
+	got, _ := fillItem(ctx, newHome(t), archives, pkg, "9.9.9", spec.SupportedPlatforms[0], false, rep.Task("test"))
 	if got != outcomeFailed {
 		t.Fatalf("outcome = %v, want outcomeFailed for an undeclared version", got)
 	}
