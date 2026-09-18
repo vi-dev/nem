@@ -298,8 +298,12 @@ func TestCompletePathFilters(t *testing.T) {
 		t.Errorf("test should filter to yaml files:\n%s", out)
 	}
 	out = runNemComplete(t, nemHomeDir, "catalog", "lint", "")
-	if !strings.Contains(out, ":16\n") {
-		t.Errorf("lint should complete directories:\n%s", out)
+	if !strings.Contains(out, ":8\n") {
+		t.Errorf("lint should filter to yaml files:\n%s", out)
+	}
+	out = runNemComplete(t, nemHomeDir, "catalog", "fmt", "")
+	if !strings.Contains(out, ":8\n") {
+		t.Errorf("fmt should filter to yaml files:\n%s", out)
 	}
 }
 
@@ -403,6 +407,47 @@ func TestCompleteUseVersionsFallsThroughMissingPackage(t *testing.T) {
 	out := runNemComplete(t, nemHomeDir, "use", "go@")
 	if !strings.Contains(out, "go@v1.2.0\n") {
 		t.Errorf("versions from a later catalog missing:\n%s", out)
+	}
+}
+
+func TestCompleteCatalogTestPackageFlag(t *testing.T) {
+	nemHomeDir := t.TempDir()
+	root := t.TempDir()
+	for _, name := range []string{"alpha", "beta"} {
+		dir := filepath.Join(root, "pkgs", name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(dir, "pkg.yaml"), "schema: 2\nname: "+name+"\n"+
+			"artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n"+
+			"versions: [{version: \"1.0.0\"}]\n")
+	}
+
+	out := runNemComplete(t, nemHomeDir, "catalog", "test", root, "--package", "")
+	if !strings.Contains(out, "alpha\n") || !strings.Contains(out, "beta\n") {
+		t.Errorf("--package should complete package names from the catalog dir:\n%s", out)
+	}
+
+	out = runNemComplete(t, nemHomeDir, "catalog", "test", root, "--package", "al")
+	if !strings.Contains(out, "alpha\n") || strings.Contains(out, "beta\n") {
+		t.Errorf("--package completion should honor the prefix:\n%s", out)
+	}
+}
+
+func TestCompleteCatalogLintPackageFlag(t *testing.T) {
+	nemHomeDir := t.TempDir()
+	root := t.TempDir()
+	dir := filepath.Join(root, "pkgs", "alpha")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "pkg.yaml"), "schema: 2\nname: alpha\n"+
+		"artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n"+
+		"versions: [{version: \"1.0.0\"}]\n")
+
+	out := runNemComplete(t, nemHomeDir, "catalog", "lint", root, "--package", "")
+	if !strings.Contains(out, "alpha\n") {
+		t.Errorf("lint --package should complete package names:\n%s", out)
 	}
 }
 

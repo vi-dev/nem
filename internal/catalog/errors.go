@@ -13,6 +13,9 @@ type PackageNotFoundError struct {
 }
 
 func (e *PackageNotFoundError) Error() string {
+	if len(e.Catalogs) == 0 {
+		return fmt.Sprintf("package %s not found", e.Name)
+	}
 	return fmt.Sprintf("package %s not found in catalog(s) %s", e.Name, strings.Join(e.Catalogs, ", "))
 }
 

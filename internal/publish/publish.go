@@ -53,7 +53,7 @@ func Publish(ctx context.Context, dir, ref string, opts Options) error {
 		return err
 	}
 
-	findings, err := Lint(dir)
+	findings, err := Lint(ctx, dir)
 	if err != nil {
 		return err
 	}

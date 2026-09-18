@@ -1,12 +1,13 @@
 package publish
 
 import (
-	"errors"
+	"context"
 	"fmt"
-	"io/fs"
 	"os"
+	"path/filepath"
 	"sort"
 
+	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/envx"
 	"github.com/vi-dev/nem/internal/spec"
 )
@@ -23,43 +24,79 @@ func (f Finding) String() string {
 	return f.Pkg + ": " + f.Msg
 }
 
-func Lint(dir string) ([]Finding, error) {
-	info, err := os.Stat(dir)
+func Lint(ctx context.Context, target string, packages ...string) ([]Finding, error) {
+	info, err := os.Stat(target)
 	if err != nil {
-		return nil, fmt.Errorf("stat %s: %w", dir, err)
+		return nil, err
+	}
+	if !info.IsDir() {
+		return lintFile(target, packages)
 	}
 
-	if !info.IsDir() {
-		findings := lintPackage("", dir, false)
+	d := catalog.NewDir(target)
+	if len(packages) > 0 {
+		seen := map[string]bool{}
+		var findings []Finding
+		for _, name := range packages {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			data, err := d.ReadManifest(name)
+			if err != nil {
+				return nil, err
+			}
+			findings = append(findings, lintPackage(name, data)...)
+		}
 		sortFindings(findings)
 		return findings, nil
 	}
 
-	manifests, err := Manifests(dir)
-	if errors.Is(err, fs.ErrNotExist) {
-		return []Finding{{Msg: "no pkgs directory found"}}, nil
-	}
+	names, err := d.PackageNames(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if len(manifests) == 0 {
+	if len(names) == 0 {
+		if _, err := os.Stat(filepath.Join(target, "pkgs")); err != nil {
+			return []Finding{{Msg: "no pkgs directory found"}}, nil
+		}
 		return []Finding{{Msg: "pkgs directory contains no packages"}}, nil
 	}
-
 	var findings []Finding
-	for _, m := range manifests {
-		findings = append(findings, lintPackage(m.Pkg, m.Path, true)...)
+	for _, name := range names {
+		data, err := d.ReadManifest(name)
+		if err != nil {
+			findings = append(findings, Finding{Pkg: name, Msg: err.Error()})
+			continue
+		}
+		findings = append(findings, lintPackage(name, data)...)
 	}
-
 	sortFindings(findings)
 	return findings, nil
 }
 
-func lintPackage(id, path string, checkDirName bool) []Finding {
+func lintFile(path string, packages []string) ([]Finding, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return []Finding{{Pkg: id, Msg: fmt.Sprintf("read %s: %v", path, err)}}
+		return nil, err
 	}
+	if len(packages) > 0 {
+		declared := ""
+		if pkg, err := spec.Parse(data); err == nil {
+			declared = pkg.Name
+		}
+		for _, name := range packages {
+			if name != declared {
+				return nil, &catalog.PackageNotFoundError{Name: name}
+			}
+		}
+	}
+	findings := lintPackage("", data)
+	sortFindings(findings)
+	return findings, nil
+}
+
+func lintPackage(id string, data []byte) []Finding {
 	pkg, err := spec.Parse(data)
 	if err != nil {
 		return []Finding{{Pkg: id, Msg: err.Error()}}
@@ -69,7 +106,7 @@ func lintPackage(id, path string, checkDirName bool) []Finding {
 	if err := pkg.Validate(); err != nil {
 		findings = append(findings, Finding{Pkg: id, Msg: err.Error()})
 	}
-	if checkDirName && pkg.Name != "" && pkg.Name != id {
+	if id != "" && pkg.Name != "" && pkg.Name != id {
 		findings = append(findings, Finding{
 			Pkg: id,
 			Msg: fmt.Sprintf("name %q does not match its directory %q", pkg.Name, id),

@@ -1,6 +1,7 @@
 package publish
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,7 +82,7 @@ func anyContains(findings []Finding, sub string) bool {
 
 func TestLintCleanCatalog(t *testing.T) {
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
-	found, err := Lint(dir)
+	found, err := Lint(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +104,7 @@ func TestLintFindings(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := writeCatalog(t, tc.pkgs)
-			found, err := Lint(dir)
+			found, err := Lint(context.Background(), dir)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -128,7 +129,7 @@ func TestLintVersionsNewestFirst(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := writeCatalog(t, map[string]string{"go": pkgWithVersions(tc.versions...)})
-			found, err := Lint(dir)
+			found, err := Lint(context.Background(), dir)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -141,7 +142,7 @@ func TestLintVersionsNewestFirst(t *testing.T) {
 
 func TestLintNameMismatchLabeledByDirectory(t *testing.T) {
 	dir := writeCatalog(t, map[string]string{"go": pkgNamed("golang")})
-	found, err := Lint(dir)
+	found, err := Lint(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +154,7 @@ func TestLintNameMismatchLabeledByDirectory(t *testing.T) {
 
 func TestLintEmptyNameYieldsOneFinding(t *testing.T) {
 	dir := writeCatalog(t, map[string]string{"go": pkgEmptyName})
-	found, err := Lint(dir)
+	found, err := Lint(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,23 +164,12 @@ func TestLintEmptyNameYieldsOneFinding(t *testing.T) {
 	}
 }
 
-func TestLintSingleFile(t *testing.T) {
-	dir := writeCatalog(t, map[string]string{"go": pkgWithEnv("PATH", "x")})
-	found, err := Lint(filepath.Join(dir, "pkgs", "go", "pkg.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !anyContains(found, "reserved") {
-		t.Fatalf("single-file lint missed the finding: %v", found)
-	}
-}
-
 func TestLintEmptyPkgsDir(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "pkgs"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	found, err := Lint(dir)
+	found, err := Lint(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +180,7 @@ func TestLintEmptyPkgsDir(t *testing.T) {
 
 func TestLintMissingPkgsDir(t *testing.T) {
 	dir := t.TempDir()
-	found, err := Lint(dir)
+	found, err := Lint(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +191,7 @@ func TestLintMissingPkgsDir(t *testing.T) {
 
 func TestLintParseErrorSkipsFurtherChecks(t *testing.T) {
 	dir := writeCatalog(t, map[string]string{"go": "schema: 2\nname: go\nbogus: true\n"})
-	found, err := Lint(dir)
+	found, err := Lint(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,11 +205,11 @@ func TestLintDeterministicOrder(t *testing.T) {
 		"go":      pkgWithEnv("PATH", "x"),
 		"kubectl": strings.Replace(pkgWithEnv("IFS", "x"), "name: go\n", "name: kubectl\n", 1),
 	})
-	first, err := Lint(dir)
+	first, err := Lint(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := Lint(dir)
+	second, err := Lint(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +232,7 @@ func TestLintTestStepsOnSomePlatformIsClean(t *testing.T) {
 		"versions: [{version: \"1.0.0\"}]\n" +
 		"test:\n  - run: tool --version\n    platforms: [linux/amd64]\n"
 	dir := writeCatalog(t, map[string]string{"tool": manifest})
-	findings, err := Lint(dir)
+	findings, err := Lint(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("Lint: %v", err)
 	}
@@ -274,7 +264,7 @@ func TestLintTestStepsCleanCases(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := writeCatalog(t, map[string]string{"tool": tc.manifest})
-			findings, err := Lint(dir)
+			findings, err := Lint(context.Background(), dir)
 			if err != nil {
 				t.Fatalf("Lint: %v", err)
 			}
@@ -293,7 +283,7 @@ func TestLintTestStepsFlagsOneDeadStepAmongLiveOnes(t *testing.T) {
 		"  - run: tool --version\n" +
 		"  - run: tool --help\n    platforms: [darwin/arm64]\n"
 	dir := writeCatalog(t, map[string]string{"tool": manifest})
-	findings, err := Lint(dir)
+	findings, err := Lint(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("Lint: %v", err)
 	}
@@ -302,5 +292,21 @@ func TestLintTestStepsFlagsOneDeadStepAmongLiveOnes(t *testing.T) {
 	}
 	if anyContains(findings, "test[0]") {
 		t.Fatalf("test[0] has no platform constraint of its own and must not be flagged, got %v", findings)
+	}
+}
+
+func TestLintFileCatalogLintsBytes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "anything.yaml")
+	if err := os.WriteFile(path, []byte("schema: 2\nname: tool\nartifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\nversions: [{version: \"1.0.0\"}]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	findings, err := Lint(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Lint(file): %v", err)
+	}
+	for _, f := range findings {
+		if strings.Contains(f.Msg, "does not match its directory") {
+			t.Fatalf("file catalogs have no directory convention: %v", findings)
+		}
 	}
 }

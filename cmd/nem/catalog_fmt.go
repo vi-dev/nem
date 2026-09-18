@@ -7,55 +7,99 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/vi-dev/nem/internal/fsx"
-	"github.com/vi-dev/nem/internal/publish"
+	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
 func newCatalogFmtCmd() *cobra.Command {
-	var check bool
+	var packages []string
 	cmd := &cobra.Command{
-		Use:   "fmt [dir|pkg.yaml]",
-		Short: "Rewrite package manifests to canonical form",
-		Args:  cobra.MaximumNArgs(1),
+		Use:               "fmt [catalog]",
+		Short:             "Rewrite package manifests to canonical form",
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: firstArgOnly(completeYAMLOrDir),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			target := "."
 			if len(args) == 1 {
 				target = args[0]
 			}
-			paths, err := publish.ManifestPaths(target)
+			info, err := os.Stat(target)
 			if err != nil {
 				return err
 			}
-			dirty := 0
-			for _, p := range paths {
-				data, err := os.ReadFile(p)
+			if !info.IsDir() {
+				return fmtFile(target, packages)
+			}
+
+			d := catalog.NewDir(target)
+			names := packages
+			if len(names) == 0 {
+				if names, err = d.PackageNames(cmd.Context()); err != nil {
+					return err
+				}
+				if len(names) == 0 {
+					return fmt.Errorf("no package manifests under %s", target)
+				}
+			}
+			seen := make(map[string]bool, len(names))
+			for _, name := range names {
+				if seen[name] {
+					continue
+				}
+				seen[name] = true
+				data, err := d.ReadManifest(name)
 				if err != nil {
 					return err
 				}
 				formatted, err := spec.Format(data)
 				if err != nil {
-					return fmt.Errorf("%s: %w", p, err)
+					return fmt.Errorf("%s: %w", name, err)
 				}
 				if bytes.Equal(data, formatted) {
 					continue
 				}
-				dirty++
-				if check {
-					console.Data("%s\n", p)
-					continue
-				}
-				if err := fsx.WriteAtomic(p, formatted, 0o644); err != nil {
+				if err := d.UpdateManifest(name, formatted); err != nil {
 					return err
 				}
-				console.Success("Formatted %s", p)
-			}
-			if check && dirty > 0 {
-				return &ExitError{Code: 1}
+				console.Success("Formatted %s", name)
 			}
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&check, "check", false, "list non-canonical manifests and exit 1 instead of rewriting")
+	cmd.Flags().StringArrayVar(&packages, "package", nil,
+		"format this package (repeatable; default: every package)")
+	_ = cmd.RegisterFlagCompletionFunc("package", completeCatalogDirPackages)
 	return cmd
+}
+
+func fmtFile(path string, packages []string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	declared := ""
+	if pkg, err := spec.Parse(data); err == nil {
+		declared = pkg.Name
+	}
+	for _, name := range packages {
+		if name != declared {
+			return &catalog.PackageNotFoundError{Name: name}
+		}
+	}
+	formatted, err := spec.Format(data)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	if bytes.Equal(data, formatted) {
+		return nil
+	}
+	if err := catalog.NewFile(path).UpdateManifest(declared, formatted); err != nil {
+		return err
+	}
+	display := declared
+	if display == "" {
+		display = path
+	}
+	console.Success("Formatted %s", display)
+	return nil
 }

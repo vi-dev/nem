@@ -7,17 +7,18 @@ import (
 )
 
 func newCatalogLintCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:               "lint [dir]",
-		Short:             "Validate every package manifest in a catalog",
+	var packages []string
+	cmd := &cobra.Command{
+		Use:               "lint [catalog]",
+		Short:             "Validate package manifests in a catalog",
 		Args:              cobra.MaximumNArgs(1),
-		ValidArgsFunction: firstArgOnly(completeDirsOnly),
+		ValidArgsFunction: firstArgOnly(completeYAMLOrDir),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dir := "."
+			target := "."
 			if len(args) == 1 {
-				dir = args[0]
+				target = args[0]
 			}
-			findings, err := publish.Lint(dir)
+			findings, err := publish.Lint(cmd.Context(), target, packages...)
 			if err != nil {
 				return err
 			}
@@ -31,4 +32,8 @@ func newCatalogLintCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringArrayVar(&packages, "package", nil,
+		"lint this package (repeatable; default: every package)")
+	_ = cmd.RegisterFlagCompletionFunc("package", completeCatalogDirPackages)
+	return cmd
 }

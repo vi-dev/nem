@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -17,35 +16,22 @@ import (
 	"github.com/vi-dev/nem/internal/spec"
 )
 
-var readFile = os.ReadFile
-
 func newCatalogTestCmd() *cobra.Command {
-	var version string
+	var packages []string
 	cmd := &cobra.Command{
-		Use:               "test <pkg.yaml>",
-		Short:             "Install a package and run its declared test steps",
-		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: firstArgOnly(completeYAMLFiles),
+		Use:               "test [catalog]",
+		Short:             "Install packages and run their declared test steps",
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: firstArgOnly(completeYAMLOrDir),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			data, err := readFile(args[0])
+			ctx := cmd.Context()
+			catalogArg := "."
+			if len(args) == 1 {
+				catalogArg = args[0]
+			}
+			target, err := build.OpenTarget(ctx, catalogArg)
 			if err != nil {
 				return err
-			}
-			pkg, err := spec.Parse(data)
-			if err != nil {
-				return err
-			}
-			if err := pkg.Validate(); err != nil {
-				return err
-			}
-			if len(pkg.Test) == 0 {
-				console.Info("%s declares no tests", pkg.Name)
-				return nil
-			}
-
-			if plat := spec.Current(); !spec.PlatformsInclude(pkg.Platforms, plat) {
-				console.Info("%s does not support %s", pkg.Name, plat)
-				return nil
 			}
 			cfg, err := config.OpenConfig(nemHome)
 			if err != nil {
@@ -55,64 +41,86 @@ func newCatalogTestCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sources = sources.Append(manifestSource(args[0], pkg))
-
-			result, err := resolve.Resolve(cmd.Context(),
-				[]resolve.Tool{{Key: project.ToolKey{Name: pkg.Name}, Version: version}}, sources)
+			selectors := packages
+			if len(selectors) == 0 {
+				if selectors, err = target.Entry.Catalog.PackageNames(ctx); err != nil {
+					return err
+				}
+			}
+			sels, err := build.Select(ctx, target, sources, selectors, false)
 			if err != nil {
 				return err
 			}
-			jobs := install.Jobs(result, sources, nil)
-			var root *install.Job
-			for i := range jobs {
-				if jobs[i].Pkg.Name == pkg.Name {
-					root = &jobs[i]
-					break
-				}
-			}
-			if root == nil {
-				console.Info("%s installs nothing on %s; nothing to test", pkg.Name, spec.Current())
+			sels = build.Merge(sels, nil)
+			if len(sels) == 0 {
+				console.Info("Nothing to test")
 				return nil
 			}
-			resolved := root.Version
-
-			depsResult := &resolve.Result{Pkgs: result.Pkgs}
-			for _, e := range result.Entries {
-				if e.Name == pkg.Name {
-					continue
+			sources = sources.Append(target.Entry)
+			for _, sel := range sels {
+				if err := runPackageTest(cmd, sources, sel.Pkg, sel.Version); err != nil {
+					return err
 				}
-				depsResult.Entries = append(depsResult.Entries, e)
 			}
-			deps, err := build.InstallResolvedDeps(cmd.Context(), nemHome, sources, depsResult, nil)
-			if err != nil {
-				return err
-			}
-
-			task := console.Task("Downloading " + pkg.Name + " " + resolved)
-			artifact, err := fetch.Acquire(cmd.Context(), root.Pkg, resolved, spec.Current(),
-				root.Source, nemHome.Tmp(), task)
-			if err != nil {
-				task.Fail("Failed to download " + pkg.Name + " " + resolved)
-				return err
-			}
-			task.Done("Downloaded " + pkg.Name + " " + resolved)
-			defer os.Remove(artifact)
-
-			return pkgtest.InstallAndRun(cmd.Context(), nemHome, deps, pkg, resolved,
-				root.Catalog, artifact)
+			return nil
 		},
 	}
-	cmd.Flags().StringVar(&version, "version", "", "version to test (default: the catalog's latest)")
+	cmd.Flags().StringArrayVar(&packages, "package", nil,
+		"test name@version package (repeatable; omitted version means latest; default: every package)")
+	_ = cmd.RegisterFlagCompletionFunc("package", completeCatalogDirPackages)
 	return cmd
 }
 
-func manifestSource(path string, pkg *spec.Package) catalog.Entry {
-	if abs, err := filepath.Abs(path); err == nil {
-		pkgDir := filepath.Dir(abs)
-		if filepath.Base(pkgDir) == pkg.Name && filepath.Base(filepath.Dir(pkgDir)) == "pkgs" {
-			root := filepath.Dir(filepath.Dir(pkgDir))
-			return catalog.Entry{Name: root, Catalog: catalog.NewDir(root)}
+func runPackageTest(cmd *cobra.Command, sources *catalog.Set, pkg *spec.Package, version string) error {
+	if len(pkg.Test) == 0 {
+		console.Info("%s declares no tests", pkg.Name)
+		return nil
+	}
+	if plat := spec.Current(); !spec.PlatformsInclude(pkg.Platforms, plat) {
+		console.Info("%s does not support %s", pkg.Name, plat)
+		return nil
+	}
+	result, err := resolve.Resolve(cmd.Context(),
+		[]resolve.Tool{{Key: project.ToolKey{Name: pkg.Name}, Version: version}}, sources)
+	if err != nil {
+		return err
+	}
+	jobs := install.Jobs(result, sources, nil)
+	var root *install.Job
+	for i := range jobs {
+		if jobs[i].Pkg.Name == pkg.Name {
+			root = &jobs[i]
+			break
 		}
 	}
-	return catalog.Entry{Name: path, Catalog: catalog.NewFile(path)}
+	if root == nil {
+		console.Info("%s installs nothing on %s; nothing to test", pkg.Name, spec.Current())
+		return nil
+	}
+	resolved := root.Version
+
+	depsResult := &resolve.Result{Pkgs: result.Pkgs}
+	for _, e := range result.Entries {
+		if e.Name == pkg.Name {
+			continue
+		}
+		depsResult.Entries = append(depsResult.Entries, e)
+	}
+	deps, err := build.InstallResolvedDeps(cmd.Context(), nemHome, sources, depsResult, nil)
+	if err != nil {
+		return err
+	}
+
+	task := console.Task("Downloading " + pkg.Name + " " + resolved)
+	artifact, err := fetch.Acquire(cmd.Context(), root.Pkg, resolved, spec.Current(),
+		root.Source, nemHome.Tmp(), task)
+	if err != nil {
+		task.Fail("Failed to download " + pkg.Name + " " + resolved)
+		return err
+	}
+	task.Done("Downloaded " + pkg.Name + " " + resolved)
+	defer os.Remove(artifact)
+
+	return pkgtest.InstallAndRun(cmd.Context(), nemHome, deps, pkg, resolved,
+		root.Catalog, artifact)
 }

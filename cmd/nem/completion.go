@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -186,10 +187,27 @@ func completeUseVersions(cmd *cobra.Command, toComplete string) ([]string, cobra
 	return nil, cobra.ShellCompDirectiveNoFileComp
 }
 
-func completeYAMLFiles(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-	return []string{"yaml", "yml"}, cobra.ShellCompDirectiveFilterFileExt
+func completeCatalogDirPackages(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	dir := "."
+	if len(args) == 1 {
+		dir = args[0]
+	}
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	names, err := catalog.NewDir(dir).PackageNames(cmd.Context())
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	var out []string
+	for _, name := range names {
+		if strings.HasPrefix(name, toComplete) {
+			out = append(out, name)
+		}
+	}
+	return out, cobra.ShellCompDirectiveNoFileComp
 }
 
-func completeDirsOnly(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-	return nil, cobra.ShellCompDirectiveFilterDirs
+func completeYAMLOrDir(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+	return []string{"yaml", "yml"}, cobra.ShellCompDirectiveFilterFileExt
 }
