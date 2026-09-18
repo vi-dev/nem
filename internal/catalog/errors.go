@@ -44,3 +44,9 @@ type DigestMismatchError struct{ Name, Version, Locked, Current string }
 func (e *DigestMismatchError) Error() string {
 	return fmt.Sprintf("catalog content for %s@%s changed (locked %s, now %s)", e.Name, e.Version, e.Locked, e.Current)
 }
+
+type ManifestExistsError struct{ Name string }
+
+func (e *ManifestExistsError) Error() string {
+	return fmt.Sprintf("package %s already exists in the catalog", e.Name)
+}

@@ -6,21 +6,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/config"
-	"github.com/vi-dev/nem/internal/fetch"
 	"github.com/vi-dev/nem/internal/fsx"
 	"github.com/vi-dev/nem/internal/install"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/project"
 	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/resolve"
-	"github.com/vi-dev/nem/internal/spec"
 )
 
 var syncCatalogStore = func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) error {
@@ -113,7 +110,7 @@ func requireGlobalManifest(global bool, path string) error {
 	return nil
 }
 
-func loadUseState(path string) (*project.Manifest, *config.Config, []catalog.Named, error) {
+func loadUseState(path string) (*project.Manifest, *config.Config, *catalog.Set, error) {
 	manifest, err := project.LoadManifest(path)
 	if err != nil {
 		return nil, nil, nil, err
@@ -122,11 +119,11 @@ func loadUseState(path string) (*project.Manifest, *config.Config, []catalog.Nam
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	sources, err := catalog.Open(cfg, nemHome)
+	set, err := catalog.Open(cfg, nemHome)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	return manifest, cfg, sources, nil
+	return manifest, cfg, set, nil
 }
 
 func manifestTools(m *project.Manifest) []resolve.Tool {
@@ -153,30 +150,9 @@ func writeLock(manifest *project.Manifest, result *resolve.Result) error {
 	return project.WriteLock(lf)
 }
 
-func currentPlatformJobs(cfg *config.Config, result *resolve.Result) []install.Job {
-	current := spec.Current().String()
-	var jobs []install.Job
-	for _, entry := range result.Entries {
-		if !slices.Contains(entry.Platforms, current) {
-			continue
-		}
-		ref := ""
-		if e := cfg.Find(entry.Catalog); e != nil && e.Type == "oci" {
-			ref = e.Ref
-		}
-		jobs = append(jobs, install.Job{
-			Pkg:     result.Pkgs[entry.Name],
-			Version: entry.Version,
-			Catalog: entry.Catalog,
-			Source:  fetch.Source{CatalogRef: ref},
-		})
-	}
-	return jobs
-}
-
-func autoSyncUnsyncedCatalogs(ctx context.Context, cfg *config.Config, sources []catalog.Named) error {
-	for _, n := range sources {
-		src, ok := n.Source.(mirrorOpener)
+func autoSyncUnsyncedCatalogs(ctx context.Context, cfg *config.Config, set *catalog.Set) error {
+	for _, n := range set.Entries() {
+		src, ok := n.Catalog.(mirrorOpener)
 		if !ok {
 			continue
 		}
@@ -211,11 +187,11 @@ func autoSyncUnsyncedCatalogs(ctx context.Context, cfg *config.Config, sources [
 	return nil
 }
 
-func resolveManifest(cmd *cobra.Command, manifest *project.Manifest, cfg *config.Config, sources []catalog.Named) (*resolve.Result, error) {
-	if err := autoSyncUnsyncedCatalogs(cmd.Context(), cfg, sources); err != nil {
+func resolveManifest(cmd *cobra.Command, manifest *project.Manifest, cfg *config.Config, set *catalog.Set) (*resolve.Result, error) {
+	if err := autoSyncUnsyncedCatalogs(cmd.Context(), cfg, set); err != nil {
 		return nil, err
 	}
-	return resolve.Resolve(cmd.Context(), manifestTools(manifest), sources)
+	return resolve.Resolve(cmd.Context(), manifestTools(manifest), set)
 }
 
 func resolvedVersions(result *resolve.Result) map[string]string {
@@ -279,7 +255,7 @@ func runUse(cmd *cobra.Command, args []string, global bool) error {
 	}
 	release()
 
-	return install.Run(cmd.Context(), nemHome, currentPlatformJobs(cfg, result))
+	return install.Run(cmd.Context(), nemHome, install.Jobs(result, sources))
 }
 
 func runUnuse(cmd *cobra.Command, args []string, global bool) error {

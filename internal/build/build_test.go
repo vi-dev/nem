@@ -47,7 +47,7 @@ func runBuild(t *testing.T, h home.Home, pkg *spec.Package, opts Options) (Resul
 	t.Helper()
 	var b bytes.Buffer
 	ctx := report.NewContext(context.Background(), report.New(&b, &b, report.Options{}))
-	res, err := Build(ctx, h, nil, nil, pkg, opts, &b, &b)
+	res, err := Build(ctx, h, nil, pkg, opts, &b, &b)
 	return res, b.String(), err
 }
 
@@ -258,9 +258,9 @@ func TestBuildRestampsAlreadyInstalledBuildDep(t *testing.T) {
 
 	depArchive := makeTarGz(t, map[string]string{"lib/libdep.so": "dep bytes"})
 	catalogRoot := depDirCatalog(t, "dep", "9.9.9", depArchive)
-	sources := []catalog.Named{{Name: "cat", Source: catalog.NewDir(catalogRoot)}}
+	sources := catalog.NewSet(catalog.Entry{Name: "cat", Catalog: catalog.NewDir(catalogRoot)})
 
-	depPkg, _, err := catalog.NewDir(catalogRoot).Load(context.Background(), "dep")
+	depPkg, _, err := catalog.NewDir(catalogRoot).Package(context.Background(), "dep")
 	if err != nil {
 		t.Fatalf("load dep pkg: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestBuildRestampsAlreadyInstalledBuildDep(t *testing.T) {
 
 	var b bytes.Buffer
 	ctx := report.NewContext(context.Background(), report.New(&b, &b, report.Options{}))
-	if _, err := Build(ctx, h, nil, sources, pkg, Options{Version: "v1.0.0"}, &b, &b); err != nil {
+	if _, err := Build(ctx, h, sources, pkg, Options{Version: "v1.0.0"}, &b, &b); err != nil {
 		t.Fatalf("Build: %v\n%s", err, b.String())
 	}
 

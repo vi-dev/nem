@@ -31,14 +31,15 @@ func runInfo(cmd *cobra.Command, arg string) error {
 	if err != nil {
 		return err
 	}
-	sources, err := catalog.Open(cfg, nemHome)
+	set, err := catalog.Open(cfg, nemHome)
 	if err != nil {
 		return err
 	}
-	pkg, catalogName, _, err := catalog.Lookup(cmd.Context(), sources, key)
+	hit, err := set.Lookup(cmd.Context(), key)
 	if err != nil {
 		return err
 	}
+	pkg, catalogName := hit.Pkg, hit.Entry.Name
 
 	platforms := "all"
 	if len(pkg.Platforms) > 0 {

@@ -43,7 +43,7 @@ func runSync(cmd *cobra.Command, global bool) error {
 	if err != nil {
 		return err
 	}
-	sources, err := catalog.Open(cfg, nemHome)
+	set, err := catalog.Open(cfg, nemHome)
 	if err != nil {
 		return err
 	}
@@ -58,26 +58,22 @@ func runSync(cmd *cobra.Command, global bool) error {
 			continue
 		}
 
-		pkg, _, dig, err := catalog.Lookup(cmd.Context(), sources, project.ToolKey{Catalog: entry.Catalog, Name: entry.Name})
+		hit, err := set.Lookup(cmd.Context(), project.ToolKey{Catalog: entry.Catalog, Name: entry.Name})
 		if err != nil {
 			return err
 		}
-		if entry.Digest != "" && dig != entry.Digest {
+		if entry.Digest != "" && hit.Digest != entry.Digest {
 			return &catalog.DigestMismatchError{
 				Name: entry.Name, Version: entry.Version,
-				Locked: entry.Digest, Current: dig,
+				Locked: entry.Digest, Current: hit.Digest,
 			}
 		}
 
-		ref := ""
-		if e := cfg.Find(entry.Catalog); e != nil && e.Type == "oci" {
-			ref = e.Ref
-		}
 		jobs = append(jobs, install.Job{
-			Pkg:     pkg,
+			Pkg:     hit.Pkg,
 			Version: entry.Version,
 			Catalog: entry.Catalog,
-			Source:  fetch.Source{CatalogRef: ref},
+			Source:  fetch.Source{CatalogRef: hit.Entry.Ref},
 		})
 	}
 

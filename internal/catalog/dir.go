@@ -7,43 +7,46 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/vi-dev/nem/internal/fsx"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
 type Dir struct{ root string }
 
-var _ Source = (*Dir)(nil)
-var _ NameLister = (*Dir)(nil)
+var _ Catalog = (*Dir)(nil)
+var _ Editor = (*Dir)(nil)
 
 func NewDir(root string) *Dir { return &Dir{root: root} }
 
-func (d *Dir) pkgPath(name string) string {
-	return filepath.Join(d.root, "pkgs", name, "pkg.yaml")
+const manifestDir = "pkgs"
+
+func (d *Dir) manifestPath(name string) string {
+	return filepath.Join(d.root, manifestDir, name, "pkg.yaml")
 }
 
-func (d *Dir) Load(_ context.Context, name string) (*spec.Package, string, error) {
-	data, err := os.ReadFile(d.pkgPath(name))
+func (d *Dir) Package(_ context.Context, name string) (*spec.Package, string, error) {
+	data, err := os.ReadFile(d.manifestPath(name))
 	if os.IsNotExist(err) {
 		return nil, "", &PackageNotFoundError{Name: name}
 	}
 	if err != nil {
-		return nil, "", fmt.Errorf("read %s: %w", d.pkgPath(name), err)
+		return nil, "", fmt.Errorf("read %s: %w", d.manifestPath(name), err)
 	}
 	pkg, err := spec.Parse(data)
 	if err != nil {
-		return nil, "", fmt.Errorf("load %s: %w", d.pkgPath(name), err)
+		return nil, "", fmt.Errorf("load %s: %w", d.manifestPath(name), err)
 	}
 	if err := pkg.Validate(); err != nil {
-		return nil, "", fmt.Errorf("load %s: %w", d.pkgPath(name), err)
+		return nil, "", fmt.Errorf("load %s: %w", d.manifestPath(name), err)
 	}
 	if pkg.Name != name {
-		return nil, "", fmt.Errorf("load %s: manifest declares name %q, want %q", d.pkgPath(name), pkg.Name, name)
+		return nil, "", fmt.Errorf("load %s: manifest declares name %q, want %q", d.manifestPath(name), pkg.Name, name)
 	}
 	return pkg, "", nil
 }
 
 func (d *Dir) Versions(ctx context.Context, name string) ([]string, error) {
-	pkg, _, err := d.Load(ctx, name)
+	pkg, _, err := d.Package(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -54,24 +57,42 @@ func (d *Dir) isPackage(e os.DirEntry) bool {
 	if !e.IsDir() || !spec.NameRE.MatchString(e.Name()) {
 		return false
 	}
-	_, err := os.Stat(d.pkgPath(e.Name()))
+	_, err := os.Stat(d.manifestPath(e.Name()))
 	return err == nil
 }
 
-func (d *Dir) Summaries(ctx context.Context) ([]Summary, error) {
-	entries, err := os.ReadDir(filepath.Join(d.root, "pkgs"))
+func (d *Dir) PackageNames(_ context.Context) ([]string, error) {
+	dirEntries, err := os.ReadDir(filepath.Join(d.root, manifestDir))
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read catalog dir %s: %w", d.root, err)
 	}
-	var out []Summary
-	for _, e := range entries {
+	var names []string
+	for _, e := range dirEntries {
 		if !d.isPackage(e) {
 			continue
 		}
-		pkg, _, err := d.Load(ctx, e.Name())
+		names = append(names, e.Name())
+	}
+	return names, nil
+}
+
+func (d *Dir) Summaries(ctx context.Context) ([]Summary, error) {
+	dirEntries, err := os.ReadDir(filepath.Join(d.root, manifestDir))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read catalog dir %s: %w", d.root, err)
+	}
+	var summaries []Summary
+	for _, e := range dirEntries {
+		if !d.isPackage(e) {
+			continue
+		}
+		pkg, _, err := d.Package(ctx, e.Name())
 		if err != nil {
 			continue
 		}
@@ -79,26 +100,56 @@ func (d *Dir) Summaries(ctx context.Context) ([]Summary, error) {
 		if len(pkg.Versions) > 0 {
 			latest = pkg.Versions[0].Version
 		}
-		out = append(out, Summary{Name: pkg.Name, Description: pkg.Description, Latest: latest})
+		summaries = append(summaries, Summary{Name: pkg.Name, Description: pkg.Description, Latest: latest})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out, nil
+	sort.Slice(summaries, func(i, j int) bool { return summaries[i].Name < summaries[j].Name })
+	return summaries, nil
 }
 
-func (d *Dir) PackageNames(_ context.Context) ([]string, error) {
-	entries, err := os.ReadDir(filepath.Join(d.root, "pkgs"))
+func (d *Dir) ReadManifest(name string) ([]byte, error) {
+	if !spec.NameRE.MatchString(name) {
+		return nil, fmt.Errorf("invalid package name %q", name)
+	}
+	data, err := os.ReadFile(d.manifestPath(name))
 	if os.IsNotExist(err) {
-		return nil, nil
+		return nil, &PackageNotFoundError{Name: name}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read catalog dir %s: %w", d.root, err)
+		return nil, fmt.Errorf("read %s: %w", d.manifestPath(name), err)
 	}
-	var out []string
-	for _, e := range entries {
-		if !d.isPackage(e) {
-			continue
-		}
-		out = append(out, e.Name())
+	return data, nil
+}
+
+func (d *Dir) CreateManifest(name string, data []byte) error {
+	if !spec.NameRE.MatchString(name) {
+		return fmt.Errorf("invalid package name %q", name)
 	}
-	return out, nil
+	if err := validateManifest(name, data); err != nil {
+		return err
+	}
+	path := d.manifestPath(name)
+	if _, err := os.Stat(path); err == nil {
+		return &ManifestExistsError{Name: name}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return fsx.WriteAtomic(path, data, 0o644)
+}
+
+func (d *Dir) UpdateManifest(name string, data []byte) error {
+	if !spec.NameRE.MatchString(name) {
+		return fmt.Errorf("invalid package name %q", name)
+	}
+	path := d.manifestPath(name)
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return &PackageNotFoundError{Name: name}
+	}
+	if err != nil {
+		return err
+	}
+	return fsx.WriteAtomic(path, data, info.Mode().Perm())
 }

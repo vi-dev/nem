@@ -16,7 +16,6 @@ import (
 	"oras.land/oras-go/v2/content"
 
 	"github.com/vi-dev/nem/internal/catalog"
-	"github.com/vi-dev/nem/internal/config"
 	"github.com/vi-dev/nem/internal/fetch"
 	"github.com/vi-dev/nem/internal/home"
 	"github.com/vi-dev/nem/internal/install"
@@ -47,7 +46,7 @@ type Result struct {
 
 var archivesOpener = ocix.RemoteArchivesRW
 
-func Build(ctx context.Context, h home.Home, cfg *config.Config, sources []catalog.Named, pkg *spec.Package,
+func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package,
 	opts Options, stdout, stderr io.Writer) (Result, error) {
 	rep := report.FromContext(ctx)
 	if pkg.Build == nil {
@@ -87,7 +86,7 @@ func Build(ctx context.Context, h home.Home, cfg *config.Config, sources []catal
 		return Result{}, err
 	}
 
-	deps, err := ResolveDeps(ctx, h, cfg, sources, pkg, pkg.Build.Deps)
+	deps, err := ResolveDeps(ctx, h, set, pkg, pkg.Build.Deps)
 	if err != nil {
 		return Result{}, err
 	}
@@ -224,21 +223,21 @@ func fetchBuildSource(ctx context.Context, pkg *spec.Package, version, shaOverri
 	return fetchSource(ctx, netx.Client(), url, want, staging, fetch.Meta{Name: pkg.Name, Version: version, Platform: spec.Current()})
 }
 
-func ResolveDeps(ctx context.Context, h home.Home, cfg *config.Config, sources []catalog.Named,
+func ResolveDeps(ctx context.Context, h home.Home, set *catalog.Set,
 	pkg *spec.Package, deps []spec.Dep) ([]ResolvedDep, error) {
 	if len(deps) == 0 {
 		return nil, nil
 	}
-	result, err := resolve.Dependencies(ctx, pkg, deps, sources)
+	result, err := resolve.Dependencies(ctx, pkg, deps, set)
 	if err != nil {
 		return nil, err
 	}
-	return InstallResolvedDeps(ctx, h, cfg, result)
+	return InstallResolvedDeps(ctx, h, set, result)
 }
 
-func InstallResolvedDeps(ctx context.Context, h home.Home, cfg *config.Config,
+func InstallResolvedDeps(ctx context.Context, h home.Home, set *catalog.Set,
 	result *resolve.Result) ([]ResolvedDep, error) {
-	if err := install.Run(ctx, h, currentPlatformJobs(cfg, result)); err != nil {
+	if err := install.Run(ctx, h, install.Jobs(result, set)); err != nil {
 		return nil, err
 	}
 	current := spec.Current().String()
@@ -262,29 +261,6 @@ func InstallResolvedDeps(ctx context.Context, h home.Home, cfg *config.Config,
 		})
 	}
 	return out, nil
-}
-
-func currentPlatformJobs(cfg *config.Config, result *resolve.Result) []install.Job {
-	current := spec.Current().String()
-	var jobs []install.Job
-	for _, entry := range result.Entries {
-		if !slices.Contains(entry.Platforms, current) {
-			continue
-		}
-		ref := ""
-		if cfg != nil {
-			if e := cfg.Find(entry.Catalog); e != nil && e.Type == "oci" {
-				ref = e.Ref
-			}
-		}
-		jobs = append(jobs, install.Job{
-			Pkg:     result.Pkgs[entry.Name],
-			Version: entry.Version,
-			Catalog: entry.Catalog,
-			Source:  fetch.Source{CatalogRef: ref},
-		})
-	}
-	return jobs
 }
 
 func harvest(outputDir, output string) (string, error) {

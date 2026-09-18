@@ -3,31 +3,26 @@ package catalog
 import (
 	"context"
 	"errors"
-	"fmt"
-	"path/filepath"
 	"testing"
 
-	"oras.land/oras-go/v2/content/oci"
+	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/ocix/ocixtest"
 )
 
-const ociGoYAML = `
-schema: 2
-name: go
-description: The Go programming language
+const pulledPkgYAML = `schema: 2
+name: xtool
+description: Target fixture
 artifact:
   oci: ":{{.Version}}"
 install:
   - extract: {}
 versions:
-  - v1.26.5
-  - v1.26.4
+  - version: v1.0.0
 `
 
-const ociMismatchYAML = `
-schema: 2
+const pulledMismatchYAML = `schema: 2
 name: other
 description: manifest name does not match the requested alias
 artifact:
@@ -38,110 +33,157 @@ versions:
   - v1.0.0
 `
 
-func syncedStore(t *testing.T) string {
+const pulledInvalidYAML = `schema: 2
+name: badpkg
+description: parses but fails validation
+artifact:
+  oci: ":{{.Version}}"
+versions:
+  - v1.0.0
+`
+
+const pulledZebraYAML = `schema: 2
+name: zebra
+description: Last alphabetically
+artifact:
+  oci: ":{{.Version}}"
+install:
+  - extract: {}
+versions:
+  - v2.0.0
+`
+
+const pulledAppleYAML = `schema: 2
+name: apple
+description: First alphabetically
+artifact:
+  oci: ":{{.Version}}"
+install:
+  - extract: {}
+versions:
+  - v1.0.0
+`
+
+const pulledUntitledYAML = `schema: 2
+name: untitled
+description: indexed without a title annotation, must be skipped
+artifact:
+  oci: ":{{.Version}}"
+install:
+  - extract: {}
+versions:
+  - v9.9.9
+`
+
+func newPulledStore(t *testing.T, entries []ocixtest.FakeEntry) *ocix.Store {
 	t.Helper()
-	src, err := oci.New(t.TempDir())
+	mem := memory.New()
+	ocixtest.PushFakeCatalog(t, mem, entries, ocix.SchemaVersion)
+	store, err := ocix.OpenStoreInMemory(context.Background(), mem, "v2", nil)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("OpenStoreInMemory: %v", err)
 	}
-	ocixtest.PushFakeCatalog(t, src, []ocixtest.FakeEntry{{
-		Name: "go", Description: "The Go programming language", Latest: "v1.26.5",
-		YAML: []byte(ociGoYAML),
-	}}, "2")
-	storePath := filepath.Join(t.TempDir(), "store")
-	if _, err := ocix.SyncLocalCatalog(context.Background(), src, "v2", storePath, nil); err != nil {
-		t.Fatal(err)
-	}
-	return storePath
+	return store
 }
 
-func TestOCISourceLoadAndVersions(t *testing.T) {
-	s := NewOCI("official", syncedStore(t))
+func TestOCIServesPulledCatalog(t *testing.T) {
 	ctx := context.Background()
-	pkg, dig, err := s.Load(ctx, "go")
-	if err != nil || pkg.Name != "go" || dig == "" {
-		t.Fatalf("Load: %+v, %q, %v", pkg, dig, err)
-	}
-	pkg2, _, _ := s.Load(ctx, "go")
-	if pkg2 != pkg {
-		t.Fatal("memoization broken: distinct pointers")
-	}
-	vs, err := s.Versions(ctx, "go")
-	if err != nil || len(vs) != 2 || vs[0] != "v1.26.5" {
-		t.Fatalf("Versions: %v, %v", vs, err)
-	}
-	var nf *PackageNotFoundError
-	if _, _, err := s.Load(ctx, "absent"); !errors.As(err, &nf) {
-		t.Fatalf("want PackageNotFoundError, got %v", err)
-	}
-}
+	store := newPulledStore(t, []ocixtest.FakeEntry{
+		{Name: "xtool", Description: "Target fixture", Latest: "v1.0.0", YAML: []byte(pulledPkgYAML)},
+	})
+	src := NewOCI("ghcr.io/org/cat:v2", store)
 
-func TestOCISourceSummariesFromIndexOnly(t *testing.T) {
-	sums, err := NewOCI("official", syncedStore(t)).Summaries(context.Background())
-	if err != nil || len(sums) != 1 {
-		t.Fatalf("Summaries: %+v, %v", sums, err)
-	}
-	if sums[0].Name != "go" || sums[0].Latest != "v1.26.5" || sums[0].Description == "" {
-		t.Fatalf("summary: %+v", sums[0])
-	}
-}
-
-func TestOCINameMismatchErrors(t *testing.T) {
-	ctx := context.Background()
-	src, err := oci.New(t.TempDir())
+	names, err := src.PackageNames(ctx)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("PackageNames: %v", err)
 	}
-	ocixtest.PushFakeCatalog(t, src, []ocixtest.FakeEntry{{
-		Name: "alias", Description: "mismatch", Latest: "v1.0.0",
-		YAML: []byte(ociMismatchYAML),
-	}}, "2")
-	storePath := filepath.Join(t.TempDir(), "store")
-	if _, err := ocix.SyncLocalCatalog(ctx, src, "v2", storePath, nil); err != nil {
-		t.Fatal(err)
+	if len(names) != 1 || names[0] != "xtool" {
+		t.Fatalf("PackageNames = %v, want [xtool]", names)
 	}
 
-	if _, _, err := NewOCI("official", storePath).Load(ctx, "alias"); err == nil {
-		t.Fatal("manifest name mismatch must error")
-	}
-}
-
-func BenchmarkOCISourceResolvePattern(b *testing.B) {
-	src, err := oci.New(b.TempDir())
+	pkg, dig, err := src.Package(ctx, "xtool")
 	if err != nil {
-		b.Fatal(err)
+		t.Fatalf("Load: %v", err)
 	}
-	const pkgs = 30
-	entries := make([]ocixtest.FakeEntry, pkgs)
-	for i := range entries {
-		name := fmt.Sprintf("pkg%d", i)
-		entries[i] = ocixtest.FakeEntry{
-			Name: name, Description: "bench", Latest: "v1.0.0",
-			YAML: []byte(fmt.Sprintf("schema: 2\nname: %s\nartifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\nversions: [v1.0.0]\n", name)),
-		}
+	if pkg.Name != "xtool" || dig == "" {
+		t.Fatalf("Load = %+v, digest %q", pkg, dig)
 	}
-	ocixtest.PushFakeCatalog(b, src, entries, "2")
-	storePath := filepath.Join(b.TempDir(), "store")
-	if _, err := ocix.SyncLocalCatalog(context.Background(), src, "v2", storePath, nil); err != nil {
-		b.Fatal(err)
+
+	sums, err := src.Summaries(ctx)
+	if err != nil {
+		t.Fatalf("Summaries: %v", err)
 	}
-	ctx := context.Background()
-	b.ResetTimer()
-	for b.Loop() {
-		s := NewOCI("official", storePath)
-		for range 4 {
-			for i := range pkgs {
-				if _, _, err := s.Load(ctx, fmt.Sprintf("pkg%d", i)); err != nil {
-					b.Fatal(err)
-				}
-			}
-		}
+	if len(sums) != 1 || sums[0].Name != "xtool" || sums[0].Latest != "v1.0.0" {
+		t.Fatalf("Summaries = %+v", sums)
+	}
+
+	vers, err := src.Versions(ctx, "xtool")
+	if err != nil {
+		t.Fatalf("Versions: %v", err)
+	}
+	if len(vers) != 1 || vers[0] != "v1.0.0" {
+		t.Fatalf("Versions = %v, want [v1.0.0]", vers)
+	}
+
+	if _, _, err := src.Package(ctx, "ghost"); err == nil {
+		t.Fatal("Load of an absent package succeeded, want a not-found error")
+	} else if _, ok := errors.AsType[*PackageNotFoundError](err); !ok {
+		t.Fatalf("Load error = %v, want *PackageNotFoundError", err)
 	}
 }
 
-func TestOCISourceUnsynced(t *testing.T) {
-	s := NewOCI("official", filepath.Join(t.TempDir(), "missing"))
-	if _, err := s.Summaries(context.Background()); !errors.Is(err, ocix.ErrNotSynced) {
-		t.Fatalf("want ErrNotSynced, got %v", err)
+func TestOCISummariesReadsIndexAnnotations(t *testing.T) {
+	ctx := context.Background()
+	store := newPulledStore(t, []ocixtest.FakeEntry{
+		{Name: "zebra", Description: "Last alphabetically", Latest: "v2.0.0", YAML: []byte(pulledZebraYAML)},
+		{Name: "apple", Description: "First alphabetically", Latest: "v1.0.0", YAML: []byte(pulledAppleYAML)},
+		{Name: "", Description: "indexed without a title annotation, must be skipped", Latest: "v9.9.9", YAML: []byte(pulledUntitledYAML)},
+	})
+	src := NewOCI("ghcr.io/org/cat:v2", store)
+
+	sums, err := src.Summaries(ctx)
+	if err != nil {
+		t.Fatalf("Summaries: %v", err)
+	}
+	if len(sums) != 2 {
+		t.Fatalf("Summaries = %+v, want 2 entries (untitled manifest skipped)", sums)
+	}
+
+	if sums[0] != (Summary{Name: "zebra", Description: "Last alphabetically", Latest: "v2.0.0"}) {
+		t.Fatalf("sums[0] = %+v", sums[0])
+	}
+	if sums[1] != (Summary{Name: "apple", Description: "First alphabetically", Latest: "v1.0.0"}) {
+		t.Fatalf("sums[1] = %+v", sums[1])
+	}
+}
+
+func TestOCIRejectsNameMismatch(t *testing.T) {
+	store := newPulledStore(t, []ocixtest.FakeEntry{
+
+		{Name: "alias", Description: "Target fixture", Latest: "v1.0.0", YAML: []byte(pulledMismatchYAML)},
+	})
+	src := NewOCI("ghcr.io/org/cat:v2", store)
+	_, _, err := src.Package(context.Background(), "alias")
+	if err == nil {
+		t.Fatal("Load accepted a manifest whose name disagrees with the index title")
+	}
+	const want = `catalog ghcr.io/org/cat:v2: package alias: manifest declares name "other", want "alias"`
+	if got := err.Error(); got != want {
+		t.Fatalf("error = %q, want %q", got, want)
+	}
+}
+
+func TestOCILoadValidateFailure(t *testing.T) {
+	store := newPulledStore(t, []ocixtest.FakeEntry{
+		{Name: "badpkg", Description: "invalid", Latest: "v1.0.0", YAML: []byte(pulledInvalidYAML)},
+	})
+	src := NewOCI("ghcr.io/org/cat:v2", store)
+	_, _, err := src.Package(context.Background(), "badpkg")
+	if err == nil {
+		t.Fatal("Load accepted a manifest that fails Validate")
+	}
+	const wantPrefix = "catalog ghcr.io/org/cat:v2: package badpkg:"
+	if got := err.Error(); len(got) < len(wantPrefix) || got[:len(wantPrefix)] != wantPrefix {
+		t.Fatalf("error = %q, want it to start with %q", got, wantPrefix)
 	}
 }

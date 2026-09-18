@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/config"
 	"github.com/vi-dev/nem/internal/fsx"
 	"github.com/vi-dev/nem/internal/install"
@@ -72,7 +73,7 @@ func selectTargets(manifest *project.Manifest, args []string) ([]target, error) 
 	return targets, nil
 }
 
-func planUpdate(cmd *cobra.Command, args []string, global, dryRun bool) (*config.Config, *resolve.Result, [][]string, error) {
+func planUpdate(cmd *cobra.Command, args []string, global, dryRun bool) (*catalog.Set, *resolve.Result, [][]string, error) {
 	release, err := fsx.Lock(nemHome.LockFile())
 	if err != nil {
 		return nil, nil, nil, err
@@ -130,11 +131,11 @@ func planUpdate(cmd *cobra.Command, args []string, global, dryRun bool) (*config
 			return nil, nil, nil, err
 		}
 	}
-	return cfg, result, rows, nil
+	return sources, result, rows, nil
 }
 
 func runUpdate(cmd *cobra.Command, args []string, global, dryRun bool) error {
-	cfg, result, rows, err := planUpdate(cmd, args, global, dryRun)
+	sources, result, rows, err := planUpdate(cmd, args, global, dryRun)
 	if err != nil {
 		return err
 	}
@@ -143,7 +144,7 @@ func runUpdate(cmd *cobra.Command, args []string, global, dryRun bool) error {
 		return nil
 	}
 
-	if err := install.Run(cmd.Context(), nemHome, currentPlatformJobs(cfg, result)); err != nil {
+	if err := install.Run(cmd.Context(), nemHome, install.Jobs(result, sources)); err != nil {
 		return err
 	}
 

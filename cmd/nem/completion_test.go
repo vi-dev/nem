@@ -151,6 +151,18 @@ func seedSyncedCatalog(t *testing.T, nemHomeDir, catalogName string, entries []o
 	}
 }
 
+func countSuggestion(out, name string) int {
+	n := 0
+	for line := range strings.SplitSeq(out, "\n") {
+		if line == name {
+			n++
+		}
+	}
+	return n
+}
+
+func hasSuggestion(out, name string) bool { return countSuggestion(out, name) > 0 }
+
 const completionPkgYAML = `
 schema: 2
 name: %s
@@ -172,7 +184,7 @@ func TestCompleteUsePackagesAndVersions(t *testing.T) {
 	})
 
 	out := runNemComplete(t, nemHomeDir, "use", "")
-	if !strings.Contains(out, "go\tGo toolchain\n") || !strings.Contains(out, "node\tNode.js\n") {
+	if !hasSuggestion(out, "go") || !hasSuggestion(out, "node") {
 		t.Errorf("package suggestions missing:\n%s", out)
 	}
 	if !strings.Contains(out, ":6\n") {
@@ -192,12 +204,12 @@ func TestCompleteUsePackagesAndVersions(t *testing.T) {
 	}
 
 	out = runNemComplete(t, nemHomeDir, "use", "go", "")
-	if strings.Contains(out, "go\t") {
+	if hasSuggestion(out, "go") {
 		t.Errorf("already-typed package suggested again:\n%s", out)
 	}
 
 	out = runNemComplete(t, nemHomeDir, "use", "official:g")
-	if !strings.Contains(out, "official:go\tGo toolchain\n") {
+	if !hasSuggestion(out, "official:go") {
 		t.Errorf("catalog-prefixed suggestion missing:\n%s", out)
 	}
 
@@ -237,11 +249,11 @@ func TestCompleteInfoAndSearch(t *testing.T) {
 	})
 	for _, cmd := range []string{"info", "search"} {
 		out := runNemComplete(t, nemHomeDir, cmd, "")
-		if !strings.Contains(out, "go\tGo toolchain\n") || !strings.Contains(out, ":4\n") {
+		if !hasSuggestion(out, "go") || !strings.Contains(out, ":4\n") {
 			t.Errorf("%s: want package suggestion with NoFileComp:\n%s", cmd, out)
 		}
 		out = runNemComplete(t, nemHomeDir, cmd, "go", "")
-		if strings.Contains(out, "go\t") {
+		if hasSuggestion(out, "go") {
 			t.Errorf("%s: second arg must not be completed:\n%s", cmd, out)
 		}
 	}
@@ -312,13 +324,10 @@ func TestCompleteUseDedupeFirstCatalogWins(t *testing.T) {
 	}
 
 	out := runNemComplete(t, nemHomeDir, "use", "")
-	if !strings.Contains(out, "go\tGo toolchain\n") {
-		t.Errorf("first catalog's entry missing:\n%s", out)
+	if n := countSuggestion(out, "go"); n != 1 {
+		t.Errorf("go suggested %d times, want exactly 1:\n%s", n, out)
 	}
-	if strings.Contains(out, "\ngo\n") || strings.HasPrefix(out, "go\n") {
-		t.Errorf("duplicate bare suggestion for go leaked from second catalog:\n%s", out)
-	}
-	if !strings.Contains(out, "other\n") {
+	if !hasSuggestion(out, "other") {
 		t.Errorf("second catalog's unique package missing:\n%s", out)
 	}
 }
@@ -408,7 +417,7 @@ func TestCompleteSearchIgnoresCatalogGrammar(t *testing.T) {
 	}
 
 	out = runNemComplete(t, nemHomeDir, "search", "g")
-	if !strings.Contains(out, "go\tGo toolchain\n") {
+	if !hasSuggestion(out, "go") {
 		t.Errorf("bare-name suggestion missing:\n%s", out)
 	}
 }

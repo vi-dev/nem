@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"sort"
 	"strings"
 
@@ -9,7 +8,6 @@ import (
 
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/config"
-	"github.com/vi-dev/nem/internal/ocix"
 )
 
 func newSearchCmd() *cobra.Command {
@@ -30,41 +28,32 @@ func newSearchCmd() *cobra.Command {
 	}
 }
 
-type searchHit struct {
-	catalog.Summary
-	Catalog string
-}
-
 func runSearch(cmd *cobra.Command, query string) error {
 	cfg, err := config.OpenConfig(nemHome)
 	if err != nil {
 		return err
 	}
-	sources, err := catalog.Open(cfg, nemHome)
+	set, err := catalog.Open(cfg, nemHome)
 	if err != nil {
 		return err
 	}
 
+	hits, unsynced, err := set.Summaries(cmd.Context())
+	if err != nil {
+		return err
+	}
+	for _, name := range unsynced {
+		console.Warn("Catalog %s is not synced (run nem catalog update)", name)
+	}
+
 	q := strings.ToLower(query)
-	seen := map[string]bool{}
-	var hits []searchHit
-	for _, n := range sources {
-		summaries, err := n.Source.Summaries(cmd.Context())
-		if err != nil {
-			if errors.Is(err, ocix.ErrNotSynced) {
-				console.Warn("Catalog %s is not synced (run nem catalog update)", n.Name)
-				continue
-			}
-			return err
-		}
-		for _, s := range summaries {
-			if seen[s.Name] || !searchMatches(s, q) {
-				continue
-			}
-			seen[s.Name] = true
-			hits = append(hits, searchHit{Summary: s, Catalog: n.Name})
+	filtered := hits[:0]
+	for _, h := range hits {
+		if searchMatches(h.Summary, q) {
+			filtered = append(filtered, h)
 		}
 	}
+	hits = filtered
 
 	sort.SliceStable(hits, func(i, j int) bool {
 		ri, rj := searchRank(hits[i].Summary, q), searchRank(hits[j].Summary, q)

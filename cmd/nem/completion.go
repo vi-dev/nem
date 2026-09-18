@@ -35,16 +35,16 @@ func completeCatalogNames(filter func(config.CatalogEntry) bool) func(*cobra.Com
 
 func anyCatalog(_ config.CatalogEntry) bool { return true }
 
-func completionSources() ([]catalog.Named, bool) {
+func completionSources() (*catalog.Set, bool) {
 	cfg, err := config.OpenConfigReadOnly(nemHome)
 	if err != nil {
 		return nil, false
 	}
-	sources, err := catalog.Open(cfg, nemHome)
+	set, err := catalog.Open(cfg, nemHome)
 	if err != nil {
 		return nil, false
 	}
-	return sources, true
+	return set, true
 }
 
 func firstArgOnly(fn func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective)) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
@@ -85,7 +85,7 @@ func completeDeclaredPackages(global bool, args []string, toComplete string) ([]
 }
 
 func completeAvailablePackages(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	sources, ok := completionSources()
+	set, ok := completionSources()
 	if !ok {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -104,7 +104,7 @@ func completeAvailablePackages(cmd *cobra.Command, args []string, toComplete str
 
 	seen := map[string]bool{}
 	var out []string
-	add := func(name, description string) {
+	add := func(name string) {
 		if seen[name] || used[name] || !strings.HasPrefix(name, namePrefix) {
 			return
 		}
@@ -113,32 +113,26 @@ func completeAvailablePackages(cmd *cobra.Command, args []string, toComplete str
 		if catalogPrefix != "" {
 			s = catalogPrefix + ":" + name
 		}
-		if description != "" {
-			s += "\t" + description
-		}
 		out = append(out, s)
 	}
-	for _, n := range sources {
-		if catalogPrefix != "" && n.Name != catalogPrefix {
-			continue
+
+	if catalogPrefix != "" {
+		e, ok := set.Find(catalogPrefix)
+		if !ok {
+			return out, cobra.ShellCompDirectiveNoFileComp
 		}
-		if nl, ok := n.Source.(catalog.NameLister); ok {
-			names, err := nl.PackageNames(cmd.Context())
-			if err != nil {
-				continue
-			}
-			for _, name := range names {
-				add(name, "")
-			}
-			continue
-		}
-		summaries, err := n.Source.Summaries(cmd.Context())
+		names, err := e.Catalog.PackageNames(cmd.Context())
 		if err != nil {
-			continue
+			return out, cobra.ShellCompDirectiveNoFileComp
 		}
-		for _, s := range summaries {
-			add(s.Name, s.Description)
+		for _, name := range names {
+			add(name)
 		}
+		return out, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	for _, name := range set.PackageNames(cmd.Context()) {
+		add(name)
 	}
 	return out, cobra.ShellCompDirectiveNoFileComp
 }
@@ -164,15 +158,15 @@ func completeUseVersions(cmd *cobra.Command, toComplete string) ([]string, cobra
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 	key, versionPrefix := parsed.Key, parsed.Version
-	sources, ok := completionSources()
+	set, ok := completionSources()
 	if !ok {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	for _, n := range sources {
+	for _, n := range set.Entries() {
 		if key.Catalog != "" && n.Name != key.Catalog {
 			continue
 		}
-		versions, err := n.Source.Versions(cmd.Context(), key.Name)
+		versions, err := n.Catalog.Versions(cmd.Context(), key.Name)
 		if err != nil {
 
 			var nf *catalog.PackageNotFoundError

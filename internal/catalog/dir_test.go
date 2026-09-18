@@ -39,7 +39,7 @@ func TestDirLoadAndVersions(t *testing.T) {
 	d := NewDir(root)
 	ctx := context.Background()
 
-	pkg, dig, err := d.Load(ctx, "go")
+	pkg, dig, err := d.Package(ctx, "go")
 	if err != nil || pkg.Name != "go" || dig != "" {
 		t.Fatalf("Load: %+v, %q, %v", pkg, dig, err)
 	}
@@ -49,7 +49,7 @@ func TestDirLoadAndVersions(t *testing.T) {
 	}
 
 	var nf *PackageNotFoundError
-	if _, _, err := d.Load(ctx, "absent"); !errors.As(err, &nf) {
+	if _, _, err := d.Package(ctx, "absent"); !errors.As(err, &nf) {
 		t.Fatalf("want PackageNotFoundError, got %v", err)
 	}
 }
@@ -73,7 +73,7 @@ func TestDirNameMismatchErrors(t *testing.T) {
 	y := []byte(strings.ReplaceAll(dirPkgYAML, "%NAME%", "other"))
 	os.WriteFile(filepath.Join(dir, "pkg.yaml"), y, 0o644)
 
-	if _, _, err := NewDir(root).Load(context.Background(), "alias"); err == nil {
+	if _, _, err := NewDir(root).Package(context.Background(), "alias"); err == nil {
 		t.Fatal("manifest name mismatch must error")
 	}
 }
@@ -83,7 +83,7 @@ func TestDirInvalidPkgErrors(t *testing.T) {
 	bad := filepath.Join(root, "pkgs", "bad")
 	os.MkdirAll(bad, 0o755)
 	os.WriteFile(filepath.Join(bad, "pkg.yaml"), []byte("schema: 1\nname: bad\n"), 0o644)
-	if _, _, err := NewDir(root).Load(context.Background(), "bad"); err == nil {
+	if _, _, err := NewDir(root).Package(context.Background(), "bad"); err == nil {
 		t.Fatal("invalid pkg.yaml must error")
 	}
 

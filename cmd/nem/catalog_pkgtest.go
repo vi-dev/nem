@@ -53,14 +53,14 @@ func newCatalogTestCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sources = append(sources, manifestSource(args[0], pkg))
+			sources = sources.Append(manifestSource(args[0], pkg))
 
 			result, err := resolve.Resolve(cmd.Context(),
 				[]resolve.Tool{{Key: project.ToolKey{Name: pkg.Name}, Version: version}}, sources)
 			if err != nil {
 				return err
 			}
-			jobs := currentPlatformJobs(cfg, result)
+			jobs := install.Jobs(result, sources)
 			var root *install.Job
 			for i := range jobs {
 				if jobs[i].Pkg.Name == pkg.Name {
@@ -81,7 +81,7 @@ func newCatalogTestCmd() *cobra.Command {
 				}
 				depsResult.Entries = append(depsResult.Entries, e)
 			}
-			deps, err := build.InstallResolvedDeps(cmd.Context(), nemHome, cfg, depsResult)
+			deps, err := build.InstallResolvedDeps(cmd.Context(), nemHome, sources, depsResult)
 			if err != nil {
 				return err
 			}
@@ -104,13 +104,13 @@ func newCatalogTestCmd() *cobra.Command {
 	return cmd
 }
 
-func manifestSource(path string, pkg *spec.Package) catalog.Named {
+func manifestSource(path string, pkg *spec.Package) catalog.Entry {
 	if abs, err := filepath.Abs(path); err == nil {
 		pkgDir := filepath.Dir(abs)
 		if filepath.Base(pkgDir) == pkg.Name && filepath.Base(filepath.Dir(pkgDir)) == "pkgs" {
 			root := filepath.Dir(filepath.Dir(pkgDir))
-			return catalog.Named{Name: root, Source: catalog.NewDir(root)}
+			return catalog.Entry{Name: root, Catalog: catalog.NewDir(root)}
 		}
 	}
-	return catalog.Named{Name: path, Source: catalog.NewFile(pkg)}
+	return catalog.Entry{Name: path, Catalog: catalog.NewFile(path)}
 }

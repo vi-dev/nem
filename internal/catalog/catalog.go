@@ -8,19 +8,11 @@ import (
 
 type Summary struct{ Name, Description, Latest string }
 
-type Source interface {
+type Catalog interface {
 	Summaries(ctx context.Context) ([]Summary, error)
 	Versions(ctx context.Context, name string) ([]string, error)
-	Load(ctx context.Context, name string) (*spec.Package, string, error)
-}
-
-type NameLister interface {
+	Package(ctx context.Context, name string) (*spec.Package, string, error)
 	PackageNames(ctx context.Context) ([]string, error)
-}
-
-type Named struct {
-	Name   string
-	Source Source
 }
 
 func versionsOf(pkg *spec.Package) []string {

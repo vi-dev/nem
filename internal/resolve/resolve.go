@@ -63,12 +63,12 @@ type candidate struct {
 }
 
 type collector struct {
-	sources []catalog.Named
-	cands   map[string]*candidate
+	set   *catalog.Set
+	cands map[string]*candidate
 }
 
-func newCollector(sources []catalog.Named) *collector {
-	return &collector{sources: sources, cands: map[string]*candidate{}}
+func newCollector(set *catalog.Set) *collector {
+	return &collector{set: set, cands: map[string]*candidate{}}
 }
 
 func (c *collector) record(d demand, platform spec.Platform) {
@@ -102,14 +102,14 @@ func (c *collector) walkDeps(ctx context.Context, pkg *spec.Package, platform sp
 		if !spec.PlatformsInclude(dep.Platforms, platform) {
 			continue
 		}
-		depPkg, depCat, depDig, err := catalog.Lookup(ctx, c.sources, project.ToolKey{Name: dep.Name})
+		hit, err := c.set.Lookup(ctx, project.ToolKey{Name: dep.Name})
 		if err != nil {
 			return err
 		}
-		if !slices.Contains(depPkg.SupportedBy(), platform) {
+		if !slices.Contains(hit.Pkg.SupportedBy(), platform) {
 			continue
 		}
-		d, err := edgeDemand(dep, depPkg, depCat, depDig)
+		d, err := edgeDemand(dep, hit.Pkg, hit.Entry.Name, hit.Digest)
 		if err != nil {
 			return err
 		}
@@ -140,14 +140,15 @@ func edgeDemand(dep spec.Dep, pkg *spec.Package, catName, digest string) (demand
 	return d, nil
 }
 
-func Resolve(ctx context.Context, tools []Tool, sources []catalog.Named) (*Result, error) {
+func Resolve(ctx context.Context, tools []Tool, set *catalog.Set) (*Result, error) {
 	directNames := make(map[string]bool, len(tools))
 	roots := make([]demand, len(tools))
 	for i, t := range tools {
-		pkg, catName, dig, err := catalog.Lookup(ctx, sources, t.Key)
+		hit, err := set.Lookup(ctx, t.Key)
 		if err != nil {
 			return nil, err
 		}
+		pkg, catName, dig := hit.Pkg, hit.Entry.Name, hit.Digest
 		version, err := resolveVersion(pkg, t.Key.Name, t.Version, catName)
 		if err != nil {
 			return nil, err
@@ -165,7 +166,7 @@ func Resolve(ctx context.Context, tools []Tool, sources []catalog.Named) (*Resul
 		}
 	}
 
-	col := newCollector(sources)
+	col := newCollector(set)
 	for _, platform := range spec.SupportedPlatforms {
 		visited := map[string]bool{}
 		for _, r := range roots {
@@ -180,10 +181,10 @@ func Resolve(ctx context.Context, tools []Tool, sources []catalog.Named) (*Resul
 	return finalize(col.cands, directNames)
 }
 
-func Dependencies(ctx context.Context, pkg *spec.Package, deps []spec.Dep, sources []catalog.Named) (*Result, error) {
+func Dependencies(ctx context.Context, pkg *spec.Package, deps []spec.Dep, set *catalog.Set) (*Result, error) {
 
 	rootPkg := &spec.Package{Name: pkg.Name, Platforms: pkg.Platforms, Deps: deps}
-	col := newCollector(sources)
+	col := newCollector(set)
 	for _, platform := range spec.SupportedPlatforms {
 		if !slices.Contains(rootPkg.SupportedBy(), platform) {
 			continue

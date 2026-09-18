@@ -55,8 +55,8 @@ func writeSpec(t *testing.T, root string, p pkgSpec) {
 	writePkg(t, root, b.String())
 }
 
-func namedSources(root string) []catalog.Named {
-	return []catalog.Named{{Name: "cat", Source: catalog.NewDir(root)}}
+func namedSources(root string) *catalog.Set {
+	return catalog.NewSet(catalog.Entry{Name: "cat", Catalog: catalog.NewDir(root)})
 }
 
 func entry(t *testing.T, res *resolve.Result, name string) project.LockEntry {
@@ -235,7 +235,7 @@ func TestResolvePinnedToolKey(t *testing.T) {
 	writeSpec(t, rootA, pkgSpec{name: "shared", versions: "[v1.0.0]"})
 	rootB := t.TempDir()
 	writeSpec(t, rootB, pkgSpec{name: "shared", versions: "[v2.0.0]"})
-	sources := []catalog.Named{{Name: "a", Source: catalog.NewDir(rootA)}, {Name: "b", Source: catalog.NewDir(rootB)}}
+	sources := catalog.NewSet(catalog.Entry{Name: "a", Catalog: catalog.NewDir(rootA)}, catalog.Entry{Name: "b", Catalog: catalog.NewDir(rootB)})
 
 	toolsB := []resolve.Tool{{Key: project.ToolKey{Catalog: "b", Name: "shared"}}}
 	resB, err := resolve.Resolve(context.Background(), toolsB, sources)
@@ -264,10 +264,10 @@ func TestResolveEqualVersionPinKeepsAttribution(t *testing.T) {
 	writeSpec(t, rootA, pkgSpec{name: "consumer", deps: []string{"{name: shared}"}, versions: "[v1.0.0]"})
 	rootB := t.TempDir()
 	writeSpec(t, rootB, pkgSpec{name: "shared", versions: "[v1.0.0]"})
-	sources := []catalog.Named{
-		{Name: "a", Source: catalog.NewDir(rootA)},
-		{Name: "b", Source: catalog.NewDir(rootB)},
-	}
+	sources := catalog.NewSet(
+		catalog.Entry{Name: "a", Catalog: catalog.NewDir(rootA)},
+		catalog.Entry{Name: "b", Catalog: catalog.NewDir(rootB)},
+	)
 	pin := resolve.Tool{Key: project.ToolKey{Catalog: "b", Name: "shared"}, Version: "v1.0.0"}
 	consumer := resolve.Tool{Key: project.ToolKey{Name: "consumer"}}
 	bothOrders(t, "pin first", "dep first", pin, consumer, func(t *testing.T, tools []resolve.Tool) {
@@ -288,10 +288,10 @@ func TestResolveUnpinnedQualifiedRootSelectsFromItsCatalog(t *testing.T) {
 	writeSpec(t, rootA, pkgSpec{name: "app", deps: []string{"{name: shared, version: v1.0.0}"}, versions: "[v1.0.0]"})
 	rootB := t.TempDir()
 	writeSpec(t, rootB, pkgSpec{name: "shared", versions: "[v2.0.0, v1.0.0]"})
-	sources := []catalog.Named{
-		{Name: "a", Source: catalog.NewDir(rootA)},
-		{Name: "b", Source: catalog.NewDir(rootB)},
-	}
+	sources := catalog.NewSet(
+		catalog.Entry{Name: "a", Catalog: catalog.NewDir(rootA)},
+		catalog.Entry{Name: "b", Catalog: catalog.NewDir(rootB)},
+	)
 	tools := []resolve.Tool{
 		{Key: project.ToolKey{Catalog: "b", Name: "shared"}},
 		{Key: project.ToolKey{Name: "app"}},
@@ -311,10 +311,10 @@ func TestResolveUnpinnedQualifiedRootMissingBoundVersionErrors(t *testing.T) {
 	writeSpec(t, rootA, pkgSpec{name: "app", deps: []string{"{name: shared, version: v1.0.0}"}, versions: "[v1.0.0]"})
 	rootB := t.TempDir()
 	writeSpec(t, rootB, pkgSpec{name: "shared", versions: "[v2.0.0]"})
-	sources := []catalog.Named{
-		{Name: "a", Source: catalog.NewDir(rootA)},
-		{Name: "b", Source: catalog.NewDir(rootB)},
-	}
+	sources := catalog.NewSet(
+		catalog.Entry{Name: "a", Catalog: catalog.NewDir(rootA)},
+		catalog.Entry{Name: "b", Catalog: catalog.NewDir(rootB)},
+	)
 	tools := []resolve.Tool{
 		{Key: project.ToolKey{Catalog: "b", Name: "shared"}},
 		{Key: project.ToolKey{Name: "app"}},
@@ -335,10 +335,10 @@ func TestResolveQualifiedRootMissingRangeErrors(t *testing.T) {
 	writeSpec(t, rootA, pkgSpec{name: "app", deps: []string{`{name: shared, kind: link, compat: "1.9"}`}, versions: "[v1.0.0]"})
 	rootB := t.TempDir()
 	writeSpec(t, rootB, pkgSpec{name: "shared", libs: "[lib]", versions: "[v2.0.0]"})
-	sources := []catalog.Named{
-		{Name: "a", Source: catalog.NewDir(rootA)},
-		{Name: "b", Source: catalog.NewDir(rootB)},
-	}
+	sources := catalog.NewSet(
+		catalog.Entry{Name: "a", Catalog: catalog.NewDir(rootA)},
+		catalog.Entry{Name: "b", Catalog: catalog.NewDir(rootB)},
+	)
 	tools := []resolve.Tool{
 		{Key: project.ToolKey{Catalog: "b", Name: "shared"}},
 		{Key: project.ToolKey{Name: "app"}},

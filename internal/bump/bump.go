@@ -12,9 +12,9 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/discover"
 	"github.com/vi-dev/nem/internal/fetch"
-	"github.com/vi-dev/nem/internal/fsx"
 	"github.com/vi-dev/nem/internal/netx"
 	"github.com/vi-dev/nem/internal/publish"
 	"github.com/vi-dev/nem/internal/report"
@@ -265,7 +265,7 @@ func apply(ctx context.Context, path string, data []byte, pkg *spec.Package, tar
 			return nil, "", fmt.Errorf("edited manifest is not newest-first at %s", check.Versions[i].Version)
 		}
 	}
-	if err := fsx.WriteAtomic(path, edited, 0o644); err != nil {
+	if err := catalog.NewFile(path).UpdateManifest(check.Name, edited); err != nil {
 		return nil, "", err
 	}
 	return added, check.Versions[0].Version, nil

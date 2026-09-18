@@ -52,7 +52,7 @@ func newCatalogBuildCmd() *cobra.Command {
 			if !noTest && len(pkg.Test) > 0 {
 				opts.Test = func(ctx context.Context, p *spec.Package, v, artifactPath string) error {
 
-					deps, err := build.ResolveDeps(ctx, nemHome, cfg, sources, p, p.Deps)
+					deps, err := build.ResolveDeps(ctx, nemHome, sources, p, p.Deps)
 					if err != nil {
 						return err
 					}
@@ -60,7 +60,7 @@ func newCatalogBuildCmd() *cobra.Command {
 						cmd.OutOrStdout(), cmd.ErrOrStderr())
 				}
 			}
-			res, err := build.Build(cmd.Context(), nemHome, cfg, sources, pkg, opts,
+			res, err := build.Build(cmd.Context(), nemHome, sources, pkg, opts,
 				cmd.OutOrStdout(), cmd.ErrOrStderr())
 			if err != nil {
 				return err
