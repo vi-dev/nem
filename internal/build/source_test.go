@@ -36,12 +36,12 @@ func TestFetchSourceVerifyAndTOFU(t *testing.T) {
 	dir := t.TempDir()
 	meta := fetch.Meta{Name: "a", Version: "v1"}
 
-	p, sha, verified, err := fetchSource(context.Background(), http.DefaultClient, srv.URL, want, dir, meta)
+	p, sha, verified, err := fetchSource(context.Background(), http.DefaultClient, srv.URL, want, dir, meta, nil)
 	if err != nil || !verified || sha != want {
 		t.Fatalf("verify path: p=%q sha=%q verified=%v err=%v", p, sha, verified, err)
 	}
 
-	_, sha2, verified2, err := fetchSource(context.Background(), http.DefaultClient, srv.URL, "", dir, meta)
+	_, sha2, verified2, err := fetchSource(context.Background(), http.DefaultClient, srv.URL, "", dir, meta, nil)
 	if err != nil || verified2 || sha2 != want {
 		t.Fatalf("tofu path: sha=%q verified=%v err=%v", sha2, verified2, err)
 	}

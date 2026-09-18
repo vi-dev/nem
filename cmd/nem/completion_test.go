@@ -288,9 +288,10 @@ func TestCompleteStaticValues(t *testing.T) {
 
 func TestCompletePathFilters(t *testing.T) {
 	nemHomeDir := t.TempDir()
+
 	out := runNemComplete(t, nemHomeDir, "catalog", "build", "")
-	if !strings.Contains(out, "yaml\n") || !strings.Contains(out, ":8\n") {
-		t.Errorf("build should filter to yaml files:\n%s", out)
+	if strings.Contains(out, "yaml\n") {
+		t.Errorf("build takes a catalog ref, not a recipe path:\n%s", out)
 	}
 	out = runNemComplete(t, nemHomeDir, "catalog", "test", "")
 	if !strings.Contains(out, ":8\n") {
@@ -302,7 +303,7 @@ func TestCompletePathFilters(t *testing.T) {
 	}
 }
 
-func TestCompleteUseDedupeFirstCatalogWins(t *testing.T) {
+func TestCompleteUseDedupesNamesAcrossCatalogs(t *testing.T) {
 	nemHomeDir := t.TempDir()
 	seedSyncedCatalog(t, nemHomeDir, "official", []ocixtest.FakeEntry{
 		{Name: "go", Description: "Go toolchain", Latest: "v1.2.0", YAML: []byte(fmt.Sprintf(completionPkgYAML, "go"))},

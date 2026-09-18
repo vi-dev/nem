@@ -124,7 +124,7 @@ func installFakeTool(t *testing.T, h home.Home, marker string) project.LockEntry
 	artifact := filepath.Join(t.TempDir(), "artifact.tar.gz")
 	writeBinary(t, artifact, archive)
 
-	if err := install.Install(context.Background(), h, pkg, "v1.0.0", "test", artifact); err != nil {
+	if err := install.Install(context.Background(), h, pkg, "v1.0.0", "test", artifact, false); err != nil {
 		t.Fatalf("install fake tool: %v", err)
 	}
 	return project.LockEntry{

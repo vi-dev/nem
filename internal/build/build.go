@@ -5,15 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
-
-	"oras.land/oras-go/v2/content"
 
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/fetch"
@@ -28,32 +25,23 @@ import (
 )
 
 type Options struct {
-	Version, Output, SourceSha256 string
-	Push                          string
-	DryRun, Force                 bool
+	Version string
 
 	Test func(ctx context.Context, pkg *spec.Package, version, artifactPath string) error
-}
 
-type Result struct {
-	OutputDir      string
-	Version        string
-	SourceSha256   string
-	SourceVerified bool
-	Pushed         bool
-	PushedRef      string
+	LocalStore *ocix.ArchiveStore
 }
 
 var archivesOpener = ocix.RemoteArchivesRW
 
 func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package,
-	opts Options, stdout, stderr io.Writer) (Result, error) {
+	opts Options) error {
 	rep := report.FromContext(ctx)
 	if pkg.Build == nil {
-		return Result{}, errors.New("package has no build section")
+		return errors.New("package has no build section")
 	}
 	if err := pkg.Validate(); err != nil {
-		return Result{}, err
+		return err
 	}
 
 	version := opts.Version
@@ -62,16 +50,16 @@ func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package
 	}
 
 	if err := os.MkdirAll(h.Tmp(), 0o755); err != nil {
-		return Result{}, fmt.Errorf("create tmp dir: %w", err)
+		return fmt.Errorf("create tmp dir: %w", err)
 	}
 	staging, err := os.MkdirTemp(h.Tmp(), pkg.Name+home.BuildStagingInfix+"*")
 	if err != nil {
-		return Result{}, fmt.Errorf("create staging dir: %w", err)
+		return fmt.Errorf("create staging dir: %w", err)
 	}
 
-	path, sha, verified, err := fetchBuildSource(ctx, pkg, version, opts.SourceSha256, staging)
+	path, sha, verified, err := fetchBuildSource(ctx, pkg, version, staging)
 	if err != nil {
-		return Result{}, err
+		return err
 	}
 	if !verified {
 		rep.Info("Record for reproducibility: sourceSha256: %s", sha)
@@ -79,21 +67,21 @@ func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package
 
 	srcDir := filepath.Join(staging, "src")
 	if err := os.MkdirAll(srcDir, 0o755); err != nil {
-		return Result{}, fmt.Errorf("create source dir: %w", err)
+		return fmt.Errorf("create source dir: %w", err)
 	}
 	srcRoot, err := unpackSource(path, srcDir, sourceSingleName(pkg, version))
 	if err != nil {
-		return Result{}, err
+		return err
 	}
 
-	deps, err := ResolveDeps(ctx, h, set, pkg, pkg.Build.Deps)
+	deps, err := ResolveDeps(ctx, h, set, pkg, pkg.Build.Deps, opts.LocalStore)
 	if err != nil {
-		return Result{}, err
+		return err
 	}
 
 	prefix, err := h.PackageDir(pkg.Name, version)
 	if err != nil {
-		return Result{}, fmt.Errorf("package dir for %s@%s: %w", pkg.Name, version, err)
+		return fmt.Errorf("package dir for %s@%s: %w", pkg.Name, version, err)
 	}
 	outputDir := filepath.Join(srcRoot, pkg.Build.Output)
 	env := ComposeEnv(os.Environ(), deps, EnvContext{
@@ -110,67 +98,66 @@ func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package
 		c := exec.CommandContext(ctx, "sh", "-c", step.Run)
 		c.Dir = srcRoot
 		c.Env = env
-		c.Stdout = stdout
-		c.Stderr = stderr
+		c.Stdout = rep.Out()
+		c.Stderr = rep.ErrOut()
 		if err := c.Run(); err != nil {
-			return Result{}, fmt.Errorf("build step %d (%q): %w", i+1, step.Run, err)
+			return fmt.Errorf("build step %d (%q): %w", i+1, step.Run, err)
 		}
 		ran++
 	}
 
 	if ran == 0 {
-		return Result{}, fmt.Errorf("no build step applies to %s", spec.Current())
+		return fmt.Errorf("no build step applies to %s", spec.Current())
 	}
 
 	if n := pkg.Build.Normalize; n == nil || *n {
 		if err := normalizeOutput(outputDir); err != nil {
-			return Result{}, fmt.Errorf("normalize output: %w", err)
+			return fmt.Errorf("normalize output: %w", err)
 		}
 	}
 
 	packagesRoot := h.Packages()
 	vs, err := VerifyConformance(outputDir, []string{staging, packagesRoot})
 	if err != nil {
-		return Result{}, fmt.Errorf("verify %s: %w", outputDir, err)
+		return fmt.Errorf("verify %s: %w", outputDir, err)
 	}
 	if len(vs) > 0 {
-		return Result{}, conformanceError(vs)
+		return conformanceError(vs)
 	}
 
 	var archive []byte
-	if opts.Test != nil || opts.Push != "" {
+	if opts.Test != nil || opts.LocalStore != nil {
 		var buf bytes.Buffer
 		if err := tarGzDir(&buf, outputDir); err != nil {
-			return Result{}, fmt.Errorf("archive %s: %w", outputDir, err)
+			return fmt.Errorf("archive %s: %w", outputDir, err)
 		}
 		archive = buf.Bytes()
+	}
+
+	if err := os.RemoveAll(staging); err != nil {
+		rep.Warn("sweep build staging: %v", err)
 	}
 
 	if opts.Test != nil {
 		tmpArchive, err := writeTempArchive(h, pkg.Name, archive)
 		if err != nil {
-			return Result{}, err
+			return err
 		}
 
 		defer os.Remove(tmpArchive)
 		if err := opts.Test(ctx, pkg, version, tmpArchive); err != nil {
-			return Result{}, err
+			return err
 		}
 	}
 
-	final, err := harvest(outputDir, opts.Output)
-	if err != nil {
-		return Result{}, err
-	}
-
-	result := Result{OutputDir: final, Version: version, SourceSha256: sha, SourceVerified: verified}
-	if opts.Push != "" {
-		ref, pushed, err := pushBuiltArchive(ctx, archive, pkg.Name, version, opts)
+	if opts.LocalStore != nil {
+		target, err := opts.LocalStore.Open(pkg.Name)
 		if err != nil {
-			return Result{}, err
+			return fmt.Errorf("stage archive locally: %w", err)
 		}
-		result.Pushed = pushed
-		result.PushedRef = ref
+		if _, _, err := ocix.PushArchive(ctx, target, version, spec.Current(), archive, true); err != nil {
+			return fmt.Errorf("stage archive locally: %w", err)
+		}
 	}
 
 	keys := []string{usage.Key(pkg.Name, version)}
@@ -178,53 +165,40 @@ func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package
 		keys = append(keys, usage.Key(d.Name, d.Version))
 	}
 	usage.Stamp(h, time.Now(), keys)
-	return result, nil
+	return nil
 }
 
-func pushBuiltArchive(ctx context.Context, archive []byte, name, version string, opts Options) (string, bool, error) {
+func fetchBuildSource(ctx context.Context, pkg *spec.Package, version, staging string) (path, sha string, verified bool, err error) {
 	rep := report.FromContext(ctx)
-	archivesRef, err := ocix.ArchivesRef(opts.Push, name)
-	if err != nil {
-		return "", false, err
-	}
-	plat := spec.Current()
-	if opts.DryRun {
-		d := content.NewDescriptorFromBytes(ocix.MediaTypeArchive, archive)
-		rep.Info("Dry-run: would push %s:%s (%s) %s", archivesRef, version, plat, d.Digest)
-		return archivesRef, false, nil
-	}
-	target, err := archivesOpener(opts.Push, name)
-	if err != nil {
-		return "", false, err
-	}
-	if _, pushed, err := ocix.PushArchive(ctx, target, version, plat, archive, opts.Force); err != nil {
-		return "", false, err
-	} else if !pushed {
-		rep.Info("Archive %s:%s (%s) unchanged", archivesRef, version, plat)
-		return archivesRef, false, nil
-	}
-	return archivesRef, true, nil
-}
-
-func fetchBuildSource(ctx context.Context, pkg *spec.Package, version, shaOverride, staging string) (path, sha string, verified bool, err error) {
-	want := shaOverride
-	if want == "" {
-		for _, v := range pkg.Versions {
-			if v.Version == version {
-				want = v.SourceSha256
-				break
-			}
+	var want string
+	for _, v := range pkg.Versions {
+		if v.Version == version {
+			want = v.SourceSha256
+			break
 		}
 	}
 	url, err := pkg.BuildSourceURL(version, spec.Current())
 	if err != nil {
 		return "", "", false, err
 	}
-	return fetchSource(ctx, netx.Client(), url, want, staging, fetch.Meta{Name: pkg.Name, Version: version, Platform: spec.Current()})
+
+	label := fmt.Sprintf("Downloading source for %s %s", pkg.Name, version)
+	failedOutcome := fmt.Sprintf("Failed to download source for %s %s", pkg.Name, version)
+	task := rep.Task(label)
+	task.Segment("downloading")
+
+	path, sha, verified, err = fetchSource(ctx, netx.Client(), url, want, staging,
+		fetch.Meta{Name: pkg.Name, Version: version, Platform: spec.Current()}, task)
+	if err != nil {
+		task.Fail(failedOutcome)
+		return "", "", false, err
+	}
+	task.Done(fmt.Sprintf("Downloaded source for %s %s", pkg.Name, version))
+	return path, sha, verified, nil
 }
 
 func ResolveDeps(ctx context.Context, h home.Home, set *catalog.Set,
-	pkg *spec.Package, deps []spec.Dep) ([]ResolvedDep, error) {
+	pkg *spec.Package, deps []spec.Dep, local *ocix.ArchiveStore) ([]ResolvedDep, error) {
 	if len(deps) == 0 {
 		return nil, nil
 	}
@@ -232,12 +206,12 @@ func ResolveDeps(ctx context.Context, h home.Home, set *catalog.Set,
 	if err != nil {
 		return nil, err
 	}
-	return InstallResolvedDeps(ctx, h, set, result)
+	return InstallResolvedDeps(ctx, h, set, result, local)
 }
 
 func InstallResolvedDeps(ctx context.Context, h home.Home, set *catalog.Set,
-	result *resolve.Result) ([]ResolvedDep, error) {
-	if err := install.Run(ctx, h, install.Jobs(result, set)); err != nil {
+	result *resolve.Result, local *ocix.ArchiveStore) ([]ResolvedDep, error) {
+	if err := install.Run(ctx, h, install.Jobs(result, set, local)); err != nil {
 		return nil, err
 	}
 	current := spec.Current().String()
@@ -261,19 +235,6 @@ func InstallResolvedDeps(ctx context.Context, h home.Home, set *catalog.Set,
 		})
 	}
 	return out, nil
-}
-
-func harvest(outputDir, output string) (string, error) {
-	if output == "" {
-		return outputDir, nil
-	}
-	if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil {
-		return "", fmt.Errorf("create output parent dir: %w", err)
-	}
-	if err := os.Rename(outputDir, output); err != nil {
-		return "", fmt.Errorf("move build output to %s: %w", output, err)
-	}
-	return output, nil
 }
 
 func writeTempArchive(h home.Home, name string, data []byte) (string, error) {

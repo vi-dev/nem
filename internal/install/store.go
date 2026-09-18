@@ -27,7 +27,7 @@ type Meta struct {
 	InstalledAt time.Time        `yaml:"installed_at"`
 }
 
-func Install(ctx context.Context, h home.Home, pkg *spec.Package, version, catalog, artifactPath string) error {
+func Install(ctx context.Context, h home.Home, pkg *spec.Package, version, catalog, artifactPath string, reinstall bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -37,7 +37,9 @@ func Install(ctx context.Context, h home.Home, pkg *spec.Package, version, catal
 		return fmt.Errorf("install %s@%s: %w", pkg.Name, version, err)
 	}
 	if _, err := os.Lstat(installDir); err == nil {
-		return commitExistsErr(pkg.Name, version)
+		if !reinstall {
+			return commitExistsErr(pkg.Name, version)
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("stat install dir: %w", err)
 	}
@@ -63,6 +65,12 @@ func Install(ctx context.Context, h home.Home, pkg *spec.Package, version, catal
 	}
 	if err := writeMeta(staging, pkg, version, catalog); err != nil {
 		return fmt.Errorf("install %s@%s: %w", pkg.Name, version, err)
+	}
+
+	if reinstall {
+		if err := os.RemoveAll(installDir); err != nil {
+			return fmt.Errorf("remove existing install %s@%s: %w", pkg.Name, version, err)
+		}
 	}
 
 	if err := os.Rename(staging, installDir); err != nil {

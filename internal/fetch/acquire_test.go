@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"oras.land/oras-go/v2"
+
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/spec"
 )
@@ -380,5 +382,56 @@ func TestVerifyFileMismatch(t *testing.T) {
 	}
 	if cme.Name != "go" || cme.Version != "v1.2.3" {
 		t.Errorf("Name/Version = %q/%q", cme.Name, cme.Version)
+	}
+}
+
+func TestAcquireRelativeOCIRefPrefersLocalArchives(t *testing.T) {
+	s := ocix.NewArchiveStore(t.TempDir())
+	target, err := s.Open("tool")
+	if err != nil {
+		t.Fatalf("store open: %v", err)
+	}
+	if _, _, err := ocix.PushArchive(context.Background(), target, "v1.2.3", testPlat, []byte("local bytes"), false); err != nil {
+		t.Fatalf("seed store: %v", err)
+	}
+
+	withPullArchive(t, func(context.Context, string, string, string, spec.Platform, string) (string, error) {
+		t.Fatal("catalog pull must not run on a local hit")
+		return "", nil
+	})
+
+	pkg := ociPkg(":{{.Version}}")
+	pkg.Name = "tool"
+	src := Source{LocalArchives: func(name string) (oras.ReadOnlyTarget, error) { return s.Open(name) }}
+	path, err := Acquire(context.Background(), pkg, "v1.2.3", testPlat, src, t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != "local bytes" {
+		t.Fatalf("got %q", data)
+	}
+}
+
+func TestAcquireRelativeOCIRefLocalMissFallsBack(t *testing.T) {
+	s := ocix.NewArchiveStore(t.TempDir())
+	called := false
+	withPullArchive(t, func(_ context.Context, _, _, _ string, _ spec.Platform, dir string) (string, error) {
+		called = true
+		f, _ := os.CreateTemp(dir, "a-*.tmp")
+		f.Close()
+		return f.Name(), nil
+	})
+	pkg := ociPkg(":{{.Version}}")
+	pkg.Name = "tool"
+	src := Source{
+		CatalogRef:    "ghcr.io/org/cat:v2",
+		LocalArchives: func(name string) (oras.ReadOnlyTarget, error) { return s.Open(name) },
+	}
+	if _, err := Acquire(context.Background(), pkg, "v1.2.3", testPlat, src, t.TempDir(), nil); err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	if !called {
+		t.Fatal("catalog pull must run after a local miss")
 	}
 }

@@ -17,6 +17,8 @@ import (
 	"github.com/vi-dev/nem/internal/spec"
 )
 
+var readFile = os.ReadFile
+
 func newCatalogTestCmd() *cobra.Command {
 	var version string
 	cmd := &cobra.Command{
@@ -60,7 +62,7 @@ func newCatalogTestCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			jobs := install.Jobs(result, sources)
+			jobs := install.Jobs(result, sources, nil)
 			var root *install.Job
 			for i := range jobs {
 				if jobs[i].Pkg.Name == pkg.Name {
@@ -81,7 +83,7 @@ func newCatalogTestCmd() *cobra.Command {
 				}
 				depsResult.Entries = append(depsResult.Entries, e)
 			}
-			deps, err := build.InstallResolvedDeps(cmd.Context(), nemHome, sources, depsResult)
+			deps, err := build.InstallResolvedDeps(cmd.Context(), nemHome, sources, depsResult, nil)
 			if err != nil {
 				return err
 			}
@@ -97,7 +99,7 @@ func newCatalogTestCmd() *cobra.Command {
 			defer os.Remove(artifact)
 
 			return pkgtest.InstallAndRun(cmd.Context(), nemHome, deps, pkg, resolved,
-				root.Catalog, artifact, cmd.OutOrStdout(), cmd.ErrOrStderr())
+				root.Catalog, artifact)
 		},
 	}
 	cmd.Flags().StringVar(&version, "version", "", "version to test (default: the catalog's latest)")

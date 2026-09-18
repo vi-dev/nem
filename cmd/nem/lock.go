@@ -83,5 +83,5 @@ func runLock(cmd *cobra.Command, global bool) error {
 	}
 	release()
 
-	return install.Run(cmd.Context(), nemHome, install.Jobs(result, sources))
+	return install.Run(cmd.Context(), nemHome, install.Jobs(result, sources, nil))
 }

@@ -2,98 +2,197 @@ package main
 
 import (
 	"context"
-	"os"
+	"errors"
+	"fmt"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/vi-dev/nem/internal/build"
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/config"
+	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/pkgtest"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
+type buildInput struct {
+	packages []string
+	missing  bool
+	withDeps bool
+	push     bool
+	dryRun   bool
+	force    bool
+}
+
 func newCatalogBuildCmd() *cobra.Command {
-	var version, output, sourceSha, push string
-	var dryRun, force, noTest bool
+	var in buildInput
 	cmd := &cobra.Command{
-		Use:               "build <pkg.yaml>",
-		Short:             "Build a source package's recipe on the host platform",
-		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: firstArgOnly(completeYAMLFiles),
+		Use:   "build <catalog>",
+		Short: "Build a catalog's compile-from-source packages on the host platform",
+		Long: "Build and (optionally) push compile-from-source packages on the host platform.\n" +
+			"The catalog supplies the package manifests and, with --push, receives the archives.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			data, err := readFile(args[0])
-			if err != nil {
-				return err
-			}
-			pkg, err := spec.Parse(data)
-			if err != nil {
-				return err
-			}
-			if err := pkg.Validate(); err != nil {
-				return err
-			}
-
-			if plat := spec.Current(); !spec.PlatformsInclude(pkg.Platforms, plat) {
-				console.Info("%s does not support %s", pkg.Name, plat)
-				return nil
-			}
-			cfg, err := config.OpenConfig(nemHome)
-			if err != nil {
-				return err
-			}
-			sources, err := catalog.OpenConfigured(cfg, nemHome)
-			if err != nil {
-				return err
-			}
-			opts := build.Options{Version: version, Output: output, SourceSha256: sourceSha,
-				Push: push, DryRun: dryRun, Force: force}
-
-			if !noTest && len(pkg.Test) > 0 {
-				opts.Test = func(ctx context.Context, p *spec.Package, v, artifactPath string) error {
-
-					deps, err := build.ResolveDeps(ctx, nemHome, sources, p, p.Deps)
-					if err != nil {
-						return err
-					}
-					return runPkgTest(ctx, nemHome, deps, p, v, "", artifactPath,
-						cmd.OutOrStdout(), cmd.ErrOrStderr())
-				}
-			}
-			res, err := build.Build(cmd.Context(), nemHome, sources, pkg, opts,
-				cmd.OutOrStdout(), cmd.ErrOrStderr())
-			if err != nil {
-				return err
-			}
-			console.Success("Built %s → %s", pkg.Name, res.OutputDir)
-			if res.Pushed {
-				console.Success("Pushed %s:%s", res.PushedRef, res.Version)
-			}
-			if push != "" && !dryRun && !hasVersionEntry(pkg, res.Version) {
-				console.Hint("Record this version in " + args[0] + ":\n  - version: " + res.Version)
-			}
-			return nil
+			return runCatalogBuild(cmd, args[0], in)
 		},
 	}
-	cmd.Flags().StringVar(&version, "version", "", "version to build (default: latest)")
-	cmd.Flags().StringVar(&output, "output", "", "output tree destination (default: under $NEM_HOME/tmp)")
-	cmd.Flags().StringVar(&sourceSha, "source-sha256", "", "pin the source checksum for this build")
-	cmd.Flags().StringVar(&push, "push", "", "publish the built archive to this catalog registry ref")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "with --push, report the plan without writing")
-	cmd.Flags().BoolVar(&force, "force", false, "with --push, overwrite an unchanged platform entry")
-	cmd.Flags().BoolVar(&noTest, "no-test", false, "skip the package's declared test steps")
+	cmd.Flags().StringArrayVar(&in.packages, "package", nil,
+		"build name@version package (repeatable; omitted version means latest)")
+	cmd.Flags().BoolVar(&in.missing, "missing", false, "build every package whose archive is missing")
+	cmd.Flags().BoolVar(&in.withDeps, "with-deps", false,
+		"also build every package's dependency whose archive is missing")
+	cmd.Flags().BoolVar(&in.push, "push", false, "publish built archives into the catalog")
+	cmd.Flags().BoolVar(&in.dryRun, "dry-run", false, "report the plan without building")
+	cmd.Flags().BoolVar(&in.force, "force", false, "with --push, overwrite existing archives")
 	return cmd
 }
 
-func hasVersionEntry(pkg *spec.Package, v string) bool {
-	for _, e := range pkg.Versions {
-		if e.Version == v {
-			return true
-		}
+func runCatalogBuild(cmd *cobra.Command, ref string, in buildInput) error {
+	if !in.missing && len(in.packages) == 0 {
+		return errors.New("select packages with --missing or --package")
 	}
-	return false
+	if in.withDeps && len(in.packages) == 0 {
+		return errors.New("--with-deps needs at least one --package")
+	}
+
+	ctx := cmd.Context()
+	target, err := build.OpenTarget(ctx, ref)
+	if err != nil {
+		return err
+	}
+	if target.File {
+		return errors.New("catalog build takes a catalog directory or OCI ref, not a recipe path")
+	}
+
+	cfg, err := config.OpenConfig(nemHome)
+	if err != nil {
+		return err
+	}
+	configured, err := catalog.OpenConfigured(cfg, nemHome)
+	if err != nil {
+		return err
+	}
+
+	sels, err := build.Select(ctx, target, configured, in.packages, in.withDeps)
+	if err != nil {
+		return err
+	}
+	if in.missing {
+		missing, stats, err := build.SelectMissing(ctx, target)
+		if err != nil {
+			return err
+		}
+		console.Info("Checked %d oci packages: %d incomplete versions, %d prebuilt skipped",
+			stats.Checked, len(missing), stats.Skipped)
+		sels = build.Merge(sels, missing)
+	}
+	plan, err := build.ComputePlan(sels)
+	if err != nil {
+		return err
+	}
+	if len(plan.Entries) == 0 {
+		console.Success("Nothing to build")
+		return nil
+	}
+
+	if in.dryRun {
+		renderPlan(plan)
+		return narrateDryRunPushes(plan, target, in.push)
+	}
+
+	sources := configured.Prepend(target.Entry)
+	opts := build.BatchOptions{Target: target, Push: in.push, Force: in.force,
+		TestFor: batchTestFor(sources)}
+	rows, err := build.RunBatch(ctx, nemHome, sources, plan, opts)
+	if err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		console.Success("Nothing to build on %s", spec.Current())
+		return nil
+	}
+	return renderSummary(rows)
 }
 
-var readFile = os.ReadFile
-
 var runPkgTest = pkgtest.InstallAndRun
+
+func batchTestFor(set *catalog.Set) func(
+	*spec.Package, *ocix.ArchiveStore) func(context.Context, *spec.Package, string, string) error {
+	return func(pkg *spec.Package, store *ocix.ArchiveStore) func(context.Context, *spec.Package, string, string) error {
+		if len(pkg.Test) == 0 {
+			return nil
+		}
+		return func(ctx context.Context, p *spec.Package, v, artifactPath string) error {
+			deps, err := build.ResolveDeps(ctx, nemHome, set, p, p.Deps, store)
+			if err != nil {
+				return err
+			}
+			return runPkgTest(ctx, nemHome, deps, p, v, "", artifactPath)
+		}
+	}
+}
+
+func renderPlan(plan build.Plan) {
+	rows := make([][]string, len(plan.Entries))
+	for i, e := range plan.Entries {
+		needs := "-"
+		if len(e.Needs) > 0 {
+			needs = strings.Join(e.Needs, ",")
+		}
+		plats := make([]string, len(e.Platforms))
+		for j, p := range e.Platforms {
+			plats[j] = p.String()
+		}
+		rows[i] = []string{strconv.Itoa(e.Wave), e.Pkg.Name, e.Version, e.Reason, needs, strings.Join(plats, ",")}
+	}
+	console.Table([]string{"WAVE", "PACKAGE", "VERSION", "REASON", "NEEDS", "PLATFORMS"}, rows)
+}
+
+func narrateDryRunPushes(plan build.Plan, t *build.Target, push bool) error {
+	if !push {
+		return nil
+	}
+	plat := spec.Current()
+	for _, e := range plan.Entries {
+		if !slices.Contains(e.Platforms, plat) {
+			continue
+		}
+		ref, err := archiveTargetRef(t, e.Pkg.Name)
+		if err != nil {
+			return err
+		}
+		console.Info("Dry-run: would push %s:%s (%s)", ref, e.Version, plat)
+	}
+	return nil
+}
+
+func archiveTargetRef(t *build.Target, name string) (string, error) {
+	if t.IsDir() {
+		return filepath.Join(t.Dir, "archives", name), nil
+	}
+	return ocix.ArchivesRef(t.Ref, name)
+}
+
+func renderSummary(rows []build.SummaryRow) error {
+	table := make([][]string, len(rows))
+	for i, r := range rows {
+		table[i] = []string{r.Name, r.Version, r.Result, r.Detail}
+	}
+	console.Table([]string{"PACKAGE", "VERSION", "RESULT", "DETAIL"}, table)
+
+	built, pushed, failed, skipped, pushFailed, err := build.Verdict(rows)
+	verdict := fmt.Sprintf("%d built (%d pushed), %d failed, %d skipped", built, pushed, failed, skipped)
+	if failed+skipped > 0 || pushFailed > 0 {
+		console.Warn("%s", verdict)
+	} else {
+		console.Success("%s", verdict)
+	}
+	if pushFailed > 0 {
+		console.Hint("Re-run with --missing to retry failed pushes")
+	}
+	return err
+}

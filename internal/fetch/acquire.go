@@ -11,6 +11,7 @@ import (
 	"strings"
 	"text/template"
 
+	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/registry"
 
 	"github.com/vi-dev/nem/internal/netx"
@@ -19,8 +20,12 @@ import (
 	"github.com/vi-dev/nem/internal/spec"
 )
 
+type ArchiveOpener func(name string) (oras.ReadOnlyTarget, error)
+
 type Source struct {
 	CatalogRef string
+
+	LocalArchives ArchiveOpener
 }
 
 var httpClient = netx.Client()
@@ -91,6 +96,21 @@ func acquireOCI(ctx context.Context, pkg *spec.Package, version string, plat spe
 		return "", err
 	}
 	if isRelativeOCIRef(ref) {
+		if src.LocalArchives != nil {
+			target, err := src.LocalArchives(pkg.Name)
+			if err != nil {
+				return "", err
+			}
+			path, err := ocix.PullArchiveFrom(ctx, target, ociRefTag(ref), plat, dir)
+			switch {
+			case err == nil:
+				return path, nil
+			case errors.Is(err, ocix.ErrArchiveNotFound):
+
+			default:
+				return "", err
+			}
+		}
 		if src.CatalogRef == "" {
 			return "", errors.New("relative oci ref requires an oci catalog")
 		}

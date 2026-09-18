@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,8 +20,7 @@ import (
 )
 
 func InstallAndRun(ctx context.Context, h home.Home, deps []build.ResolvedDep,
-	pkg *spec.Package, version, catalogName, artifactPath string,
-	stdout, stderr io.Writer) (err error) {
+	pkg *spec.Package, version, catalogName, artifactPath string) (err error) {
 	rep := report.FromContext(ctx)
 
 	plat := spec.Current()
@@ -63,7 +61,7 @@ func InstallAndRun(ctx context.Context, h home.Home, deps []build.ResolvedDep,
 
 	alias := *pkg
 	alias.Name = aliasName
-	if installErr := install.Install(ctx, h, &alias, version, catalogName, artifactPath); installErr != nil {
+	if installErr := install.Install(ctx, h, &alias, version, catalogName, artifactPath, false); installErr != nil {
 		return fmt.Errorf("test-install %s@%s: %w", pkg.Name, version, installErr)
 	}
 	prefix := filepath.Join(aliasDir, version)
@@ -102,8 +100,8 @@ func InstallAndRun(ctx context.Context, h home.Home, deps []build.ResolvedDep,
 		c := exec.CommandContext(ctx, "sh", "-c", loaderPrologue+s.Run)
 		c.Dir = scratch
 		c.Env = env
-		c.Stdout = stdout
-		c.Stderr = stderr
+		c.Stdout = rep.Out()
+		c.Stderr = rep.ErrOut()
 		if runErr := c.Run(); runErr != nil {
 			return fmt.Errorf("test step %d (%q): %w", i+1, s.Run, runErr)
 		}
@@ -112,7 +110,7 @@ func InstallAndRun(ctx context.Context, h home.Home, deps []build.ResolvedDep,
 	if len(steps) == 1 {
 		noun = "step"
 	}
-	rep.Info("Tested %s %s (%d %s)", pkg.Name, version, len(steps), noun)
+	rep.Success("Tested %s %s (%d %s)", pkg.Name, version, len(steps), noun)
 	return nil
 }
 

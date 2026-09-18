@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/vi-dev/nem/internal/home"
+	"github.com/vi-dev/nem/internal/ocix"
 )
 
 func assertNoLeakedTestAlias(t *testing.T, nemHome string) {
@@ -28,6 +29,22 @@ func assertNoLeakedTestAlias(t *testing.T, nemHome string) {
 	})
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatalf("walk %s: %v", root, err)
+	}
+}
+
+func assertStaged(t *testing.T, catalogDir, name, version string) {
+	t.Helper()
+	if !ocix.NewArchiveStore(catalogDir).HasTag(name, version) {
+		t.Fatalf("%s@%s is not staged under %s", name, version,
+			filepath.Join(catalogDir, "archives", name))
+	}
+}
+
+func assertNothingStaged(t *testing.T, catalogDir, name string) {
+	t.Helper()
+	if ocix.NewArchiveStore(catalogDir).Has(name) {
+		t.Fatalf("a failed build staged archives under %s",
+			filepath.Join(catalogDir, "archives", name))
 	}
 }
 
@@ -87,26 +104,20 @@ func useCTarball(t *testing.T) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(tgz) }))
 }
 
-func buildRecipe(t *testing.T, dir, sourceURL, buildStep string) string {
+func buildCatalog(t *testing.T, sourceURL, buildStep string) string {
 	t.Helper()
-	path := filepath.Join(dir, "pkg.yaml")
-	writeFile(t, path, "schema: 2\nname: tool\n"+
-		"artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n"+
-		"versions: [v1.0.0]\nbuild:\n  source: {url: \""+sourceURL+"\"}\n"+
-		"  deps: [{name: foo, kind: link}]\n  output: out\n"+
-		"  steps:\n    - run: "+buildStep+"\n")
-	return path
+	return buildRoleCatalog(t, sourceURL, "link", buildStep)
 }
 
-func buildRoleRecipe(t *testing.T, dir, sourceURL, kind, buildStep string) string {
+func buildRoleCatalog(t *testing.T, sourceURL, kind, buildStep string) string {
 	t.Helper()
-	path := filepath.Join(dir, "pkg.yaml")
-	writeFile(t, path, "schema: 2\nname: tool\n"+
-		"artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n"+
-		"versions: [v1.0.0]\nbuild:\n  source: {url: \""+sourceURL+"\"}\n"+
-		"  deps: [{name: foo, kind: "+kind+"}]\n  output: out\n"+
-		"  steps:\n    - run: "+buildStep+"\n")
-	return path
+	return writeLintFixture(t, map[string]string{
+		"tool": "schema: 2\nname: tool\n" +
+			"artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n" +
+			"versions: [v1.0.0]\nbuild:\n  source: {url: \"" + sourceURL + "\"}\n" +
+			"  deps: [{name: foo, kind: " + kind + "}]\n  output: out\n" +
+			"  steps:\n    - run: " + buildStep + "\n",
+	})
 }
 
 func TestCatalogBuildLinksAgainstDepViaScaffold(t *testing.T) {
@@ -124,18 +135,14 @@ func TestCatalogBuildLinksAgainstDepViaScaffold(t *testing.T) {
 	srv := useCTarball(t)
 	defer srv.Close()
 
-	dir := t.TempDir()
-	recipe := buildRecipe(t, dir, srv.URL,
+	cat := buildCatalog(t, srv.URL,
 		`mkdir -p "$NEM_OUTPUT/bin" && cc $CPPFLAGS -o "$NEM_OUTPUT/bin/usefoo" use.c $LDFLAGS -lfoo`)
 
-	outDir := filepath.Join(t.TempDir(), "out")
-	_, errb, err := runNem(t, nemHome, "catalog", "build", recipe, "--version", "v1.0.0", "--output", outDir)
+	_, errb, err := runNem(t, nemHome, "catalog", "build", cat, "--package", "tool@v1.0.0", "--push")
 	if err != nil {
 		t.Fatalf("catalog build: %v\n%s", err, errb)
 	}
-	if _, err := os.Stat(filepath.Join(outDir, "bin", "usefoo")); err != nil {
-		t.Fatalf("usefoo missing from conformant build output: %v", err)
-	}
+	assertStaged(t, cat, "tool", "v1.0.0")
 }
 
 func TestCatalogBuildRejectsAbsoluteRpathIntoPackages(t *testing.T) {
@@ -154,24 +161,27 @@ func TestCatalogBuildRejectsAbsoluteRpathIntoPackages(t *testing.T) {
 	defer srv.Close()
 
 	badRpath := filepath.Join(nemHome, "packages", "foo", "v1", "lib")
-	dir := t.TempDir()
-	recipe := buildRecipe(t, dir, srv.URL,
+	cat := buildCatalog(t, srv.URL,
 		`mkdir -p "$NEM_OUTPUT/bin" && cc $CPPFLAGS -o "$NEM_OUTPUT/bin/usefoo" use.c $LDFLAGS -lfoo -Wl,-rpath,`+badRpath)
 
-	outDir := filepath.Join(t.TempDir(), "out")
-	_, errb, err := runNem(t, nemHome, "catalog", "build", recipe, "--version", "v1.0.0", "--output", outDir)
+	out, errb, err := runNem(t, nemHome, "catalog", "build", cat, "--package", "tool@v1.0.0", "--push")
 	if err == nil {
 		t.Fatal("catalog build must fail: recipe bakes an absolute rpath into packages")
 	}
-	if !strings.Contains(err.Error(), badRpath) {
-		t.Fatalf("error should mention the offending path %q: %v", badRpath, err)
+	row := tableRow(out, 0, "tool")
+	if row == nil || row[2] != "failed" {
+		t.Fatalf("tool row = %v, want a failed row:\n%s\nstderr: %s", row, out, errb)
+	}
+	if !strings.Contains(strings.Join(row, " "), "conformance violation") {
+		t.Fatalf("the failed row must name the conformance check, got %v", row)
 	}
 	if !strings.Contains(errb, badRpath) {
-		t.Fatalf("stderr should mention the offending path %q:\n%s", badRpath, errb)
+		t.Fatalf("stderr must name the offending rpath %s:\n%s", badRpath, errb)
 	}
+	assertNothingStaged(t, cat, "tool")
 }
 
-const probeStep = `mkdir -p "$NEM_OUTPUT" && (command -v foocli >/dev/null && echo ON_PATH || echo NOT_ON_PATH) > "$NEM_OUTPUT/probe"`
+const probeStep = `mkdir -p "$NEM_OUTPUT" && command -v foocli >/dev/null && echo ON_PATH > "$NEM_OUTPUT/probe"`
 
 func TestCatalogBuildPutsDirectLinkDepBinsOnPath(t *testing.T) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
@@ -188,33 +198,25 @@ func TestCatalogBuildPutsDirectLinkDepBinsOnPath(t *testing.T) {
 	srv := useCTarball(t)
 	defer srv.Close()
 
-	dir := t.TempDir()
-	recipe := buildRoleRecipe(t, dir, srv.URL, "link", probeStep)
+	cat := buildRoleCatalog(t, srv.URL, "link", probeStep)
 
-	outDir := filepath.Join(t.TempDir(), "out")
-	_, errb, err := runNem(t, nemHome, "catalog", "build", recipe, "--version", "v1.0.0", "--output", outDir)
+	_, errb, err := runNem(t, nemHome, "catalog", "build", cat, "--package", "tool@v1.0.0", "--push")
 	if err != nil {
-		t.Fatalf("catalog build: %v\n%s", err, errb)
+		t.Fatalf("a kind: link build dep's bins must join the build PATH: %v\n%s", err, errb)
 	}
-	got, err := os.ReadFile(filepath.Join(outDir, "probe"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(got), "ON_PATH") || strings.Contains(string(got), "NOT_ON_PATH") {
-		t.Fatalf("a kind: link build dep's bins must join the build PATH; probe=%q", got)
-	}
+	assertStaged(t, cat, "tool", "v1.0.0")
 }
 
-func testedRecipe(t *testing.T, dir, sourceURL, buildStep, testStep string) string {
+func testedCatalog(t *testing.T, sourceURL, buildStep, testStep string) string {
 	t.Helper()
-	path := filepath.Join(dir, "pkg.yaml")
-	writeFile(t, path, "schema: 2\nname: tool\n"+
-		"artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n"+
-		"versions: [v1.0.0]\nbuild:\n  source: {url: \""+sourceURL+"\"}\n"+
-		"  output: out\n"+
-		"  steps:\n    - run: "+buildStep+"\n"+
-		"test:\n  - run: "+testStep+"\n")
-	return path
+	return writeLintFixture(t, map[string]string{
+		"tool": "schema: 2\nname: tool\n" +
+			"artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n" +
+			"versions: [v1.0.0]\nbuild:\n  source: {url: \"" + sourceURL + "\"}\n" +
+			"  output: out\n" +
+			"  steps:\n    - run: " + buildStep + "\n" +
+			"test:\n  - run: " + testStep + "\n",
+	})
 }
 
 func helloTarball(t *testing.T) *httptest.Server {
@@ -230,15 +232,12 @@ func TestCatalogBuildRunsDeclaredTests(t *testing.T) {
 	srv := helloTarball(t)
 	defer srv.Close()
 
-	recipe := testedRecipe(t, t.TempDir(), srv.URL, makeHelloBin, `hello | grep -q hi`)
-	outDir := filepath.Join(t.TempDir(), "out")
-	if _, errb, err := runNem(t, nemHome, "catalog", "build", recipe,
-		"--version", "v1.0.0", "--output", outDir); err != nil {
+	cat := testedCatalog(t, srv.URL, makeHelloBin, `hello | grep -q hi`)
+	if _, errb, err := runNem(t, nemHome, "catalog", "build", cat,
+		"--package", "tool@v1.0.0", "--push"); err != nil {
 		t.Fatalf("catalog build: %v\n%s", err, errb)
 	}
-	if _, err := os.Stat(filepath.Join(outDir, "bin", "hello")); err != nil {
-		t.Fatalf("hello missing from build output: %v", err)
-	}
+	assertStaged(t, cat, "tool", "v1.0.0")
 	if _, err := os.Stat(filepath.Join(nemHome, "packages", "tool", "v1.0.0")); !os.IsNotExist(err) {
 		t.Fatalf("the staged tree must not stay installed, stat err = %v", err)
 	}
@@ -250,38 +249,22 @@ func TestCatalogBuildFailsOnFailingTest(t *testing.T) {
 	srv := helloTarball(t)
 	defer srv.Close()
 
-	recipe := testedRecipe(t, t.TempDir(), srv.URL, makeHelloBin, `exit 1`)
-	outDir := filepath.Join(t.TempDir(), "out")
-	_, errb, err := runNem(t, nemHome, "catalog", "build", recipe,
-		"--version", "v1.0.0", "--output", outDir)
+	cat := testedCatalog(t, srv.URL, makeHelloBin, `exit 1`)
+	out, errb, err := runNem(t, nemHome, "catalog", "build", cat, "--package", "tool@v1.0.0", "--push")
 	if err == nil {
 		t.Fatal("want catalog build to fail when a test step fails")
 	}
 
-	if !strings.Contains(errb, "Test step 1") {
-		t.Fatalf("error must name the failing step, got:\n%s", errb)
+	row := tableRow(out, 0, "tool")
+	if row == nil || row[2] != "failed" {
+		t.Fatalf("tool row = %v, want a failed row:\n%s\nstderr: %s", row, out, errb)
 	}
-	if _, err := os.Stat(outDir); !os.IsNotExist(err) {
-		t.Fatalf("a failed build must not reach --output, stat err = %v", err)
+	if !strings.Contains(strings.Join(row, " "), "test step 1") {
+		t.Fatalf("the failed row must name the failing step, got %v", row)
 	}
+	assertNothingStaged(t, cat, "tool")
 	if _, err := os.Stat(filepath.Join(nemHome, "packages", "tool", "v1.0.0")); !os.IsNotExist(err) {
 		t.Fatalf("a failed build must leave nothing staged, stat err = %v", err)
 	}
 	assertNoLeakedTestAlias(t, nemHome)
-}
-
-func TestCatalogBuildNoTestSkipsTests(t *testing.T) {
-	nemHome := t.TempDir()
-	srv := helloTarball(t)
-	defer srv.Close()
-
-	recipe := testedRecipe(t, t.TempDir(), srv.URL, makeHelloBin, `exit 1`)
-	outDir := filepath.Join(t.TempDir(), "out")
-	if _, errb, err := runNem(t, nemHome, "catalog", "build", recipe,
-		"--version", "v1.0.0", "--output", outDir, "--no-test"); err != nil {
-		t.Fatalf("--no-test must skip the failing step: %v\n%s", err, errb)
-	}
-	if _, err := os.Stat(filepath.Join(outDir, "bin", "hello")); err != nil {
-		t.Fatalf("hello missing from build output: %v", err)
-	}
 }

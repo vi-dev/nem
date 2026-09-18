@@ -53,7 +53,7 @@ func TestInstallFullRoundTrip(t *testing.T) {
 	artifact := fixtureArtifact(t, t.TempDir())
 
 	start := time.Now()
-	if err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", artifact); err != nil {
+	if err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", artifact, false); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
 	end := time.Now()
@@ -98,11 +98,11 @@ func TestInstallSecondSameVersionAlreadyExistsFastPath(t *testing.T) {
 	pkg := fixturePkg(t)
 	tmp := t.TempDir()
 
-	if err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", fixtureArtifact(t, tmp)); err != nil {
+	if err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", fixtureArtifact(t, tmp), false); err != nil {
 		t.Fatalf("first Install: %v", err)
 	}
 
-	err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", fixtureArtifact(t, tmp))
+	err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", fixtureArtifact(t, tmp), false)
 	want := "commit tool@v1.0.0: install dir already exists"
 	if err == nil || err.Error() != want {
 		t.Fatalf("second Install error = %v, want %q", err, want)
@@ -122,7 +122,7 @@ func TestInstallActionsFailureLeavesNoInstallDirNoStrayStaging(t *testing.T) {
 	tmp := t.TempDir()
 	badArtifact := writeArtifact(t, tmp, []byte("not an archive at all"))
 
-	err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", badArtifact)
+	err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", badArtifact, false)
 	if err == nil || !strings.Contains(err.Error(), "unrecognized archive format") {
 		t.Fatalf("Install error = %v, want unrecognized-format error", err)
 	}
@@ -154,7 +154,7 @@ func TestInstallRecordsLibsInMeta(t *testing.T) {
 	pkg := fixturePkg(t)
 	pkg.Libs = []string{"lib"}
 
-	if err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", fixtureArtifact(t, t.TempDir())); err != nil {
+	if err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", fixtureArtifact(t, t.TempDir()), false); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
 
@@ -187,7 +187,7 @@ func TestInstallConcurrentLostRaceCommitError(t *testing.T) {
 		artifact := fixtureArtifact(t, filepath.Join(tmp, fmt.Sprint(i)))
 		go func(i int, artifact string) {
 			defer wg.Done()
-			errs[i] = install.Install(context.Background(), h, pkg, "v1.0.0", "official", artifact)
+			errs[i] = install.Install(context.Background(), h, pkg, "v1.0.0", "official", artifact, false)
 		}(i, artifact)
 	}
 	wg.Wait()

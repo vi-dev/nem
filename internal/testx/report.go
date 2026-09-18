@@ -19,11 +19,6 @@ type Reporter struct {
 	hints     []string
 }
 
-type ErrorCall struct {
-	Err  error
-	Hint string
-}
-
 var _ report.Reporter = (*Reporter)(nil)
 
 func (r *Reporter) Info(format string, a ...any) {
@@ -32,16 +27,16 @@ func (r *Reporter) Info(format string, a ...any) {
 	r.infos = append(r.infos, fmt.Sprintf(format, a...))
 }
 
-func (r *Reporter) Warn(format string, a ...any) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.warns = append(r.warns, fmt.Sprintf(format, a...))
-}
-
 func (r *Reporter) Success(format string, a ...any) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.successes = append(r.successes, fmt.Sprintf(format, a...))
+}
+
+func (r *Reporter) Warn(format string, a ...any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.warns = append(r.warns, fmt.Sprintf(format, a...))
 }
 
 func (r *Reporter) Error(err error, hint string) {
@@ -50,31 +45,13 @@ func (r *Reporter) Error(err error, hint string) {
 	r.errors = append(r.errors, ErrorCall{Err: err, Hint: hint})
 }
 
+func (r *Reporter) Debug(string, ...any) {}
+
 func (r *Reporter) Hint(msg string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.hints = append(r.hints, msg)
 }
-
-func (r *Reporter) Successes() []string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return append([]string(nil), r.successes...)
-}
-
-func (r *Reporter) Hints() []string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return append([]string(nil), r.hints...)
-}
-
-func (r *Reporter) Errors() []ErrorCall {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return append([]ErrorCall(nil), r.errors...)
-}
-
-func (r *Reporter) Debug(string, ...any) {}
 
 func (r *Reporter) Out() io.Writer { return io.Discard }
 
@@ -115,6 +92,29 @@ func (r *Reporter) Infos() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([]string(nil), r.infos...)
+}
+
+func (r *Reporter) Successes() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.successes...)
+}
+
+func (r *Reporter) Hints() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.hints...)
+}
+
+type ErrorCall struct {
+	Err  error
+	Hint string
+}
+
+func (r *Reporter) Errors() []ErrorCall {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]ErrorCall(nil), r.errors...)
 }
 
 type ProgressCall struct {

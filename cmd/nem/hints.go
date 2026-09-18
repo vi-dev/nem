@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"oras.land/oras-go/v2/registry/remote/errcode"
 
+	"github.com/vi-dev/nem/internal/build"
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/resolve"
@@ -38,6 +40,17 @@ func hintFor(err error) string {
 	if sce, ok := errors.AsType[*resolve.CompatConflictError](err); ok {
 		return fmt.Sprintf("Unuse one of the conflicting tools, or re-pin %s to a version they all accept", sce.Name)
 	}
+	if _, ok := errors.AsType[*build.CycleError](err); ok {
+		return "Break the dependency cycle or build the packages separately"
+	}
+	if recipeRefGivenAsCatalog(err.Error()) {
+		return "catalog build takes a catalog directory or OCI ref, not a recipe path: " +
+			"`nem catalog build . --package <name>@<version>`"
+	}
+	if strings.Contains(err.Error(), "relative oci ref requires an oci catalog") {
+		return "Source-built archives are not servable from a plain checkout; deps built in this batch are, " +
+			"and published ones need an OCI catalog (nem catalog add ... ghcr.io/...)"
+	}
 	var eresp *errcode.ErrorResponse
 	if errors.As(err, &eresp) && eresp.StatusCode == http.StatusUnauthorized {
 		if eresp.URL != nil && eresp.URL.Host != "" {
@@ -49,4 +62,18 @@ func hintFor(err error) string {
 		return "Check your network connection or proxy settings"
 	}
 	return ""
+}
+
+func recipeRefGivenAsCatalog(msg string) bool {
+	for _, prefix := range []string{`parse oci ref "`, `oci ref "`} {
+		_, rest, found := strings.Cut(msg, prefix)
+		if !found {
+			continue
+		}
+		ref, _, ok := strings.Cut(rest, `"`)
+		if ok && (strings.HasSuffix(ref, ".yaml") || strings.HasSuffix(ref, ".yml")) {
+			return true
+		}
+	}
+	return false
 }

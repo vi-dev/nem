@@ -16,10 +16,11 @@ import (
 )
 
 type Job struct {
-	Pkg     *spec.Package
-	Version string
-	Catalog string
-	Source  fetch.Source
+	Pkg       *spec.Package
+	Version   string
+	Catalog   string
+	Source    fetch.Source
+	Reinstall bool
 }
 
 var acquire = fetch.Acquire
@@ -44,7 +45,7 @@ func Run(ctx context.Context, h home.Home, jobs []Job) error {
 func runJob(gctx context.Context, h home.Home, job Job) error {
 	rep := report.FromContext(gctx)
 	name, version := job.Pkg.Name, job.Version
-	if IsInstalled(h, name, version) {
+	if !job.Reinstall && IsInstalled(h, name, version) {
 		return nil
 	}
 
@@ -73,7 +74,7 @@ func runJob(gctx context.Context, h home.Home, job Job) error {
 	defer os.Remove(artifact)
 
 	task.Segment("extracting")
-	if err := Install(gctx, h, job.Pkg, version, job.Catalog, artifact); err != nil {
+	if err := Install(gctx, h, job.Pkg, version, job.Catalog, artifact, job.Reinstall); err != nil {
 		if isCancellation(gctx, err) {
 			task.Fail(cancelled)
 			return nil

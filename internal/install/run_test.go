@@ -109,7 +109,7 @@ func TestRunSkipsAlreadyInstalledAcquireNotCalled(t *testing.T) {
 	if err := os.WriteFile(preArtifact, []byte("pre-existing"), 0o644); err != nil {
 		t.Fatalf("write pre-artifact: %v", err)
 	}
-	if err := Install(context.Background(), h, installedPkg, "v1.0.0", "official", preArtifact); err != nil {
+	if err := Install(context.Background(), h, installedPkg, "v1.0.0", "official", preArtifact, false); err != nil {
 		t.Fatalf("pre-install: %v", err)
 	}
 
@@ -386,5 +386,83 @@ func TestRunInstallFailureRemovesArtifact(t *testing.T) {
 	}
 	if IsInstalled(h, "badinstall", "v1.0.0") {
 		t.Fatal("must not be installed after a failed install action")
+	}
+}
+
+func TestRunReinstallReplacesExistingVersion(t *testing.T) {
+	h := testx.Home(t)
+	pkg := copyToolPkg("dep")
+
+	var acquireCalls int32
+	serveBytes := func(content string) {
+		withAcquire(t, func(_ context.Context, p *spec.Package, _ string, _ spec.Platform, _ fetch.Source, dir string, _ report.Task) (string, error) {
+			atomic.AddInt32(&acquireCalls, 1)
+			f, err := os.CreateTemp(dir, p.Name+"-*.artifact")
+			if err != nil {
+				return "", err
+			}
+			if _, err := f.WriteString(content); err != nil {
+				f.Close()
+				return "", err
+			}
+			if err := f.Close(); err != nil {
+				return "", err
+			}
+			return f.Name(), nil
+		})
+	}
+
+	installDir, err := h.PackageDir(pkg.Name, "v1.0.0")
+	if err != nil {
+		t.Fatalf("PackageDir: %v", err)
+	}
+	readBin := func() string {
+		t.Helper()
+		got, err := os.ReadFile(filepath.Join(installDir, "bin", "tool"))
+		if err != nil {
+			t.Fatalf("read bin/tool: %v", err)
+		}
+		return string(got)
+	}
+
+	serveBytes("binary-v1")
+	if err := Run(context.Background(), h, []Job{
+		{Pkg: pkg, Version: "v1.0.0", Catalog: "official"},
+	}); err != nil {
+		t.Fatalf("initial Run: %v", err)
+	}
+	if got := readBin(); got != "binary-v1" {
+		t.Fatalf("bin/tool = %q, want %q", got, "binary-v1")
+	}
+	if atomic.LoadInt32(&acquireCalls) != 1 {
+		t.Fatalf("acquireCalls = %d, want 1 after initial install", acquireCalls)
+	}
+
+	serveBytes("binary-v2")
+	if err := Run(context.Background(), h, []Job{
+		{Pkg: pkg, Version: "v1.0.0", Catalog: "official", Reinstall: true},
+	}); err != nil {
+		t.Fatalf("reinstall Run: %v", err)
+	}
+	if got := readBin(); got != "binary-v2" {
+		t.Fatalf("bin/tool after reinstall = %q, want %q", got, "binary-v2")
+	}
+	if atomic.LoadInt32(&acquireCalls) != 2 {
+		t.Fatalf("acquireCalls = %d, want 2 after reinstall", acquireCalls)
+	}
+	if !IsInstalled(h, pkg.Name, "v1.0.0") {
+		t.Fatal("must still be installed after reinstall")
+	}
+
+	if err := Run(context.Background(), h, []Job{
+		{Pkg: pkg, Version: "v1.0.0", Catalog: "official"},
+	}); err != nil {
+		t.Fatalf("skip Run: %v", err)
+	}
+	if got := readBin(); got != "binary-v2" {
+		t.Fatalf("bin/tool after skip = %q, want unchanged %q", got, "binary-v2")
+	}
+	if atomic.LoadInt32(&acquireCalls) != 2 {
+		t.Fatalf("acquireCalls = %d, want still 2 (acquire must not be called on skip)", acquireCalls)
 	}
 }
