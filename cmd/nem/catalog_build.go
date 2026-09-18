@@ -42,7 +42,7 @@ func newCatalogBuildCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sources, err := catalog.Open(cfg, nemHome)
+			sources, err := catalog.OpenConfigured(cfg, nemHome)
 			if err != nil {
 				return err
 			}

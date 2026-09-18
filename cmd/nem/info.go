@@ -31,7 +31,7 @@ func runInfo(cmd *cobra.Command, arg string) error {
 	if err != nil {
 		return err
 	}
-	set, err := catalog.Open(cfg, nemHome)
+	set, err := catalog.OpenConfigured(cfg, nemHome)
 	if err != nil {
 		return err
 	}

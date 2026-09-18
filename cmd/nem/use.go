@@ -119,7 +119,7 @@ func loadUseState(path string) (*project.Manifest, *config.Config, *catalog.Set,
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	set, err := catalog.Open(cfg, nemHome)
+	set, err := catalog.OpenConfigured(cfg, nemHome)
 	if err != nil {
 		return nil, nil, nil, err
 	}

@@ -40,7 +40,7 @@ func completionSources() (*catalog.Set, bool) {
 	if err != nil {
 		return nil, false
 	}
-	set, err := catalog.Open(cfg, nemHome)
+	set, err := catalog.OpenConfigured(cfg, nemHome)
 	if err != nil {
 		return nil, false
 	}
