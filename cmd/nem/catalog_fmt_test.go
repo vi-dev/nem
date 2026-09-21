@@ -81,6 +81,11 @@ func TestCatalogFmtScopedToPackage(t *testing.T) {
 	if !bytes.Equal(betaBefore, betaAfter) {
 		t.Fatal("beta must not be touched by fmt scoped to alpha")
 	}
+
+	_, errb, err = runNem(t, nemHome, "catalog", "fmt", dir, "--package", "nosuch")
+	if err == nil || !strings.Contains(errb, "nosuch not found in catalog(s) "+dir) {
+		t.Fatalf("err = %v, stderr = %q; want PackageNotFoundError naming the catalog", err, errb)
+	}
 }
 
 func TestCatalogFmtFormatsInvalidButParseableManifest(t *testing.T) {

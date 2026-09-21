@@ -2,9 +2,8 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"fmt"
-	"os"
+	"slices"
 
 	"github.com/spf13/cobra"
 
@@ -20,35 +19,40 @@ func newCatalogFmtCmd() *cobra.Command {
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: firstArgOnly(completeYAMLOrDir),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			target := "."
+			ctx := cmd.Context()
+			cat := "."
 			if len(args) == 1 {
-				target = args[0]
+				cat = args[0]
 			}
-			info, err := os.Stat(target)
+			entry, err := catalog.Open(ctx, cat)
 			if err != nil {
 				return err
 			}
-			if !info.IsDir() {
-				return fmtFile(cmd.Context(), target, packages)
+			editor, ok := entry.Catalog.(catalog.Editor)
+			if !ok {
+				return fmt.Errorf("%s: fmt writes a local catalog directory or pkg.yaml", cat)
 			}
-
-			d := catalog.NewDir(target)
-			names := packages
-			if len(names) == 0 {
-				if names, err = d.PackageNames(cmd.Context()); err != nil {
-					return err
-				}
-				if len(names) == 0 {
-					return fmt.Errorf("no package manifests under %s", target)
-				}
+			names, err := entry.Catalog.PackageNames(ctx)
+			if err != nil {
+				return err
 			}
-			seen := make(map[string]bool, len(names))
+			if len(packages) > 0 {
+				var selected []string
+				for _, name := range packages {
+					if slices.Contains(selected, name) {
+						continue
+					}
+					if !slices.Contains(names, name) {
+						return &catalog.PackageNotFoundError{Name: name, Catalogs: []string{cat}}
+					}
+					selected = append(selected, name)
+				}
+				names = selected
+			} else if len(names) == 0 {
+				return fmt.Errorf("no package manifests under %s", cat)
+			}
 			for _, name := range names {
-				if seen[name] {
-					continue
-				}
-				seen[name] = true
-				data, err := d.ReadManifest(cmd.Context(), name)
+				data, err := editor.ReadManifest(ctx, name)
 				if err != nil {
 					return err
 				}
@@ -59,7 +63,7 @@ func newCatalogFmtCmd() *cobra.Command {
 				if bytes.Equal(data, formatted) {
 					continue
 				}
-				if err := d.UpdateManifest(cmd.Context(), name, formatted); err != nil {
+				if err := editor.UpdateManifest(ctx, name, formatted); err != nil {
 					return err
 				}
 				console.Success("Formatted %s", name)
@@ -71,36 +75,4 @@ func newCatalogFmtCmd() *cobra.Command {
 		"format this package (repeatable; default: every package)")
 	_ = cmd.RegisterFlagCompletionFunc("package", completeCatalogDirPackages)
 	return cmd
-}
-
-func fmtFile(ctx context.Context, path string, packages []string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	declared := ""
-	if pkg, err := spec.Parse(data); err == nil {
-		declared = pkg.Name
-	}
-	for _, name := range packages {
-		if name != declared {
-			return &catalog.PackageNotFoundError{Name: name}
-		}
-	}
-	formatted, err := spec.Format(data)
-	if err != nil {
-		return fmt.Errorf("%s: %w", path, err)
-	}
-	if bytes.Equal(data, formatted) {
-		return nil
-	}
-	if err := catalog.NewFile(path).UpdateManifest(ctx, declared, formatted); err != nil {
-		return err
-	}
-	display := declared
-	if display == "" {
-		display = path
-	}
-	console.Success("Formatted %s", display)
-	return nil
 }

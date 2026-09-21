@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 
 	"github.com/vi-dev/nem/internal/catalog"
@@ -24,25 +25,33 @@ func (f Finding) String() string {
 	return f.Pkg + ": " + f.Msg
 }
 
-func Lint(ctx context.Context, target string, packages ...string) ([]Finding, error) {
-	info, err := os.Stat(target)
+func Lint(ctx context.Context, cat string, packages ...string) ([]Finding, error) {
+	entry, err := catalog.Open(ctx, cat)
 	if err != nil {
 		return nil, err
 	}
-	if !info.IsDir() {
-		return lintFile(target, packages)
+	if _, ok := entry.Catalog.(*catalog.File); ok {
+		return lintFile(cat, packages)
 	}
 
-	d := catalog.NewDir(target)
+	names, err := entry.Catalog.PackageNames(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if len(packages) > 0 {
-		seen := map[string]bool{}
-		var findings []Finding
+		var selected []string
 		for _, name := range packages {
-			if seen[name] {
+			if slices.Contains(selected, name) {
 				continue
 			}
-			seen[name] = true
-			data, err := d.ReadManifest(ctx, name)
+			if !slices.Contains(names, name) {
+				return nil, &catalog.PackageNotFoundError{Name: name, Catalogs: []string{cat}}
+			}
+			selected = append(selected, name)
+		}
+		var findings []Finding
+		for _, name := range selected {
+			data, err := entry.Catalog.ReadManifest(ctx, name)
 			if err != nil {
 				return nil, err
 			}
@@ -52,19 +61,18 @@ func Lint(ctx context.Context, target string, packages ...string) ([]Finding, er
 		return findings, nil
 	}
 
-	names, err := d.PackageNames(ctx)
-	if err != nil {
-		return nil, err
-	}
 	if len(names) == 0 {
-		if _, err := os.Stat(filepath.Join(target, "pkgs")); err != nil {
-			return []Finding{{Msg: "no pkgs directory found"}}, nil
+		if _, ok := entry.Catalog.(*catalog.Dir); ok {
+			if _, err := os.Stat(filepath.Join(cat, "pkgs")); err != nil {
+				return []Finding{{Msg: "no pkgs directory found"}}, nil
+			}
+			return []Finding{{Msg: "pkgs directory contains no packages"}}, nil
 		}
-		return []Finding{{Msg: "pkgs directory contains no packages"}}, nil
+		return []Finding{{Msg: "catalog contains no packages"}}, nil
 	}
 	var findings []Finding
 	for _, name := range names {
-		data, err := d.ReadManifest(ctx, name)
+		data, err := entry.Catalog.ReadManifest(ctx, name)
 		if err != nil {
 			findings = append(findings, Finding{Pkg: name, Msg: err.Error()})
 			continue

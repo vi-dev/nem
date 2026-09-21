@@ -174,9 +174,10 @@ env:
 		t.Fatalf("scoped lint: %v\n%s\n%s", err, out, errb)
 	}
 
-	// Unknown package: hard error.
-	if _, _, err := runNem(t, nemHome, "catalog", "lint", catDir, "--package", "nosuch"); err == nil {
-		t.Fatal("unknown --package must be a hard error")
+	// Unknown package: hard error naming the catalog.
+	_, errb, err = runNem(t, nemHome, "catalog", "lint", catDir, "--package", "nosuch")
+	if err == nil || !strings.Contains(errb, "nosuch not found in catalog(s) "+catDir) {
+		t.Fatalf("err = %v, stderr = %q; want PackageNotFoundError naming the catalog", err, errb)
 	}
 }
 
