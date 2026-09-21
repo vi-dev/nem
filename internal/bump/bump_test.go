@@ -5,12 +5,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -22,12 +23,44 @@ import (
 	"github.com/vi-dev/nem/internal/testx"
 )
 
-func runBump(t *testing.T, opts Options, target string) (stdout, stderr string, err error) {
+func runBump(t *testing.T, opts Options, target string) (res *Result, stderr string, err error) {
 	t.Helper()
-	var out, errb bytes.Buffer
-	console := report.New(&out, &errb, report.Options{Color: report.ColorNever})
-	err = Run(context.Background(), target, opts, console)
-	return out.String(), errb.String(), err
+	var errb bytes.Buffer
+	console := report.New(io.Discard, &errb, report.Options{Color: report.ColorNever})
+	res, err = Run(report.NewContext(context.Background(), console), target, opts)
+	return res, errb.String(), err
+}
+
+func refs(t *testing.T, specs ...string) []spec.Ref {
+	t.Helper()
+	out := make([]spec.Ref, 0, len(specs))
+	for _, s := range specs {
+		r, err := spec.ParseRef(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+func wantCounts(t *testing.T, res *Result, bumped, upToDate, failed, skipped int) {
+	t.Helper()
+	got := [4]int{res.Bumped(), res.UpToDate(), res.Failed(), res.Skipped}
+	if got != [4]int{bumped, upToDate, failed, skipped} {
+		t.Fatalf("counts (bumped, up to date, failed, skipped) = %v, want %v", got, [4]int{bumped, upToDate, failed, skipped})
+	}
+}
+
+func firstError(t *testing.T, res *Result) string {
+	t.Helper()
+	for _, r := range res.Rows {
+		if r.Error != "" {
+			return r.Error
+		}
+	}
+	t.Fatal("want a failed row")
+	return ""
 }
 
 func writeFixture(t *testing.T, pkgs map[string]string) string {
@@ -133,10 +166,8 @@ func TestBumpAddsAllNewerVersions(t *testing.T) {
 		t.Fatalf("bump: %v", err)
 	}
 
-	for _, line := range []string{"Hashed jq 1.8.3 linux/amd64", "Hashed jq 1.8.4 darwin/arm64"} {
-		if !strings.Contains(errOut, line) {
-			t.Errorf("stderr = %q, want %q", errOut, line)
-		}
+	if !strings.Contains(errOut, "Bumped jq 1.8.2 → 1.8.4 (2 versions)") {
+		t.Errorf("stderr = %q, want the bumped outcome line", errOut)
 	}
 	pkg, err := spec.Parse(mustRead(t, path))
 	if err != nil {
@@ -283,7 +314,7 @@ func TestBumpBackfillSourceBuiltWarns(t *testing.T) {
 	if len(pkg.Versions) != 2 || pkg.Versions[1].Version != "3.4.1" || pkg.Versions[1].SourceSha256 == "" {
 		t.Fatalf("versions = %+v, want backfilled 3.4.1 with sourceSha256", pkg.Versions)
 	}
-	if !strings.Contains(errOut, "source-built") || !strings.Contains(errOut, "build --version") {
+	if !strings.Contains(errOut, "source-built") || !strings.Contains(errOut, "build --package") {
 		t.Fatalf("stderr = %q, want source-built warning and build hint", errOut)
 	}
 }
@@ -295,10 +326,11 @@ func TestBumpDeadSourceURLNamesItWithoutRetryHint(t *testing.T) {
 	path := filepath.Join(dir, "pkgs", "openssl", "pkg.yaml")
 	before := mustRead(t, path)
 
-	_, errOut, err := runBump(t, Options{Version: "3.4.3"}, path)
-	if err == nil {
-		t.Fatal("want error for a dead source URL")
+	res, errOut, err := runBump(t, Options{Packages: refs(t, "openssl@3.4.3")}, path)
+	if err != nil {
+		t.Fatal(err)
 	}
+	wantCounts(t, res, 0, 0, 1, 0)
 	if !strings.Contains(errOut, srv.URL) {
 		t.Fatalf("stderr = %q, want the failing source URL named", errOut)
 	}
@@ -312,59 +344,44 @@ func TestBumpDeadSourceURLNamesItWithoutRetryHint(t *testing.T) {
 
 func TestBumpRejectsBadInvocation(t *testing.T) {
 	tests := []struct {
-		name       string
-		serve      []string
-		pkg        string
-		fixture    func(serverURL string) string
-		stubByName map[string][]string
-		dirTarget  bool
-		opts       Options
-		wantErr    string
+		name    string
+		serve   []string
+		opts    Options
+		wantErr string
+		wantRow bool
 	}{
 		{
 			name:    "version and backfill conflict",
-			pkg:     "jq",
-			fixture: bumpFixture,
-			opts:    Options{Version: "1.8.3", Backfill: 2},
+			opts:    Options{Packages: refs(t, "jq@1.8.3"), Backfill: 2},
 			wantErr: "combined",
+		},
+		{
+			name:    "unknown package",
+			opts:    Options{Packages: refs(t, "zz")},
+			wantErr: "package zz not found",
 		},
 		{
 			name:    "version outside OCI tag grammar",
 			serve:   []string{"25.0.4+7"},
-			pkg:     "jq",
-			fixture: bumpFixture,
-			opts:    Options{Version: "25.0.4+7"},
-		},
-		{
-			name:       "version with directory target",
-			serve:      []string{"1.1.0"},
-			pkg:        "aa",
-			fixture:    func(serverURL string) string { return namedBumpFixture("aa", serverURL, "1.0.0") },
-			stubByName: map[string][]string{"aa": {"1.1.0", "1.0.0"}},
-			dirTarget:  true,
-			opts:       Options{Version: "1.1.0"},
-			wantErr:    "single pkg.yaml",
+			opts:    Options{Packages: refs(t, "jq@25.0.4+7")},
+			wantRow: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv, _ := bumpMultiArtifactServer(t, tt.serve...)
-			dir := writeFixture(t, map[string]string{tt.pkg: tt.fixture(srv.URL)})
-			path := filepath.Join(dir, "pkgs", tt.pkg, "pkg.yaml")
-			if tt.stubByName != nil {
-				stubListByName(t, tt.stubByName)
-			}
+			dir := writeFixture(t, map[string]string{"jq": bumpFixture(srv.URL)})
+			path := filepath.Join(dir, "pkgs", "jq", "pkg.yaml")
 			before := mustRead(t, path)
 
-			target := path
-			if tt.dirTarget {
-				target = dir
-			}
-			_, _, err := runBump(t, tt.opts, target)
-			if err == nil {
-				t.Fatalf("opts %+v: want error", tt.opts)
-			}
-			if tt.wantErr != "" && !strings.Contains(err.Error(), tt.wantErr) {
+			res, _, err := runBump(t, tt.opts, dir)
+			switch {
+			case tt.wantRow:
+				if err != nil {
+					t.Fatalf("opts %+v: %v", tt.opts, err)
+				}
+				wantCounts(t, res, 0, 0, 1, 0)
+			case err == nil || !strings.Contains(err.Error(), tt.wantErr):
 				t.Fatalf("err = %v, want %q", err, tt.wantErr)
 			}
 			assertUnchanged(t, path, before)
@@ -377,7 +394,7 @@ func TestBumpVersionBackfillsInPlace(t *testing.T) {
 	dir := writeFixture(t, map[string]string{"jq": bumpFixture(srv.URL)})
 	path := filepath.Join(dir, "pkgs", "jq", "pkg.yaml")
 
-	_, errOut, err := runBump(t, Options{Version: "1.8.1"}, path)
+	_, errOut, err := runBump(t, Options{Packages: refs(t, "jq@1.8.1")}, path)
 	if err != nil {
 		t.Fatalf("bump: %v", err)
 	}
@@ -421,9 +438,12 @@ func TestBumpRejectsUnorderedHistory(t *testing.T) {
 	stubList(t, "2.1.0")
 	before := mustRead(t, path)
 
-	_, _, err := runBump(t, Options{}, path)
-	if err == nil || !strings.Contains(err.Error(), "newest-first") {
-		t.Fatalf("err = %v, want newest-first rejection (out-of-order history is a lint finding, not bumpable state)", err)
+	res, _, err := runBump(t, Options{}, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg := firstError(t, res); !strings.Contains(msg, "newest-first") {
+		t.Fatalf("row error = %q, want newest-first rejection (out-of-order history is a lint finding, not bumpable state)", msg)
 	}
 	if string(mustRead(t, path)) != string(before) {
 		t.Fatal("rejected bump must not modify the manifest")
@@ -457,7 +477,7 @@ func TestBumpNoopKeepsManifest(t *testing.T) {
 			name:       "explicit version already present",
 			serve:      []string{"1.8.2"},
 			versions:   jqVersionsYAML("1.8.2"),
-			opts:       Options{Version: "1.8.2"},
+			opts:       Options{Packages: refs(t, "jq@1.8.2")},
 			wantNotice: "already present",
 		},
 	}
@@ -495,9 +515,12 @@ func TestBumpRejectsFlowVersionsBeforeDownloading(t *testing.T) {
 	path := filepath.Join(dir, "pkgs", "jq", "pkg.yaml")
 	before := mustRead(t, path)
 
-	_, _, err := runBump(t, Options{Version: "1.8.3"}, path)
-	if err == nil || !strings.Contains(err.Error(), "block sequence") {
-		t.Fatalf("err = %v, want block-sequence rejection", err)
+	res, _, err := runBump(t, Options{Packages: refs(t, "jq@1.8.3")}, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg := firstError(t, res); !strings.Contains(msg, "block sequence") {
+		t.Fatalf("row error = %q, want block-sequence rejection", msg)
 	}
 	if n := hits.Load(); n != 0 {
 		t.Fatalf("server got %d requests, want 0 (must fail before downloading)", n)
@@ -557,7 +580,7 @@ func TestBumpFailureWritesNothing(t *testing.T) {
 				t.Cleanup(srv.Close)
 				return srv.URL
 			},
-			opts: Options{Version: "1.8.3"},
+			opts: Options{Packages: refs(t, "jq@1.8.3")},
 		},
 	}
 	for _, tt := range tests {
@@ -569,10 +592,11 @@ func TestBumpFailureWritesNothing(t *testing.T) {
 			}
 			before := mustRead(t, path)
 
-			_, errOut, err := runBump(t, tt.opts, path)
-			if err == nil {
-				t.Fatal("want error when candidates fail to download")
+			res, errOut, err := runBump(t, tt.opts, path)
+			if err != nil {
+				t.Fatal(err)
 			}
+			wantCounts(t, res, 0, 0, 1, 0)
 			if !strings.Contains(errOut, "retry later") {
 				t.Fatalf("stderr = %q, want not-uploaded-yet hint", errOut)
 			}
@@ -598,9 +622,9 @@ func TestBumpSourceBuilt(t *testing.T) {
 	dir := writeFixture(t, map[string]string{"openssl": fixture})
 	path := filepath.Join(dir, "pkgs", "openssl", "pkg.yaml")
 
-	_, errOut, err := runBump(t, Options{Version: "v3.4.2"}, path)
-	if !strings.Contains(errOut, "Hashed openssl v3.4.2 source") {
-		t.Errorf("stderr = %q, want source line naming the version", errOut)
+	_, errOut, err := runBump(t, Options{Packages: refs(t, "openssl@v3.4.2")}, path)
+	if !strings.Contains(errOut, "Bumped openssl v3.4.1 → v3.4.2") {
+		t.Errorf("stderr = %q, want the bumped outcome naming the version", errOut)
 	}
 	if err != nil {
 		t.Fatalf("bump: %v", err)
@@ -628,7 +652,7 @@ versions:
 	dir := writeFixture(t, map[string]string{"tool": fixture})
 	path := filepath.Join(dir, "pkgs", "tool", "pkg.yaml")
 
-	if _, _, err := runBump(t, Options{Version: "v1.1.0"}, path); err != nil {
+	if _, _, err := runBump(t, Options{Packages: refs(t, "tool@v1.1.0")}, path); err != nil {
 		t.Fatalf("bump: %v", err)
 	}
 	pkg, err := spec.Parse(mustRead(t, path))
@@ -700,16 +724,14 @@ func TestBumpDirMixedOutcomes(t *testing.T) {
 		bbPath := filepath.Join(dir, "pkgs", "bb", "pkg.yaml")
 		bbBefore := mustRead(t, bbPath)
 
-		_, errOut, err := runBump(t, Options{}, dir)
+		res, errOut, err := runBump(t, Options{}, dir)
 		if err != nil {
-			t.Fatalf("sweep must exit zero on per-package failures: %v", err)
+			t.Fatalf("sweep must not fail on per-package failures: %v", err)
 		}
 		if !strings.Contains(errOut, "discovery unavailable for cc") {
 			t.Errorf("stderr = %q, want cc failure warning", errOut)
 		}
-		if !strings.Contains(errOut, "Checked 4 packages: 1 bumped, 1 up to date, 1 failed, 1 without discovery") {
-			t.Fatalf("stderr = %q, want mixed-outcome summary", errOut)
-		}
+		wantCounts(t, res, 1, 1, 1, 1)
 		if string(mustRead(t, bbPath)) != string(bbBefore) {
 			t.Fatal("up-to-date package must not be rewritten")
 		}
@@ -718,24 +740,21 @@ func TestBumpDirMixedOutcomes(t *testing.T) {
 	t.Run("json rows", func(t *testing.T) {
 		dir := newDir(t)
 
-		out, _, err := runBump(t, Options{JSON: true}, dir)
+		res, _, err := runBump(t, Options{}, dir)
 		if err != nil {
 			t.Fatalf("bump: %v", err)
 		}
-		rows := decodeRows(t, out)
+		rows := res.Rows
 		if len(rows) != 3 {
-			t.Fatalf("got %d rows, want 3 (packages without discovery are not rows): %s", len(rows), out)
+			t.Fatalf("got %d rows, want 3 (packages without discovery are not rows): %+v", len(rows), rows)
 		}
-		byName := map[string]jsonRow{}
+		byName := map[string]Row{}
 		for _, r := range rows {
 			byName[r.Name] = r
 		}
 		aa := byName["aa"]
 		if aa.Current != "1.0.0" || aa.Head != "1.1.0" || len(aa.Added) != 1 || aa.Added[0] != "1.1.0" || aa.Error != "" {
 			t.Errorf("aa row = %+v, want current 1.0.0, head 1.1.0, added [1.1.0]", aa)
-		}
-		if want := filepath.Join(dir, "pkgs", "aa", "pkg.yaml"); aa.Path != want {
-			t.Errorf("aa path = %q, want %q", aa.Path, want)
 		}
 		bb := byName["bb"]
 		if bb.Current != "2.0.0" || bb.Head != "2.0.0" || len(bb.Added) != 0 || bb.Error != "" {
@@ -746,58 +765,6 @@ func TestBumpDirMixedOutcomes(t *testing.T) {
 			t.Errorf("cc row = %+v, want error and no head", cc)
 		}
 	})
-}
-
-func TestBumpDirSweepsAllPackages(t *testing.T) {
-	srv, _ := bumpMultiArtifactServer(t, "1.1.0", "1.8.3")
-	dir := writeFixture(t, map[string]string{
-		"aa": namedBumpFixture("aa", srv.URL, "1.0.0"),
-		"jq": namedBumpFixture("jq", srv.URL, "1.8.2"),
-	})
-	stubListByName(t, map[string][]string{
-		"aa": {"1.1.0", "1.0.0"},
-		"jq": {"1.8.3", "1.8.2"},
-	})
-
-	_, errOut, err := runBump(t, Options{}, dir)
-	if err != nil {
-		t.Fatalf("bump: %v", err)
-	}
-	for name, want := range map[string]string{"aa": "1.1.0", "jq": "1.8.3"} {
-		pkg, err := spec.Parse(mustRead(t, filepath.Join(dir, "pkgs", name, "pkg.yaml")))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if pkg.Versions[0].Version != want {
-			t.Fatalf("%s head = %q, want %q", name, pkg.Versions[0].Version, want)
-		}
-	}
-	for _, line := range []string{"Bumped aa 1.0.0 → 1.1.0", "Bumped jq 1.8.2 → 1.8.3"} {
-		if !strings.Contains(errOut, line) {
-			t.Errorf("stderr = %q, want %q", errOut, line)
-		}
-	}
-	if !strings.Contains(errOut, "Checked 2 packages: 2 bumped, 0 up to date, 0 failed, 0 without discovery") {
-		t.Fatalf("stderr = %q, want sweep summary", errOut)
-	}
-}
-
-type jsonRow struct {
-	Name    string   `json:"name"`
-	Path    string   `json:"path"`
-	Current string   `json:"current"`
-	Head    string   `json:"head"`
-	Added   []string `json:"added"`
-	Error   string   `json:"error"`
-}
-
-func decodeRows(t *testing.T, out string) []jsonRow {
-	t.Helper()
-	var rows []jsonRow
-	if err := json.Unmarshal([]byte(out), &rows); err != nil {
-		t.Fatalf("stdout is not JSON: %v\n%s", err, out)
-	}
-	return rows
 }
 
 func TestBumpDirRunsPackagesConcurrently(t *testing.T) {
@@ -824,32 +791,16 @@ func TestBumpDirRunsPackagesConcurrently(t *testing.T) {
 		return []discover.Discovered{{Version: "2.0.0"}}, nil
 	})
 
-	out, errOut, err := runBump(t, Options{JSON: true}, dir)
+	res, _, err := runBump(t, Options{}, dir)
 	if err != nil {
 		t.Fatalf("bump: %v", err)
 	}
-	if !strings.Contains(errOut, "Checked 2 packages: 0 bumped, 2 up to date, 0 failed, 0 without discovery") {
-		t.Fatalf("stderr = %q, want both packages up to date (failures mean the sweep ran sequentially)", errOut)
+	if res.UpToDate() != 2 {
+		t.Fatalf("result = %+v, want both packages up to date (failures mean the sweep ran sequentially)", res)
 	}
-	rows := decodeRows(t, out)
+	rows := res.Rows
 	if len(rows) != 2 || rows[0].Name != "aa" || rows[1].Name != "bb" {
 		t.Fatalf("rows = %+v, want manifest order [aa bb] regardless of completion order", rows)
-	}
-}
-
-func TestBumpSingleFileJSON(t *testing.T) {
-	srv, _ := bumpMultiArtifactServer(t, "1.8.3")
-	dir := writeFixture(t, map[string]string{"jq": bumpFixture(srv.URL)})
-	path := filepath.Join(dir, "pkgs", "jq", "pkg.yaml")
-	stubList(t, "1.8.3", "1.8.2")
-
-	out, _, err := runBump(t, Options{JSON: true}, path)
-	if err != nil {
-		t.Fatalf("bump: %v", err)
-	}
-	rows := decodeRows(t, out)
-	if len(rows) != 1 || rows[0].Name != "jq" || rows[0].Current != "1.8.2" || rows[0].Head != "1.8.3" {
-		t.Fatalf("rows = %+v, want one jq row 1.8.2 → 1.8.3", rows)
 	}
 }
 
@@ -910,7 +861,7 @@ func TestBumpVersionFlagDiscoversMetaWhenTemplatesNeedIt(t *testing.T) {
 	dir := writeFixture(t, map[string]string{"jq": yaml})
 	path := filepath.Join(dir, "pkgs", "jq", "pkg.yaml")
 
-	if _, _, err := runBump(t, Options{Version: "1.9.0"}, path); err != nil {
+	if _, _, err := runBump(t, Options{Packages: refs(t, "jq@1.9.0")}, path); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(path)
@@ -926,13 +877,13 @@ func TestBumpVersionFlagDiscoversMetaWhenTemplatesNeedIt(t *testing.T) {
 func TestBumpVersionFlagSkipsDiscoveryWithoutMetaTemplates(t *testing.T) {
 	srv, _ := bumpMultiArtifactServer(t, "1.9.0")
 	stubListFunc(t, func(context.Context, *spec.Package) ([]discover.Discovered, error) {
-		t.Error("discovery must not run for --version without meta templates")
+		t.Error("discovery must not run for an explicit version without meta templates")
 		return nil, nil
 	})
 	dir := writeFixture(t, map[string]string{"jq": bumpFixture(srv.URL)})
 	path := filepath.Join(dir, "pkgs", "jq", "pkg.yaml")
 
-	if _, _, err := runBump(t, Options{Version: "1.9.0"}, path); err != nil {
+	if _, _, err := runBump(t, Options{Packages: refs(t, "jq@1.9.0")}, path); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -942,7 +893,7 @@ func TestBumpFreshManifestVersionFlag(t *testing.T) {
 	dir := writeFixture(t, map[string]string{"jq": jqFixture(srv.URL, "")})
 	path := filepath.Join(dir, "pkgs", "jq", "pkg.yaml")
 
-	if _, _, err := runBump(t, Options{Version: "1.9.0"}, path); err != nil {
+	if _, _, err := runBump(t, Options{Packages: refs(t, "jq@1.9.0")}, path); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(path)
@@ -975,4 +926,34 @@ func TestBumpFreshManifestSeedsLatestOnly(t *testing.T) {
 	if len(pkg.Versions) != 1 || pkg.Versions[0].Version != "1.9.0" {
 		t.Fatalf("versions = %+v, want just 1.9.0", pkg.Versions)
 	}
+}
+
+func TestBumpDryRunDiscoversWithoutDownloading(t *testing.T) {
+	var hits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		fmt.Fprint(w, "ok")
+	}))
+	t.Cleanup(srv.Close)
+	dir := writeFixture(t, map[string]string{"jq": bumpFixture(srv.URL)})
+	path := filepath.Join(dir, "pkgs", "jq", "pkg.yaml")
+	stubList(t, "1.8.4", "1.8.3", "1.8.2")
+	before := mustRead(t, path)
+
+	res, errOut, err := runBump(t, Options{DryRun: true}, dir)
+	if err != nil {
+		t.Fatalf("bump --dry-run: %v", err)
+	}
+	wantCounts(t, res, 1, 0, 0, 0)
+	row := res.Rows[0]
+	if row.Head != "1.8.4" || !slices.Equal(row.Added, []string{"1.8.3", "1.8.4"}) {
+		t.Fatalf("row = %+v, want head 1.8.4 and the planned versions", row)
+	}
+	if !strings.Contains(errOut, "Would bump jq 1.8.2 → 1.8.4 (2 versions)") {
+		t.Fatalf("stderr = %q, want the dry-run plan line", errOut)
+	}
+	if n := hits.Load(); n != 0 {
+		t.Fatalf("server got %d requests, want 0 (dry run must not download)", n)
+	}
+	assertUnchanged(t, path, before)
 }

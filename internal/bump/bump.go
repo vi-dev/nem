@@ -4,8 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -16,7 +15,6 @@ import (
 	"github.com/vi-dev/nem/internal/discover"
 	"github.com/vi-dev/nem/internal/fetch"
 	"github.com/vi-dev/nem/internal/netx"
-	"github.com/vi-dev/nem/internal/publish"
 	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
@@ -27,179 +25,211 @@ var (
 )
 
 type Options struct {
-	Version  string
+	Packages []spec.Ref
 	Backfill int
-	JSON     bool
+	DryRun   bool
 }
 
 type Row struct {
 	Name    string   `json:"name"`
-	Path    string   `json:"path"`
 	Current string   `json:"current"`
 	Head    string   `json:"head,omitempty"`
 	Added   []string `json:"added,omitempty"`
 	Error   string   `json:"error,omitempty"`
 }
 
-func Run(ctx context.Context, target string, opts Options, console *report.Console) error {
-	if opts.Version != "" && opts.Backfill > 0 {
-		return fmt.Errorf("--version and --backfill cannot be combined")
-	}
-	info, err := os.Stat(target)
-	if err != nil {
-		return err
-	}
-	if info.IsDir() {
-		if opts.Version != "" {
-			return fmt.Errorf("--version needs a single pkg.yaml target, not a directory")
-		}
-		return sweep(ctx, target, opts.Backfill, opts.JSON, console)
-	}
-	path := target
-	data, pkg, current, err := load(path)
-	if err != nil {
-		return err
-	}
-	if err := spec.ValidateEditable(data); err != nil {
-		return fmt.Errorf("%s: %w", path, err)
-	}
-	row := Row{Name: pkg.Name, Path: path, Current: current}
-	emit := func() error {
-		if !opts.JSON {
-			return nil
-		}
-		return console.JSON([]Row{row})
-	}
-
-	var targets []string
-	var metas map[string]map[string]string
-	if opts.Version != "" {
-		if pkg.HasEqualVersion(opts.Version) {
-			console.Success("%s %s already present", pkg.Name, opts.Version)
-			row.Head = current
-			return emit()
-		}
-		targets = []string{opts.Version}
-		meta, err := discoverMetaFor(ctx, pkg, opts.Version)
-		if err != nil {
-			return err
-		}
-		metas = map[string]map[string]string{opts.Version: meta}
-	} else {
-		if targets, metas, err = candidateVersions(ctx, pkg, opts.Backfill); err != nil {
-			return err
-		}
-		if len(targets) == 0 {
-			console.Success("%s up to date (%s)", pkg.Name, displayVersion(current))
-			row.Head = current
-			return emit()
-		}
-	}
-
-	added, head, err := apply(ctx, path, data, pkg, targets, metas, console)
-	if err != nil {
-		return err
-	}
-	printResult(console, pkg.Name, current, head, added)
-	row.Head, row.Added = head, added
-	return emit()
+type Result struct {
+	Rows    []Row
+	Skipped int
 }
 
-func sweep(ctx context.Context, dir string, backfill int, jsonOut bool, console *report.Console) error {
-	paths, err := publish.ManifestPaths(dir)
-	if err != nil {
-		return err
-	}
-	results := make([]*Row, len(paths))
-	var g errgroup.Group
+func (r *Result) Bumped() int {
+	return r.count(func(row Row) bool { return row.Error == "" && len(row.Added) > 0 })
+}
 
-	g.SetLimit(4)
-	for i, path := range paths {
+func (r *Result) UpToDate() int {
+	return r.count(func(row Row) bool { return row.Error == "" && len(row.Added) == 0 })
+}
+
+func (r *Result) Failed() int {
+	return r.count(func(row Row) bool { return row.Error != "" })
+}
+
+func (r *Result) count(match func(Row) bool) int {
+	n := 0
+	for _, row := range r.Rows {
+		if match(row) {
+			n++
+		}
+	}
+	return n
+}
+
+type job struct {
+	name     string
+	versions []string
+}
+
+func Run(ctx context.Context, cat string, opts Options) (*Result, error) {
+	jobs, err := plan(opts)
+	if err != nil {
+		return nil, err
+	}
+	entry, err := catalog.Open(ctx, cat)
+	if err != nil {
+		return nil, err
+	}
+	editor, ok := entry.Catalog.(catalog.Editor)
+	if !ok {
+		return nil, fmt.Errorf("%s: bump writes a local catalog directory or pkg.yaml", cat)
+	}
+	names, err := entry.Catalog.PackageNames(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, j := range jobs {
+		if !slices.Contains(names, j.name) {
+			return nil, &catalog.PackageNotFoundError{Name: j.name, Catalogs: []string{entry.Name}}
+		}
+	}
+	_, isFile := entry.Catalog.(*catalog.File)
+	explicit := len(jobs) > 0 || isFile
+	if len(jobs) == 0 {
+		jobs = make([]job, len(names))
+		for i, name := range names {
+			jobs[i] = job{name: name}
+		}
+	}
+
+	results := make([]*Row, len(jobs))
+	var g errgroup.Group
+	g.SetLimit(min(runtime.NumCPU(), 8))
+	for i, j := range jobs {
 		g.Go(func() error {
-			results[i] = sweepOne(ctx, path, backfill, console)
+			results[i] = bumpOne(ctx, editor, j, opts, explicit)
 			return nil
 		})
 	}
 	_ = g.Wait()
 
-	var rows []Row
-	var bumped, upToDate, failed, skipped int
+	res := &Result{Rows: make([]Row, 0, len(results))}
 	for _, r := range results {
 		if r == nil {
-			skipped++
+			res.Skipped++
 			continue
 		}
-		rows = append(rows, *r)
-		switch {
-		case r.Error != "":
-			failed++
-		case len(r.Added) > 0:
-			bumped++
-		default:
-			upToDate++
-		}
+		res.Rows = append(res.Rows, *r)
 	}
-	if jsonOut {
-		if err := console.JSON(rows); err != nil {
-			return err
-		}
-	}
-	console.Success("Checked %d packages: %d bumped, %d up to date, %d failed, %d without discovery",
-		len(paths), bumped, upToDate, failed, skipped)
-	return nil
+	return res, nil
 }
 
-func sweepOne(ctx context.Context, path string, backfill int, console *report.Console) *Row {
-	row := &Row{Name: filepath.Base(filepath.Dir(path)), Path: path}
+func plan(opts Options) ([]job, error) {
+	var jobs []job
+	for _, ref := range opts.Packages {
+		if ref.Version != "" && opts.Backfill > 0 {
+			return nil, fmt.Errorf("--package %s and --backfill cannot be combined", ref)
+		}
+		i := slices.IndexFunc(jobs, func(j job) bool { return j.name == ref.Name })
+		if i < 0 {
+			jobs = append(jobs, job{name: ref.Name})
+			i = len(jobs) - 1
+		}
+		if ref.Version != "" && !slices.Contains(jobs[i].versions, ref.Version) {
+			jobs[i].versions = append(jobs[i].versions, ref.Version)
+		}
+	}
+	return jobs, nil
+}
+
+func bumpOne(ctx context.Context, editor catalog.Editor, j job, opts Options, explicit bool) *Row {
+	r := report.FromContext(ctx)
+	row := &Row{Name: j.name}
+	task := r.Task("Bumping " + j.name)
 	fail := func(err error) *Row {
-		console.Warn("%s: %v", row.Name, err)
+		r.Warn("%s: %v", row.Name, err)
 		row.Error = err.Error()
+		task.Fail("Failed " + row.Name)
 		return row
 	}
-	data, pkg, current, err := load(path)
+	data, err := editor.ReadManifest(ctx, j.name)
 	if err != nil {
 		return fail(err)
-	}
-	row.Name, row.Current = pkg.Name, current
-	if pkg.VersionDiscovery == nil {
-		console.Debug("Skipping %s: no versionDiscovery", pkg.Name)
-		return nil
-	}
-	if err := spec.ValidateEditable(data); err != nil {
-		return fail(err)
-	}
-	targets, metas, err := candidateVersions(ctx, pkg, backfill)
-	if err != nil {
-		return fail(err)
-	}
-	if len(targets) == 0 {
-		console.Debug("%s up to date (%s)", pkg.Name, displayVersion(current))
-		row.Head = current
-		return row
-	}
-	added, head, err := apply(ctx, path, data, pkg, targets, metas, console)
-	if err != nil {
-		return fail(err)
-	}
-	row.Head, row.Added = head, added
-	printResult(console, pkg.Name, current, head, added)
-	return row
-}
-
-func load(path string) ([]byte, *spec.Package, string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, nil, "", err
 	}
 	pkg, err := spec.Parse(data)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("%s: %w", path, err)
+		return fail(err)
 	}
 	current := ""
 	if len(pkg.Versions) > 0 {
 		current = pkg.Versions[0].Version
 	}
-	return data, pkg, current, nil
+	row.Name, row.Current = pkg.Name, current
+	if pkg.VersionDiscovery == nil && !explicit {
+		r.Debug("Skipping %s: no versionDiscovery", pkg.Name)
+		task.Discard()
+		return nil
+	}
+	if err := spec.ValidateEditable(data); err != nil {
+		return fail(err)
+	}
+
+	task.Segment("discovering")
+	var targets []string
+	var metas map[string]map[string]string
+	var present []string
+	if len(j.versions) > 0 {
+		metas = map[string]map[string]string{}
+		for _, v := range j.versions {
+			if pkg.HasEqualVersion(v) {
+				present = append(present, v)
+				continue
+			}
+			meta, err := discoverMetaFor(ctx, pkg, v)
+			if err != nil {
+				return fail(err)
+			}
+			targets = append(targets, v)
+			metas[v] = meta
+		}
+		sort.Slice(targets, func(a, b int) bool { return spec.CompareVersions(targets[a], targets[b]) < 0 })
+	} else if targets, metas, err = candidateVersions(ctx, pkg, opts.Backfill); err != nil {
+		return fail(err)
+	}
+	if len(targets) == 0 {
+		row.Head = current
+		switch {
+		case len(present) > 0:
+			task.Done(fmt.Sprintf("%s %s already present", pkg.Name, strings.Join(present, ", ")))
+		case explicit:
+			task.Done(fmt.Sprintf("%s up to date (%s)", pkg.Name, displayVersion(current)))
+		default:
+			task.Discard()
+		}
+		return row
+	}
+
+	if opts.DryRun {
+		row.Head, row.Added = headAfter(current, targets), targets
+		task.Done(resultLine("Would bump", "Would backfill", pkg.Name, current, row.Head, targets))
+		return row
+	}
+	added, head, err := apply(ctx, editor, pkg.Name, data, pkg, targets, metas, task)
+	if err != nil {
+		return fail(err)
+	}
+	row.Head, row.Added = head, added
+	task.Done(resultLine("Bumped", "Backfilled", pkg.Name, current, head, added))
+	return row
+}
+
+func headAfter(current string, targets []string) string {
+	head := current
+	for _, t := range targets {
+		if head == "" || spec.CompareVersions(t, head) > 0 {
+			head = t
+		}
+	}
+	return head
 }
 
 func displayVersion(v string) string {
@@ -209,13 +239,14 @@ func displayVersion(v string) string {
 	return v
 }
 
-func apply(ctx context.Context, path string, data []byte, pkg *spec.Package, targets []string, metas map[string]map[string]string, console *report.Console) ([]string, string, error) {
+func apply(ctx context.Context, editor catalog.Editor, name string, data []byte, pkg *spec.Package, targets []string, metas map[string]map[string]string, task report.Task) ([]string, string, error) {
+	console := report.FromContext(ctx)
 	edited := data
 	var added []string
 	var lastErr error
 	notFound, sourceBackfill := false, false
 	for _, target := range targets {
-		entry, err := buildEntry(ctx, pkg, target, metas[target], console)
+		entry, err := buildEntry(ctx, pkg, target, metas[target], task)
 		if err != nil {
 			lastErr = err
 			if _, ok := errors.AsType[*fetch.ArtifactNotFoundError](err); ok {
@@ -241,7 +272,7 @@ func apply(ctx context.Context, path string, data []byte, pkg *spec.Package, tar
 		console.Hint("Upstream release assets may not be uploaded yet; retry later")
 	}
 	if sourceBackfill {
-		console.Hint("Backfilled source versions need `nem catalog build --version <v> --push` before installs work")
+		console.Hint("Backfilled source versions need `nem catalog build --package <name>@<version> --push` before installs work")
 	}
 	if len(added) == 0 {
 		return nil, "", fmt.Errorf("no versions could be added: %w", lastErr)
@@ -265,24 +296,24 @@ func apply(ctx context.Context, path string, data []byte, pkg *spec.Package, tar
 			return nil, "", fmt.Errorf("edited manifest is not newest-first at %s", check.Versions[i].Version)
 		}
 	}
-	if err := catalog.NewFile(path).UpdateManifest(ctx, check.Name, edited); err != nil {
+	if err := editor.UpdateManifest(ctx, name, edited); err != nil {
 		return nil, "", err
 	}
 	return added, check.Versions[0].Version, nil
 }
 
-func printResult(console *report.Console, name, current, head string, added []string) {
+func resultLine(bumped, backfilled, name, current, head string, added []string) string {
 	switch {
 	case head == current:
 		word := "versions"
 		if len(added) == 1 {
 			word = "version"
 		}
-		console.Success("Backfilled %s (%d %s)", name, len(added), word)
+		return fmt.Sprintf("%s %s (%d %s)", backfilled, name, len(added), word)
 	case len(added) > 1:
-		console.Success("Bumped %s %s → %s (%d versions)", name, displayVersion(current), head, len(added))
+		return fmt.Sprintf("%s %s %s → %s (%d versions)", bumped, name, displayVersion(current), head, len(added))
 	default:
-		console.Success("Bumped %s %s → %s", name, displayVersion(current), head)
+		return fmt.Sprintf("%s %s %s → %s", bumped, name, displayVersion(current), head)
 	}
 }
 
@@ -374,47 +405,32 @@ func insertPos(data []byte, version string) (int, error) {
 	return len(pkg.Versions), nil
 }
 
-func buildEntry(ctx context.Context, pkg *spec.Package, target string, meta map[string]string, console *report.Console) (spec.VersionEntry, error) {
+func buildEntry(ctx context.Context, pkg *spec.Package, target string, meta map[string]string, task report.Task) (spec.VersionEntry, error) {
 	pkg = withMeta(pkg, target, meta)
 	if pkg.Artifact.OCI != "" {
-		return buildOCIEntry(ctx, pkg, target, meta, console)
+		return buildOCIEntry(ctx, pkg, target, meta, task)
 	}
 
 	e := spec.VersionEntry{Version: target, Meta: meta}
 	platforms := pkg.SupportedBy()
-
-	sums := make([]string, len(platforms))
-	g, gctx := errgroup.WithContext(ctx)
-	for i, plat := range platforms {
-		g.Go(func() error {
-			url, err := fetch.UpstreamURL(pkg, target, plat)
-			if err != nil {
-				return err
-			}
-			subject := pkg.Name + " " + target + " " + plat.String()
-			task := console.Task("Hashing " + subject)
-			fmeta := fetch.Meta{Name: pkg.Name, Version: target, Platform: plat}
-			sum, err := digestURL(gctx, netx.Client(), url, fmeta, task)
-			if err != nil {
-				task.Fail("Download failed for " + subject)
-				return err
-			}
-			task.Done("Hashed " + subject)
-			sums[i] = sum
-			return nil
-		})
-	}
-	if err := g.Wait(); err != nil {
-		return e, err
-	}
 	e.Sha256 = make(map[string]string, len(platforms))
-	for i, plat := range platforms {
-		e.Sha256[plat.String()] = sums[i]
+	for _, plat := range platforms {
+		url, err := fetch.UpstreamURL(pkg, target, plat)
+		if err != nil {
+			return e, err
+		}
+		task.Segment(fmt.Sprintf("hashing %s %s", target, plat))
+		fmeta := fetch.Meta{Name: pkg.Name, Version: target, Platform: plat}
+		sum, err := digestURL(ctx, netx.Client(), url, fmeta, task)
+		if err != nil {
+			return e, err
+		}
+		e.Sha256[plat.String()] = sum
 	}
 	return e, nil
 }
 
-func buildOCIEntry(ctx context.Context, pkg *spec.Package, target string, meta map[string]string, console *report.Console) (spec.VersionEntry, error) {
+func buildOCIEntry(ctx context.Context, pkg *spec.Package, target string, meta map[string]string, task report.Task) (spec.VersionEntry, error) {
 	e := spec.VersionEntry{Version: target, Meta: meta}
 	if pkg.Build == nil {
 		return e, nil
@@ -423,19 +439,15 @@ func buildOCIEntry(ctx context.Context, pkg *spec.Package, target string, meta m
 	if err != nil {
 		return e, err
 	}
-	subject := pkg.Name + " " + target + " source"
-	task := console.Task("Hashing " + subject)
+	task.Segment(fmt.Sprintf("hashing %s source", target))
 	fmeta := fetch.Meta{Name: pkg.Name, Version: target, Platform: spec.Current()}
 	sum, err := digestURL(ctx, netx.Client(), url, fmeta, task)
 	if err != nil {
-		task.Fail("Download failed for " + subject)
-
 		if _, ok := errors.AsType[*fetch.ArtifactNotFoundError](err); ok {
 			return e, fmt.Errorf("source for %s@%s not found: %s", pkg.Name, target, url)
 		}
 		return e, err
 	}
-	task.Done("Hashed " + subject)
 	e.SourceSha256 = sum
 	return e, nil
 }

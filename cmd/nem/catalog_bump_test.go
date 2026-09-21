@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,11 +20,10 @@ versions:
 `
 
 func TestCatalogBumpFlagWiring(t *testing.T) {
-	t.Run("version and json", func(t *testing.T) {
+	t.Run("package version and json", func(t *testing.T) {
 		dir := writeLintFixture(t, map[string]string{"tool": bareOCIBumpFixture})
-		path := filepath.Join(dir, "pkgs", "tool", "pkg.yaml")
 
-		out, _, err := runNem(t, t.TempDir(), "catalog", "bump", "--json", "--version", "v1.1.0", path)
+		out, errOut, err := runNem(t, t.TempDir(), "catalog", "bump", "--json", "--package", "tool@v1.1.0", dir)
 		if err != nil {
 			t.Fatalf("bump: %v", err)
 		}
@@ -36,15 +37,38 @@ func TestCatalogBumpFlagWiring(t *testing.T) {
 		if len(rows) != 1 || rows[0].Name != "tool" || rows[0].Head != "v1.1.0" {
 			t.Fatalf("rows = %+v, want one tool row with head v1.1.0", rows)
 		}
+		if !strings.Contains(errOut, "Bumped 1 packages") {
+			t.Fatalf("stderr = %q, want the summary line", errOut)
+		}
 	})
 
-	t.Run("backfill reaches options", func(t *testing.T) {
+	t.Run("dry run writes nothing", func(t *testing.T) {
 		dir := writeLintFixture(t, map[string]string{"tool": bareOCIBumpFixture})
 		path := filepath.Join(dir, "pkgs", "tool", "pkg.yaml")
+		before, _ := os.ReadFile(path)
 
-		_, _, err := runNem(t, t.TempDir(), "catalog", "bump", "--version", "v1.1.0", "--backfill", "2", path)
-		if err == nil || !strings.Contains(err.Error(), "combined") {
-			t.Fatalf("err = %v, want the version/backfill conflict from bump.Run", err)
+		_, errOut, err := runNem(t, t.TempDir(), "catalog", "bump", "--package", "tool@v1.1.0", "--dry-run", dir)
+		if err != nil {
+			t.Fatalf("bump --dry-run: %v", err)
+		}
+		if !strings.Contains(errOut, "Would bump tool v1.0.0 → v1.1.0") || !strings.Contains(errOut, "Would bump 1 packages") {
+			t.Fatalf("stderr = %q, want the dry-run plan and summary", errOut)
+		}
+		if after, _ := os.ReadFile(path); string(after) != string(before) {
+			t.Fatal("dry run must not modify the manifest")
+		}
+	})
+
+	t.Run("failed package exits nonzero", func(t *testing.T) {
+		dir := writeLintFixture(t, map[string]string{"tool": bareOCIBumpFixture})
+
+		_, errOut, err := runNem(t, t.TempDir(), "catalog", "bump", "--package", "tool", dir)
+		var exitErr *ExitError
+		if !errors.As(err, &exitErr) || exitErr.Code != 1 {
+			t.Fatalf("err = %v, want *ExitError{Code:1}", err)
+		}
+		if !strings.Contains(errOut, "no versionDiscovery") || !strings.Contains(errOut, "Failed tool") || !strings.Contains(errOut, "1 failed") {
+			t.Fatalf("stderr = %q, want the discovery failure and summary", errOut)
 		}
 	})
 }
@@ -57,7 +81,7 @@ func TestCatalogBumpDefaultsToCurrentDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bump: %v", err)
 	}
-	if !strings.Contains(errOut, "Checked 1 packages: 0 bumped, 0 up to date, 0 failed, 1 without discovery") {
+	if !strings.Contains(errOut, "Nothing to bump (1 without discovery)") {
 		t.Fatalf("stderr = %q, want sweep summary for the current directory", errOut)
 	}
 }

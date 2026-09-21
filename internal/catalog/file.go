@@ -56,9 +56,13 @@ func (f *File) Versions(ctx context.Context, name string) ([]string, error) {
 }
 
 func (f *File) PackageNames(_ context.Context) ([]string, error) {
-	pkg, err := f.read()
+	data, err := os.ReadFile(f.path)
 	if err != nil {
 		return nil, err
+	}
+	pkg, err := spec.Parse(data)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: %w", f.path, err)
 	}
 	return []string{pkg.Name}, nil
 }
