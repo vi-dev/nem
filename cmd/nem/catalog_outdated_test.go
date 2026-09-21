@@ -54,7 +54,10 @@ func TestCatalogOutdatedTable(t *testing.T) {
 	if !strings.Contains(out, "jq") || !strings.Contains(out, "1.8.2") || !strings.Contains(out, "1.8.3") {
 		t.Fatalf("stdout = %q, want jq row", out)
 	}
-	if !strings.Contains(errOut, "1 outdated") || !strings.Contains(errOut, "1 without discovery") {
+	if !strings.Contains(errOut, "jq 1.8.2 → 1.8.3 available") {
+		t.Fatalf("stderr = %q, want the outdated task outcome", errOut)
+	}
+	if !strings.Contains(errOut, "1 outdated (1 without discovery)") {
 		t.Fatalf("stderr = %q, want summary", errOut)
 	}
 }
@@ -66,12 +69,23 @@ func TestCatalogOutdatedUpToDateIsQuietOnStdout(t *testing.T) {
 		return "1.8.2", nil
 	})
 
-	out, _, err := runNem(t, nemHome, "catalog", "outdated", dir)
+	out, errOut, err := runNem(t, nemHome, "catalog", "outdated", dir)
 	if err != nil {
 		t.Fatalf("outdated: %v", err)
 	}
 	if strings.TrimSpace(out) != "" {
 		t.Fatalf("stdout = %q, want empty when everything is current", out)
+	}
+	if strings.Contains(errOut, "jq up to date") || !strings.Contains(errOut, "1 up to date") {
+		t.Fatalf("stderr = %q, want the sweep to discard the up-to-date task and count it", errOut)
+	}
+
+	_, errOut, err = runNem(t, nemHome, "catalog", "outdated", dir, "--package", "jq")
+	if err != nil {
+		t.Fatalf("outdated --package: %v", err)
+	}
+	if !strings.Contains(errOut, "jq up to date (1.8.2)") {
+		t.Fatalf("stderr = %q, want an explicit package to report up to date", errOut)
 	}
 }
 
@@ -109,10 +123,40 @@ func TestCatalogOutdatedDiscoveryErrorWarnsButSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("outdated must exit 0 on per-package errors, got %v", err)
 	}
-	if !strings.Contains(errOut, "upstream unreachable") {
-		t.Fatalf("stderr = %q, want warning", errOut)
+	if !strings.Contains(errOut, "jq: discovery failed: upstream unreachable") || !strings.Contains(errOut, "Failed jq") {
+		t.Fatalf("stderr = %q, want the warning and the failed task", errOut)
+	}
+	if !strings.Contains(errOut, "1 failed") {
+		t.Fatalf("stderr = %q, want the failure counted in the summary", errOut)
 	}
 	if !strings.Contains(out, "upstream unreachable") {
 		t.Fatalf("json = %q, want error field", out)
+	}
+}
+
+func TestCatalogOutdatedPackageFilter(t *testing.T) {
+	nemHome := t.TempDir()
+	dir := writeLintFixture(t, map[string]string{
+		"jq":  outdatedFixtureJq,
+		"jq2": strings.Replace(outdatedFixtureJq, "name: jq", "name: jq2", 1),
+	})
+	withFakeLatest(t, func(_ context.Context, pkg *spec.Package) (string, error) {
+		return "1.8.3", nil
+	})
+
+	out, errOut, err := runNem(t, nemHome, "catalog", "outdated", dir, "--package", "jq2", "--package", "jq2")
+	if err != nil {
+		t.Fatalf("outdated: %v", err)
+	}
+	if !strings.Contains(out, "jq2") || strings.Contains(out, "jq ") {
+		t.Fatalf("stdout = %q, want only the jq2 row", out)
+	}
+	if !strings.Contains(errOut, "1 outdated") || strings.Contains(errOut, "2 outdated") {
+		t.Fatalf("stderr = %q, want a single checked package (repeated names collapse)", errOut)
+	}
+
+	_, errOut, err = runNem(t, nemHome, "catalog", "outdated", dir, "--package", "nope")
+	if err == nil || !strings.Contains(errOut, "nope not found in catalog(s) "+dir) {
+		t.Fatalf("err = %v, stderr = %q; want PackageNotFoundError naming the catalog", err, errOut)
 	}
 }
