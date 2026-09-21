@@ -39,7 +39,7 @@ nem catalog fill registry.corp.example/nem/catalog:v2
 `nem catalog fill` downloads the catalog's checksum-pinned upstream
 artifacts and publishes them as archives beside your copy of the index.
 It runs against your mirror rather than the source because publishing
-archives needs push access to the registry. Use `--pkg <name>`
+archives needs push access to the registry. Use `--package <name>`
 (repeatable) to limit the run to specific packages, and `--dry-run` to
 preview the plan without downloading or publishing anything.
 

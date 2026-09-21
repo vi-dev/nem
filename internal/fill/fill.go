@@ -7,13 +7,13 @@ import (
 	"os"
 	"runtime"
 	"sort"
-	"strings"
 	"sync/atomic"
 
 	"golang.org/x/sync/errgroup"
 	"oras.land/oras-go/v2"
 
 	"github.com/vi-dev/nem/internal/archive"
+	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/home"
 	"github.com/vi-dev/nem/internal/netx"
 	"github.com/vi-dev/nem/internal/ocix"
@@ -22,7 +22,7 @@ import (
 
 type Options struct {
 	CatalogRef string
-	Pkgs       []string
+	Packages   []string
 	DryRun     bool
 }
 
@@ -33,16 +33,6 @@ type Summary struct {
 	Present     int
 	NotFillable int
 	Failed      int
-	DryRun      bool
-}
-
-func (s Summary) String() string {
-	verb := "Filled"
-	if s.DryRun {
-		verb = "Would fill"
-	}
-	return fmt.Sprintf("%s %d packages, %d fill(s), %d heal(s), %d present, %d package(s) not fillable",
-		verb, s.Packages, s.Filled, s.Healed, s.Present, s.NotFillable)
 }
 
 var openCatalog = ocix.RemoteCatalog
@@ -74,7 +64,7 @@ func Run(ctx context.Context, h home.Home, opts Options) (Summary, error) {
 		return Summary{}, err
 	}
 
-	pkgs, err := scopePackages(store.Packages(), opts.Pkgs)
+	pkgs, err := scopePackages(opts.CatalogRef, store.Packages(), opts.Packages)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -85,7 +75,7 @@ func Run(ctx context.Context, h home.Home, opts Options) (Summary, error) {
 		}
 	}
 
-	summary := Summary{Packages: len(pkgs), DryRun: opts.DryRun}
+	summary := Summary{Packages: len(pkgs)}
 	var agg aggregator
 	archives := archive.Remote(opts.CatalogRef)
 
@@ -115,7 +105,12 @@ func Run(ctx context.Context, h home.Home, opts Options) (Summary, error) {
 }
 
 func stageCatalog(ctx context.Context, ref string) (*ocix.Store, error) {
-	labels := report.TaskLabels{Run: "Pulling catalog", Segment: "copying", Done: "Pulled catalog", Fail: "Pull failed"}
+	labels := report.TaskLabels{
+		Run:     "Pulling catalog " + ref,
+		Segment: "pulling manifest",
+		Done:    "Pulled catalog " + ref,
+		Fail:    "Failed to pull catalog " + ref,
+	}
 	var store *ocix.Store
 	err := report.RunTask(ctx, labels, func(count report.ProgressFunc) error {
 		src, srcTag, err := openCatalog(ref)
@@ -134,7 +129,7 @@ func stageCatalog(ctx context.Context, ref string) (*ocix.Store, error) {
 	return store, nil
 }
 
-func scopePackages(all []ocix.TitledManifest, want []string) ([]ocix.TitledManifest, error) {
+func scopePackages(ref string, all []ocix.TitledManifest, want []string) ([]ocix.TitledManifest, error) {
 	if len(want) == 0 {
 		return all, nil
 	}
@@ -158,7 +153,7 @@ func scopePackages(all []ocix.TitledManifest, want []string) ([]ocix.TitledManif
 	}
 	if len(unknown) > 0 {
 		sort.Strings(unknown)
-		return nil, fmt.Errorf("unknown package(s): %s", strings.Join(unknown, ", "))
+		return nil, &catalog.PackageNotFoundError{Name: unknown[0], Catalogs: []string{ref}}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Title < out[j].Title })
 	return out, nil

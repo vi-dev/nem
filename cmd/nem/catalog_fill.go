@@ -7,25 +7,33 @@ import (
 )
 
 func newCatalogFillCmd() *cobra.Command {
-	var pkgs []string
+	var packages []string
 	var dryRun bool
 	cmd := &cobra.Command{
-		Use:   "fill <catalog-ref>",
-		Short: "Download a catalog's upstream artifacts and publish them as archives",
-		Args:  cobra.ExactArgs(1),
+		Use:               "fill <ref>",
+		Short:             "Download a catalog's upstream artifacts and publish them as archives",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			summary, err := fill.Run(cmd.Context(), nemHome, fill.Options{CatalogRef: args[0], Pkgs: pkgs, DryRun: dryRun})
+			summary, err := fill.Run(cmd.Context(), nemHome, fill.Options{CatalogRef: args[0], Packages: packages, DryRun: dryRun})
 			if err != nil {
 				return err
 			}
-			console.Success("%s", summary.String())
+			verb := "Filled"
+			if dryRun {
+				verb = "Would fill"
+			}
+			console.Success("%s %d packages, %d fill(s), %d heal(s), %d present, %d package(s) not fillable",
+				verb, summary.Packages, summary.Filled, summary.Healed, summary.Present, summary.NotFillable)
 			if summary.Failed > 0 {
 				return &ExitError{Code: 1}
 			}
 			return nil
 		},
 	}
-	cmd.Flags().StringArrayVar(&pkgs, "pkg", nil, "limit to this package (repeatable)")
+	cmd.Flags().StringArrayVar(&packages, "package", nil,
+		"fill this package (repeatable; default: every package)")
+	_ = cmd.RegisterFlagCompletionFunc("package", completeCatalogDirPackages)
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report the fill plan without downloading or publishing anything")
 	return cmd
 }

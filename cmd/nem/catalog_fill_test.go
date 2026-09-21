@@ -135,11 +135,11 @@ func TestCatalogFillCmdUnknownPkgErrors(t *testing.T) {
 	t.Cleanup(fill.SetCatalogOpener(func(string) (oras.ReadOnlyTarget, string, error) { return src, "v2", nil }))
 
 	nemHome := t.TempDir()
-	_, errb, err := runNem(t, nemHome, "catalog", "fill", "example.com/cat:v2", "--pkg", "nonexistent")
+	_, errb, err := runNem(t, nemHome, "catalog", "fill", "example.com/cat:v2", "--package", "nonexistent")
 	if err == nil {
-		t.Fatal("unknown --pkg name must error")
+		t.Fatal("unknown --package name must error")
 	}
-	if !strings.Contains(errb, "nonexistent") {
-		t.Fatalf("stderr missing the unknown package name:\n%s", errb)
+	if !strings.Contains(errb, "nonexistent not found in catalog(s) example.com/cat:v2") {
+		t.Fatalf("stderr missing the unknown package error:\n%s", errb)
 	}
 }

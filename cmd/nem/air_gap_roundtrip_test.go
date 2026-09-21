@@ -103,7 +103,7 @@ func TestAirGappedCatalogRoundTrip(t *testing.T) {
 	}))
 	t.Cleanup(fill.SetHTTPClient(up.Client()))
 
-	_, errb, err = runNem(t, connectedNemHome, "catalog", "fill", "example.com/cat:v2", "--pkg", "tool")
+	_, errb, err = runNem(t, connectedNemHome, "catalog", "fill", "example.com/cat:v2", "--package", "tool")
 	if err != nil {
 		t.Fatalf("fill: %v\n%s", err, errb)
 	}

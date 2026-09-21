@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/vi-dev/nem/internal/archive"
+	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/ocix/ocixtest"
 	"github.com/vi-dev/nem/internal/publish/publishtest"
@@ -556,7 +558,6 @@ func TestRunDryRunPlansEverythingNoIO(t *testing.T) {
 		Healed:      1,
 		Present:     len(spec.SupportedPlatforms),
 		NotFillable: 1,
-		DryRun:      true,
 	}
 	if summary != want {
 		t.Fatalf("summary = %+v, want %+v", summary, want)
@@ -642,7 +643,7 @@ func TestRunPkgScopingFiltersToNamed(t *testing.T) {
 	wireArchives(t, archives)
 
 	ctx, _ := testx.ReporterContext(context.Background())
-	summary, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2", Pkgs: []string{"go"}})
+	summary, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2", Packages: []string{"go"}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -651,7 +652,7 @@ func TestRunPkgScopingFiltersToNamed(t *testing.T) {
 	}
 	for _, name := range archives.OpenedNames() {
 		if name == "curl" {
-			t.Fatal("curl's archives were opened despite being out of --pkg scope")
+			t.Fatal("curl's archives were opened despite being out of --package scope")
 		}
 	}
 }
@@ -665,15 +666,10 @@ func TestRunPkgScopingUnknownNameErrors(t *testing.T) {
 	wireArchives(t, archives)
 
 	ctx, _ := testx.ReporterContext(context.Background())
-	_, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2", Pkgs: []string{"zzz", "go", "aaa"}})
-	if err == nil {
-		t.Fatal("unknown --pkg name must error")
-	}
-	if !strings.Contains(err.Error(), "aaa") || !strings.Contains(err.Error(), "zzz") {
-		t.Fatalf("error = %v, want it to list both unknown names", err)
-	}
-	if strings.Index(err.Error(), "aaa") > strings.Index(err.Error(), "zzz") {
-		t.Fatalf("error = %v, want unknown names sorted", err)
+	_, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2", Packages: []string{"zzz", "go", "aaa"}})
+	var nf *catalog.PackageNotFoundError
+	if !errors.As(err, &nf) || nf.Name != "aaa" || !slices.Equal(nf.Catalogs, []string{"example.com/cat:v2"}) {
+		t.Fatalf("err = %v, want PackageNotFoundError for the first unknown name in sorted order", err)
 	}
 	if len(archives.OpenedNames()) != 0 {
 		t.Fatalf("archives opened despite the scoping error: %v", archives.OpenedNames())
@@ -682,7 +678,7 @@ func TestRunPkgScopingUnknownNameErrors(t *testing.T) {
 
 func TestScopePackagesDedupesRequestedNames(t *testing.T) {
 	all := []ocix.TitledManifest{{Title: "a"}, {Title: "b"}}
-	got, err := scopePackages(all, []string{"a", "a"})
+	got, err := scopePackages("example.com/cat:v2", all, []string{"a", "a"})
 	if err != nil {
 		t.Fatalf("scopePackages: %v", err)
 	}
@@ -785,7 +781,7 @@ func TestStageCatalogReportsProgressOnStagingTask(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	task := rep.TaskFor("Pulling catalog")
+	task := rep.TaskFor("Pulling catalog example.com/cat:v2")
 	if task == nil {
 		t.Fatal("no Pulling catalog task")
 	}
