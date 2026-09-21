@@ -9,6 +9,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"oras.land/oras-go/v2"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/report"
 )
@@ -38,10 +39,8 @@ func (s Summary) String() string {
 }
 
 var (
-	openSrcCatalog  = ocix.RemoteCatalog
-	openDstCatalog  = ocix.RemoteCatalogRW
-	openSrcArchives = ocix.RemoteArchives
-	openDstArchives = ocix.RemoteArchivesRW
+	openSrcCatalog = ocix.RemoteCatalog
+	openDstCatalog = ocix.RemoteCatalogRW
 )
 
 func SetSrcCatalogOpener(f func(ref string) (oras.ReadOnlyTarget, string, error)) (restore func()) {
@@ -54,18 +53,6 @@ func SetDstCatalogOpener(f func(ref string) (oras.Target, string, error)) (resto
 	prev := openDstCatalog
 	openDstCatalog = f
 	return func() { openDstCatalog = prev }
-}
-
-func SetSrcArchivesOpener(f func(catalogRef, name string) (oras.ReadOnlyTarget, error)) (restore func()) {
-	prev := openSrcArchives
-	openSrcArchives = f
-	return func() { openSrcArchives = prev }
-}
-
-func SetDstArchivesOpener(f func(catalogRef, name string) (oras.Target, error)) (restore func()) {
-	prev := openDstArchives
-	openDstArchives = f
-	return func() { openDstArchives = prev }
 }
 
 func Run(ctx context.Context, opts Options) (Summary, error) {
@@ -88,6 +75,9 @@ func Run(ctx context.Context, opts Options) (Summary, error) {
 	summary := Summary{Packages: len(pkgs), DryRun: opts.DryRun}
 	var agg aggregator
 
+	srcArchives := archive.Remote(opts.SrcRef)
+	dstArchives := archive.Remote(opts.DstRef)
+
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(min(runtime.NumCPU(), 8))
 	for _, pkg := range pkgs {
@@ -95,7 +85,7 @@ func Run(ctx context.Context, opts Options) (Summary, error) {
 			if gctx.Err() != nil {
 				return nil
 			}
-			mirrorPackage(gctx, opts, pkg, store, &agg)
+			mirrorPackage(gctx, opts, pkg, store, srcArchives, dstArchives, &agg)
 			return nil
 		})
 	}

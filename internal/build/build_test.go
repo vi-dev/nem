@@ -20,10 +20,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/home"
 	"github.com/vi-dev/nem/internal/install"
-	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
@@ -403,7 +403,7 @@ func TestBuildFailsWhenTheTestHookFails(t *testing.T) {
 	h, pkg := buildFixture(t, map[string]string{"src/README": "hi"}, "v1",
 		spec.BuildStep{Run: `mkdir -p "$NEM_OUTPUT/bin" && echo hi > "$NEM_OUTPUT/bin/marker"`})
 
-	store := ocix.NewArchiveStore(t.TempDir())
+	store := archive.NewDir(t.TempDir())
 	var hookCalled bool
 	_, err := runBuild(t, h, pkg,
 		Options{Version: "v1", LocalStore: store, Test: func(context.Context, *spec.Package, string, string) error {
@@ -425,7 +425,7 @@ func TestBuildTestHookAndLocalStoreShareTheSameArchiveBytes(t *testing.T) {
 	h, pkg := buildFixture(t, map[string]string{"src/README": "hi"}, "v1.0.0",
 		spec.BuildStep{Run: `mkdir -p "$NEM_OUTPUT/bin" && echo hello > "$NEM_OUTPUT/bin/tool"`})
 
-	store := ocix.NewArchiveStore(t.TempDir())
+	store := archive.NewDir(t.TempDir())
 	var hookBytes []byte
 	out, err := runBuild(t, h, pkg,
 		Options{Version: "v1.0.0", LocalStore: store,
@@ -444,11 +444,16 @@ func TestBuildTestHookAndLocalStoreShareTheSameArchiveBytes(t *testing.T) {
 		t.Fatal("the test hook never read the archive")
 	}
 
-	target, err := store.Open(pkg.Name)
+	target, err := store.Open(context.Background(), pkg.Name)
 	if err != nil {
 		t.Fatalf("open local store target: %v", err)
 	}
-	staged, err := ocix.ReadArchive(context.Background(), target, "v1.0.0", spec.Current())
+	stagedRC, err := archive.Fetch(context.Background(), target, "v1.0.0", spec.Current())
+	if err != nil {
+		t.Fatalf("fetch staged archive: %v", err)
+	}
+	staged, err := io.ReadAll(stagedRC)
+	stagedRC.Close()
 	if err != nil {
 		t.Fatalf("read staged archive: %v", err)
 	}
@@ -461,7 +466,7 @@ func TestBuildStagesArchiveInLocalStore(t *testing.T) {
 	h, pkg := buildFixture(t, map[string]string{"src/README": "hi"}, "v1.0.0",
 		spec.BuildStep{Run: "mkdir -p \"$NEM_OUTPUT/bin\" && echo \"$NEM_VERSION\" > \"$NEM_OUTPUT/bin/ver\""})
 
-	store := ocix.NewArchiveStore(t.TempDir())
+	store := archive.NewDir(t.TempDir())
 	out, err := runBuild(t, h, pkg, Options{Version: "v1.0.0", LocalStore: store})
 	if err != nil {
 		t.Fatalf("Build: %v\n%s", err, out)
@@ -478,11 +483,16 @@ func TestBuildStagesArchiveInLocalStore(t *testing.T) {
 	if !store.Has(pkg.Name) {
 		t.Fatalf("built archive was not staged in the local store for %s", pkg.Name)
 	}
-	target, err := store.Open(pkg.Name)
+	target, err := store.Open(context.Background(), pkg.Name)
 	if err != nil {
 		t.Fatalf("open local store target: %v", err)
 	}
-	data, err := ocix.ReadArchive(context.Background(), target, "v1.0.0", spec.Current())
+	dataRC, err := archive.Fetch(context.Background(), target, "v1.0.0", spec.Current())
+	if err != nil {
+		t.Fatalf("fetch staged archive: %v", err)
+	}
+	data, err := io.ReadAll(dataRC)
+	dataRC.Close()
 	if err != nil {
 		t.Fatalf("read staged archive: %v", err)
 	}
@@ -500,7 +510,7 @@ func TestBuildContinuesWhenStagingSweepFails(t *testing.T) {
 		spec.BuildStep{Run: `mkdir -p "$NEM_OUTPUT/bin" && echo hi > "$NEM_OUTPUT/bin/tool"` + "\n" +
 			`mkdir -p "$NEM_STAGING_DIR/blocked" && touch "$NEM_STAGING_DIR/blocked/x" && chmod 000 "$NEM_STAGING_DIR/blocked"`})
 
-	store := ocix.NewArchiveStore(t.TempDir())
+	store := archive.NewDir(t.TempDir())
 	out, err := runBuild(t, h, pkg, Options{Version: "v1.0.0", LocalStore: store})
 
 	matches, globErr := filepath.Glob(filepath.Join(h.Tmp(), pkg.Name+home.BuildStagingInfix+"*"))

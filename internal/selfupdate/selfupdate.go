@@ -15,7 +15,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/vi-dev/nem/internal/archive"
+	"github.com/vi-dev/nem/internal/extract"
 	"github.com/vi-dev/nem/internal/fetch"
 	"github.com/vi-dev/nem/internal/netx"
 	"github.com/vi-dev/nem/internal/report"
@@ -191,7 +191,7 @@ func extractBinary(archivePath, destPath string) error {
 		return fmt.Errorf("open extraction dir: %w", err)
 	}
 	defer root.Close()
-	if _, err := archive.Extract(archivePath, root, archive.Options{SingleName: "nem"}); err != nil {
+	if _, err := extract.Extract(archivePath, root, extract.Options{SingleName: "nem"}); err != nil {
 		return fmt.Errorf("extract release archive: %w", err)
 	}
 

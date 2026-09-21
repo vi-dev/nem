@@ -15,7 +15,9 @@ import (
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/errdef"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/ocix"
+	"github.com/vi-dev/nem/internal/spec"
 )
 
 type FakeEntry struct {
@@ -32,9 +34,9 @@ func PushFakeCatalog(t testing.TB, store oras.Target, entries []FakeEntry, schem
 	return desc
 }
 
-func PushFakeArchive(t testing.TB, store oras.Target, tag string, platforms map[string][]byte) {
+func PushFakeArchive(t testing.TB, store oras.Target, version string, platforms map[string][]byte) {
 	t.Helper()
-	if err := pushFakeArchive(store, tag, platforms); err != nil {
+	if err := pushFakeArchive(store, version, platforms); err != nil {
 		t.Fatalf("push fake archive: %v", err)
 	}
 }
@@ -102,65 +104,19 @@ func pushFakeCatalog(store oras.Target, entries []FakeEntry, schemaVersion strin
 	return idxDesc, nil
 }
 
-func pushFakeArchive(store oras.Target, tag string, platforms map[string][]byte) error {
+func pushFakeArchive(store oras.Target, version string, platforms map[string][]byte) error {
 	ctx := context.Background()
-
-	emptyConfig := ocispec.DescriptorEmptyJSON
-	if err := pushFakeBlob(ctx, store, emptyConfig, []byte("{}")); err != nil {
-		return err
-	}
-
 	keys := make([]string, 0, len(platforms))
 	for k := range platforms {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-
-	manifests := make([]ocispec.Descriptor, 0, len(keys))
 	for _, k := range keys {
 		osName, arch, _ := strings.Cut(k, "/")
-		payload := platforms[k]
-
-		layerDesc := content.NewDescriptorFromBytes(ocix.MediaTypeArchive, payload)
-		if err := pushFakeBlob(ctx, store, layerDesc, payload); err != nil {
-			return err
+		plat := spec.Platform{OS: osName, Arch: arch}
+		if _, _, err := archive.Push(ctx, store, version, plat, archive.BytesBlob(platforms[k]), true); err != nil {
+			return fmt.Errorf("push fake archive %s: %w", k, err)
 		}
-
-		manifest := ocispec.Manifest{
-			SchemaVersion: 2,
-			MediaType:     ocispec.MediaTypeImageManifest,
-			Config:        emptyConfig,
-			Layers:        []ocispec.Descriptor{layerDesc},
-		}
-		manifestBytes, err := json.Marshal(manifest)
-		if err != nil {
-			return fmt.Errorf("marshal archive manifest for %s: %w", k, err)
-		}
-		manifestDesc := content.NewDescriptorFromBytes(ocispec.MediaTypeImageManifest, manifestBytes)
-		if err := pushFakeBlob(ctx, store, manifestDesc, manifestBytes); err != nil {
-			return err
-		}
-
-		manifestDesc.Platform = &ocispec.Platform{OS: osName, Architecture: arch}
-		manifests = append(manifests, manifestDesc)
-	}
-
-	idx := ocispec.Index{
-		SchemaVersion: 2,
-		MediaType:     ocispec.MediaTypeImageIndex,
-		Manifests:     manifests,
-	}
-	idxBytes, err := json.Marshal(idx)
-	if err != nil {
-		return fmt.Errorf("marshal archive index: %w", err)
-	}
-	idxDesc := content.NewDescriptorFromBytes(ocispec.MediaTypeImageIndex, idxBytes)
-	if err := pushFakeBlob(ctx, store, idxDesc, idxBytes); err != nil {
-		return err
-	}
-
-	if err := store.Tag(ctx, idxDesc, tag); err != nil {
-		return fmt.Errorf("tag fake archive index: %w", err)
 	}
 	return nil
 }

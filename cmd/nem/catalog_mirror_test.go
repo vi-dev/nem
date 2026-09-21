@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/mirror"
 	"github.com/vi-dev/nem/internal/ocix/ocixtest"
 	"github.com/vi-dev/nem/internal/publish/publishtest"
@@ -16,6 +18,27 @@ import (
 
 func urlPkgYAML(name, version, digest string) string {
 	return string(publishtest.URLPkgYAML(name, version, "https://example.com/"+name+"/{{.Version}}", publishtest.UniformSha256(digest)))
+}
+
+func wireArchivesRepo(t *testing.T, srcRef, dstRef string, src, dst oras.Target) {
+	t.Helper()
+	srcBase, err := archive.RefPrefix(srcRef)
+	if err != nil {
+		t.Fatalf("archive.RefPrefix(%q): %v", srcRef, err)
+	}
+	dstBase, err := archive.RefPrefix(dstRef)
+	if err != nil {
+		t.Fatalf("archive.RefPrefix(%q): %v", dstRef, err)
+	}
+	t.Cleanup(archive.SetRepoOpener(func(ref string) (oras.Target, error) {
+		switch {
+		case strings.HasPrefix(ref, srcBase):
+			return src, nil
+		case strings.HasPrefix(ref, dstBase):
+			return dst, nil
+		}
+		return nil, fmt.Errorf("unexpected archives ref %s", ref)
+	}))
 }
 
 func TestCatalogMirrorCmd(t *testing.T) {
@@ -30,8 +53,7 @@ func TestCatalogMirrorCmd(t *testing.T) {
 
 	t.Cleanup(mirror.SetSrcCatalogOpener(func(string) (oras.ReadOnlyTarget, string, error) { return src, "v2", nil }))
 	t.Cleanup(mirror.SetDstCatalogOpener(func(string) (oras.Target, string, error) { return dst, "v2", nil }))
-	t.Cleanup(mirror.SetSrcArchivesOpener(func(string, string) (oras.ReadOnlyTarget, error) { return srcArchives, nil }))
-	t.Cleanup(mirror.SetDstArchivesOpener(func(string, string) (oras.Target, error) { return dstArchives, nil }))
+	wireArchivesRepo(t, "example.com/cat:v2", "internal.example.com/cat:v2", srcArchives, dstArchives)
 
 	nemHome := t.TempDir()
 	_, errb, err := runNem(t, nemHome, "catalog", "mirror", "example.com/cat:v2", "internal.example.com/cat:v2")
@@ -79,8 +101,7 @@ func TestCatalogMirrorCmdDryRunWritesNothing(t *testing.T) {
 
 	t.Cleanup(mirror.SetSrcCatalogOpener(func(string) (oras.ReadOnlyTarget, string, error) { return src, "v2", nil }))
 	t.Cleanup(mirror.SetDstCatalogOpener(func(string) (oras.Target, string, error) { return dst, "v2", nil }))
-	t.Cleanup(mirror.SetSrcArchivesOpener(func(string, string) (oras.ReadOnlyTarget, error) { return srcArchives, nil }))
-	t.Cleanup(mirror.SetDstArchivesOpener(func(string, string) (oras.Target, error) { return dstArchives, nil }))
+	wireArchivesRepo(t, "example.com/cat:v2", "internal.example.com/cat:v2", srcArchives, dstArchives)
 
 	nemHome := t.TempDir()
 	_, errb, err := runNem(t, nemHome, "catalog", "mirror", "example.com/cat:v2", "internal.example.com/cat:v2", "--dry-run")
@@ -107,8 +128,7 @@ func TestCatalogMirrorCmdExitsNonzeroOnItemFailure(t *testing.T) {
 
 	t.Cleanup(mirror.SetSrcCatalogOpener(func(string) (oras.ReadOnlyTarget, string, error) { return src, "v2", nil }))
 	t.Cleanup(mirror.SetDstCatalogOpener(func(string) (oras.Target, string, error) { return dst, "v2", nil }))
-	t.Cleanup(mirror.SetSrcArchivesOpener(func(string, string) (oras.ReadOnlyTarget, error) { return memory.New(), nil }))
-	t.Cleanup(mirror.SetDstArchivesOpener(func(string, string) (oras.Target, error) { return memory.New(), nil }))
+	wireArchivesRepo(t, "example.com/cat:v2", "internal.example.com/cat:v2", memory.New(), memory.New())
 
 	nemHome := t.TempDir()
 	_, errb, err := runNem(t, nemHome, "catalog", "mirror", "example.com/cat:v2", "internal.example.com/cat:v2")

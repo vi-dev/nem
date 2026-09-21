@@ -2,13 +2,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/build"
-	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/ocix/ocixtest"
 	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
@@ -40,7 +41,7 @@ func tableRow(out string, cell int, want string) []string {
 
 func stageOverlayArchive(t *testing.T, dir, name, version string, platforms map[string][]byte) {
 	t.Helper()
-	layout, err := ocix.NewArchiveStore(dir).Open(name)
+	layout, err := archive.NewDir(dir).OpenRW(context.Background(), name)
 	if err != nil {
 		t.Fatalf("open overlay layout for %s: %v", name, err)
 	}
@@ -224,7 +225,7 @@ func TestCatalogBuildPushStagesIntoTheDirectoryTarget(t *testing.T) {
 	if row := tableRow(out, 0, "alpha"); row == nil || row[2] != "pushed" {
 		t.Fatalf("summary row for alpha = %v, want a pushed row:\n%s", row, out)
 	}
-	if !ocix.NewArchiveStore(dir).HasTag("alpha", "v1.0.0") {
+	if !archive.NewDir(dir).HasVersion("alpha", "v1.0.0") {
 		t.Fatalf("alpha@v1.0.0 is not staged in %s", filepath.Join(dir, "archives", "alpha"))
 	}
 }

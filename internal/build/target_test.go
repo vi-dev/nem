@@ -11,7 +11,8 @@ import (
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
-	"github.com/vi-dev/nem/internal/ocix"
+	"github.com/vi-dev/nem/internal/archive"
+	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
@@ -49,8 +50,15 @@ func TestOpenTargetDir(t *testing.T) {
 	if tgt.Overlay == nil {
 		t.Fatal("Overlay = nil, want an archive store rooted at the catalog dir")
 	}
-	if got := tgt.Overlay.Root(); got != root {
-		t.Fatalf("Overlay.Root() = %q, want %q", got, root)
+	w, err := tgt.Overlay.OpenRW(context.Background(), "probe")
+	if err != nil {
+		t.Fatalf("Overlay.OpenRW: %v", err)
+	}
+	if _, _, err := archive.Push(context.Background(), w, "v1", spec.Current(), archive.BytesBlob([]byte("x")), false); err != nil {
+		t.Fatalf("stage probe archive: %v", err)
+	}
+	if !archive.NewDir(root).HasVersion("probe", "v1") {
+		t.Fatalf("Overlay is not rooted at the catalog dir %s", root)
 	}
 	if tgt.Entry.Name != root {
 		t.Fatalf("Entry.Name = %q, want %q", tgt.Entry.Name, root)
@@ -85,9 +93,9 @@ func TestTargetArchivesDirDoesNotCreateLayouts(t *testing.T) {
 		t.Fatalf("OpenTarget: %v", err)
 	}
 
-	src, err := tgt.Archives("xtool")
-	if !errors.Is(err, ocix.ErrArchiveNotFound) {
-		t.Fatalf("Archives error = %v, want one satisfying ocix.ErrArchiveNotFound", err)
+	src, err := tgt.Archives(context.Background(), "xtool")
+	if !errors.Is(err, archive.ErrNotFound) {
+		t.Fatalf("Archives error = %v, want one satisfying archive.ErrNotFound", err)
 	}
 	if src != nil {
 		t.Fatalf("Archives returned %#v with an error, want nil", src)
@@ -97,19 +105,19 @@ func TestTargetArchivesDirDoesNotCreateLayouts(t *testing.T) {
 		t.Fatalf("probing archives created %s (stat err = %v); it must never open a layout", index, err)
 	}
 
-	layout, err := tgt.Overlay.Open("xtool")
+	layout, err := tgt.Overlay.OpenRW(context.Background(), "xtool")
 	if err != nil {
 		t.Fatalf("Overlay.Open: %v", err)
 	}
 	plat := spec.Current()
-	if _, _, err := ocix.PushArchive(context.Background(), layout, "v1.0.0", plat, []byte("archive-bytes"), false); err != nil {
+	if _, _, err := archive.Push(context.Background(), layout, "v1.0.0", plat, archive.BytesBlob([]byte("archive-bytes")), false); err != nil {
 		t.Fatalf("PushArchive: %v", err)
 	}
-	src, err = tgt.Archives("xtool")
+	src, err = tgt.Archives(context.Background(), "xtool")
 	if err != nil {
 		t.Fatalf("Archives after staging: %v", err)
 	}
-	plats, err := ocix.ArchivePlatforms(context.Background(), src, "v1.0.0")
+	plats, err := archive.ResolvePlatforms(context.Background(), src, "v1.0.0")
 	if err != nil {
 		t.Fatalf("ArchivePlatforms: %v", err)
 	}
@@ -120,21 +128,25 @@ func TestTargetArchivesDirDoesNotCreateLayouts(t *testing.T) {
 
 func TestTargetArchivesOCIUsesRegistry(t *testing.T) {
 	store := memory.New()
-	var gotRef, gotName string
-	testx.Swap(t, &readArchives, func(ref, name string) (oras.ReadOnlyTarget, error) {
-		gotRef, gotName = ref, name
+	var gotRef string
+	t.Cleanup(archive.SetRepoOpener(func(ref string) (oras.Target, error) {
+		gotRef = ref
 		return store, nil
-	})
+	}))
 
-	tgt := &Target{Ref: "ghcr.io/org/cat:v2"}
-	src, err := tgt.Archives("xtool")
+	tgt := &Target{Ref: "ghcr.io/org/cat:v2", Entry: catalog.Entry{Archives: archive.Remote("ghcr.io/org/cat:v2")}}
+	src, err := tgt.Archives(context.Background(), "xtool")
 	if err != nil {
 		t.Fatalf("Archives: %v", err)
 	}
 	if src != oras.ReadOnlyTarget(store) {
 		t.Fatalf("Archives returned %#v, want the registry target", src)
 	}
-	if gotRef != "ghcr.io/org/cat:v2" || gotName != "xtool" {
-		t.Fatalf("opener called with (%q, %q)", gotRef, gotName)
+	want, err := archive.Ref("ghcr.io/org/cat:v2", "xtool")
+	if err != nil {
+		t.Fatalf("archive.Ref: %v", err)
+	}
+	if gotRef != want {
+		t.Fatalf("opener called with ref %q, want %q", gotRef, want)
 	}
 }

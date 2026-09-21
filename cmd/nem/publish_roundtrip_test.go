@@ -7,12 +7,12 @@ import (
 	"testing"
 
 	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content/memory"
 	"oras.land/oras-go/v2/content/oci"
 
-	"github.com/vi-dev/nem/internal/fetch"
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/publish"
-	"github.com/vi-dev/nem/internal/spec"
 
 	"github.com/vi-dev/nem/internal/testx"
 )
@@ -57,10 +57,10 @@ func TestPublishToUseRoundTrip(t *testing.T) {
 		return err
 	})
 
-	restoreFetch := fetch.SetPullArchive(func(context.Context, string, string, string, spec.Platform, string) (string, error) {
-		return "", ocix.ErrArchiveNotFound
+	restoreArchive := archive.SetRepoOpener(func(string) (oras.Target, error) {
+		return memory.New(), nil
 	})
-	defer restoreFetch()
+	defer restoreArchive()
 
 	out, errb, err := runNem(t, consumerNemHome, "use", "team:tool@v1.0.0")
 	if err != nil {

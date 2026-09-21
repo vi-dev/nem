@@ -10,6 +10,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/fetch"
 	"github.com/vi-dev/nem/internal/home"
 	"github.com/vi-dev/nem/internal/ocix"
@@ -17,7 +18,7 @@ import (
 	"github.com/vi-dev/nem/internal/spec"
 )
 
-func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledManifest, store *ocix.Store, agg *aggregator) {
+func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledManifest, store *ocix.Store, archives archive.ReadWriteStore, agg *aggregator) {
 	rep := report.FromContext(ctx)
 	label := fmt.Sprintf("Filling %s", nm.Title)
 	failedOutcome := fmt.Sprintf("Failed %s", nm.Title)
@@ -50,7 +51,7 @@ func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledM
 		return
 	}
 
-	archives, err := openArchives(opts.CatalogRef, nm.Title)
+	target, err := archives.OpenRW(ctx, nm.Title)
 	if err != nil {
 		agg.failed.Add(1)
 		rep.Warn("%s: %v", nm.Title, err)
@@ -68,7 +69,7 @@ func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledM
 				cancelled = true
 				break
 			}
-			outcome, entry := fillItem(ctx, h, archives, pkg, v.Version, plat, opts.DryRun, task)
+			outcome, entry := fillItem(ctx, h, target, pkg, v.Version, plat, opts.DryRun, task)
 			if outcome == outcomeCancelled {
 				cancelled = true
 				break
@@ -101,7 +102,7 @@ func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledM
 			for i, b := range batch {
 				entries[i] = b.desc
 			}
-			if _, err := ocix.CommitArchiveManifests(ctx, archives, v.Version, entries); err != nil {
+			if _, err := archive.Commit(ctx, target, v.Version, entries); err != nil {
 				if report.IsCancellation(err) {
 					cancelled = true
 				} else {
@@ -167,9 +168,9 @@ func fillItem(ctx context.Context, h home.Home, archives oras.Target, pkg *spec.
 	}
 	want := digest.NewDigestFromEncoded(digest.SHA256, sha)
 
-	got, err := ocix.ArchiveLayerDigest(ctx, archives, version, plat)
+	desc, err := archive.Resolve(ctx, archives, version, plat)
 	switch {
-	case errors.Is(err, ocix.ErrArchiveNotFound):
+	case errors.Is(err, archive.ErrNotFound):
 		return doFill(ctx, h, archives, pkg, version, plat, sha, dryRun, false, task)
 	case err != nil:
 		if report.IsCancellation(err) {
@@ -177,7 +178,7 @@ func fillItem(ctx context.Context, h home.Home, archives oras.Target, pkg *spec.
 		}
 		rep.Warn("%s %s %s: %v", pkg.Name, version, plat, err)
 		return outcomeFailed, ocispec.Descriptor{}
-	case got == want:
+	case desc.Digest == want:
 		return outcomePresent, ocispec.Descriptor{}
 	default:
 		return doFill(ctx, h, archives, pkg, version, plat, sha, dryRun, true, task)
@@ -219,7 +220,7 @@ func doFill(ctx context.Context, h home.Home, archives oras.Target, pkg *spec.Pa
 		return outcomeFailed, ocispec.Descriptor{}
 	}
 
-	entry, err := ocix.PublishArchiveLayerFile(ctx, archives, plat, path, sha, info.Size())
+	entry, err := archive.Stage(ctx, archives, plat, archive.FileBlob(path, sha, info.Size()))
 	if err != nil {
 		if report.IsCancellation(err) {
 			return outcomeCancelled, ocispec.Descriptor{}

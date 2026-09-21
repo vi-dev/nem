@@ -1,16 +1,21 @@
 package fill
 
 import (
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/home"
 	"github.com/vi-dev/nem/internal/publish/publishtest"
 	"github.com/vi-dev/nem/internal/testx"
 )
+
+const testCatalogRef = "example.com/cat:v2"
 
 func newCatalog(t *testing.T, pkgs map[string]string) (oras.Target, string) {
 	t.Helper()
@@ -26,9 +31,23 @@ func wireCatalog(t *testing.T, src oras.ReadOnlyTarget, srcTag string) {
 	}))
 }
 
+func archiveRefBase(t *testing.T) string {
+	t.Helper()
+	base, err := archive.RefPrefix(testCatalogRef)
+	if err != nil {
+		t.Fatalf("archive.RefPrefix(%q): %v", testCatalogRef, err)
+	}
+	return base
+}
+
 func wireArchives(t *testing.T, fixtures *testx.ArchiveFixtures) {
 	t.Helper()
-	t.Cleanup(SetArchivesOpener(func(_, name string) (oras.Target, error) {
+	base := archiveRefBase(t)
+	t.Cleanup(archive.SetRepoOpener(func(ref string) (oras.Target, error) {
+		name, ok := strings.CutPrefix(ref, base)
+		if !ok {
+			return nil, fmt.Errorf("unexpected archives ref %s", ref)
+		}
 		return fixtures.Open(name), nil
 	}))
 }

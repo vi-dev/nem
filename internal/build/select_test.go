@@ -13,9 +13,9 @@ import (
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/build"
 	"github.com/vi-dev/nem/internal/catalog"
-	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -157,12 +157,12 @@ func TestSelectMissingDirOverlay(t *testing.T) {
 		}
 	}
 
-	layout, err := tgt.Overlay.Open("tgttool")
+	layout, err := tgt.Overlay.OpenRW(context.Background(), "tgttool")
 	if err != nil {
 		t.Fatalf("Overlay.Open: %v", err)
 	}
 	plat := spec.Current()
-	if _, _, err := ocix.PushArchive(ctx, layout, "v2.0.0", plat, []byte("archive-bytes"), false); err != nil {
+	if _, _, err := archive.Push(ctx, layout, "v2.0.0", plat, archive.BytesBlob([]byte("archive-bytes")), false); err != nil {
 		t.Fatalf("PushArchive: %v", err)
 	}
 
@@ -292,12 +292,12 @@ func TestSelectMissingOCI(t *testing.T) {
 			"tgttool": parseSelectPkg(t, selectTargetPkg),
 		},
 	}
-	tgt := &build.Target{Ref: ref, Entry: catalog.Entry{Name: ref, Catalog: src}}
+	tgt := &build.Target{Ref: ref, Entry: catalog.Entry{Name: ref, Catalog: src, Archives: archive.Remote(ref)}}
 
 	store := memory.New()
 	var gotRef string
-	t.Cleanup(build.SetArchivesReader(func(catalogRef, _ string) (oras.ReadOnlyTarget, error) {
-		gotRef = catalogRef
+	t.Cleanup(archive.SetRepoOpener(func(openedRef string) (oras.Target, error) {
+		gotRef = openedRef
 		return store, nil
 	}))
 
@@ -305,8 +305,12 @@ func TestSelectMissingOCI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SelectMissing: %v", err)
 	}
-	if gotRef != ref {
-		t.Fatalf("archives opener got ref %q, want %q", gotRef, ref)
+	wantRef, err := archive.Ref(ref, "tgttool")
+	if err != nil {
+		t.Fatalf("archive.Ref: %v", err)
+	}
+	if gotRef != wantRef {
+		t.Fatalf("archives opener got ref %q, want %q", gotRef, wantRef)
 	}
 	if stats.Checked != 1 || stats.Skipped != 1 {
 		t.Fatalf("stats = %+v, want Checked=1 Skipped=1", stats)
@@ -316,7 +320,7 @@ func TestSelectMissingOCI(t *testing.T) {
 	}
 
 	plat := spec.Current()
-	if _, _, err := ocix.PushArchive(ctx, store, "v2.0.0", plat, []byte("archive-bytes"), false); err != nil {
+	if _, _, err := archive.Push(ctx, store, "v2.0.0", plat, archive.BytesBlob([]byte("archive-bytes")), false); err != nil {
 		t.Fatalf("PushArchive: %v", err)
 	}
 
@@ -352,6 +356,14 @@ func (e erroringArchives) Resolve(context.Context, string) (ocispec.Descriptor, 
 	return ocispec.Descriptor{}, e.err
 }
 
+func (e erroringArchives) Push(context.Context, ocispec.Descriptor, io.Reader) error {
+	return e.err
+}
+
+func (e erroringArchives) Tag(context.Context, ocispec.Descriptor, string) error {
+	return e.err
+}
+
 func TestSelectMissingAbortsOnRegistryFailure(t *testing.T) {
 	ctx := context.Background()
 	const ref = "ghcr.io/org/cat:v2"
@@ -361,9 +373,9 @@ func TestSelectMissingAbortsOnRegistryFailure(t *testing.T) {
 			"tgttool": parseSelectPkg(t, selectTargetPkg),
 		},
 	}
-	tgt := &build.Target{Ref: ref, Entry: catalog.Entry{Name: ref, Catalog: src}}
+	tgt := &build.Target{Ref: ref, Entry: catalog.Entry{Name: ref, Catalog: src, Archives: archive.Remote(ref)}}
 
-	t.Cleanup(build.SetArchivesReader(func(string, string) (oras.ReadOnlyTarget, error) {
+	t.Cleanup(archive.SetRepoOpener(func(string) (oras.Target, error) {
 		return erroringArchives{err: errors.New("registry unreachable")}, nil
 	}))
 
@@ -507,11 +519,11 @@ func TestSelectWithDepsSkipsDepsTheTargetHolds(t *testing.T) {
 	ctx := context.Background()
 	tgt := selectDirTarget(t)
 
-	layout, err := tgt.Overlay.Open("tgttool")
+	layout, err := tgt.Overlay.OpenRW(context.Background(), "tgttool")
 	if err != nil {
 		t.Fatalf("Overlay.Open: %v", err)
 	}
-	if _, _, err := ocix.PushArchive(ctx, layout, "v2.0.0", spec.Current(), []byte("archive-bytes"), false); err != nil {
+	if _, _, err := archive.Push(ctx, layout, "v2.0.0", spec.Current(), archive.BytesBlob([]byte("archive-bytes")), false); err != nil {
 		t.Fatalf("PushArchive: %v", err)
 	}
 

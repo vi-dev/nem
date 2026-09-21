@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/fetch"
 	"github.com/vi-dev/nem/internal/home"
 	"github.com/vi-dev/nem/internal/install"
 	"github.com/vi-dev/nem/internal/netx"
-	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/resolve"
 	"github.com/vi-dev/nem/internal/spec"
@@ -29,10 +29,8 @@ type Options struct {
 
 	Test func(ctx context.Context, pkg *spec.Package, version, artifactPath string) error
 
-	LocalStore *ocix.ArchiveStore
+	LocalStore *archive.Dir
 }
-
-var archivesOpener = ocix.RemoteArchivesRW
 
 func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package,
 	opts Options) error {
@@ -125,13 +123,13 @@ func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package
 		return conformanceError(vs)
 	}
 
-	var archive []byte
+	var data []byte
 	if opts.Test != nil || opts.LocalStore != nil {
 		var buf bytes.Buffer
 		if err := tarGzDir(&buf, outputDir); err != nil {
 			return fmt.Errorf("archive %s: %w", outputDir, err)
 		}
-		archive = buf.Bytes()
+		data = buf.Bytes()
 	}
 
 	if err := os.RemoveAll(staging); err != nil {
@@ -139,7 +137,7 @@ func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package
 	}
 
 	if opts.Test != nil {
-		tmpArchive, err := writeTempArchive(h, pkg.Name, archive)
+		tmpArchive, err := writeTempArchive(h, pkg.Name, data)
 		if err != nil {
 			return err
 		}
@@ -151,11 +149,11 @@ func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package
 	}
 
 	if opts.LocalStore != nil {
-		target, err := opts.LocalStore.Open(pkg.Name)
+		target, err := opts.LocalStore.OpenRW(ctx, pkg.Name)
 		if err != nil {
 			return fmt.Errorf("stage archive locally: %w", err)
 		}
-		if _, _, err := ocix.PushArchive(ctx, target, version, spec.Current(), archive, true); err != nil {
+		if _, _, err := archive.Push(ctx, target, version, spec.Current(), archive.BytesBlob(data), true); err != nil {
 			return fmt.Errorf("stage archive locally: %w", err)
 		}
 	}
@@ -198,7 +196,7 @@ func fetchBuildSource(ctx context.Context, pkg *spec.Package, version, staging s
 }
 
 func ResolveDeps(ctx context.Context, h home.Home, set *catalog.Set,
-	pkg *spec.Package, deps []spec.Dep, local *ocix.ArchiveStore) ([]ResolvedDep, error) {
+	pkg *spec.Package, deps []spec.Dep, local *archive.Dir) ([]ResolvedDep, error) {
 	if len(deps) == 0 {
 		return nil, nil
 	}
@@ -210,7 +208,7 @@ func ResolveDeps(ctx context.Context, h home.Home, set *catalog.Set,
 }
 
 func InstallResolvedDeps(ctx context.Context, h home.Home, set *catalog.Set,
-	result *resolve.Result, local *ocix.ArchiveStore) ([]ResolvedDep, error) {
+	result *resolve.Result, local *archive.Dir) ([]ResolvedDep, error) {
 	if err := install.Run(ctx, h, install.Jobs(result, set, local)); err != nil {
 		return nil, err
 	}

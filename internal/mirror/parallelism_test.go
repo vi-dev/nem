@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/testx"
 )
 
@@ -35,14 +37,25 @@ func wireArchivesWithSrcDelay(t *testing.T, delay time.Duration, gauge *inFlight
 	t.Helper()
 	src := testx.NewArchiveFixtures()
 	dst := testx.NewArchiveFixtures()
-	t.Cleanup(SetSrcArchivesOpener(func(_, name string) (oras.ReadOnlyTarget, error) {
-		gauge.start()
-		time.Sleep(delay)
-		gauge.end()
-		return src.Open(name), nil
-	}))
-	t.Cleanup(SetDstArchivesOpener(func(_, name string) (oras.Target, error) {
-		return dst.Open(name), nil
+	srcBase, err := archive.RefPrefix(testSrcCatalogRef)
+	if err != nil {
+		t.Fatalf("archive.RefPrefix(%q): %v", testSrcCatalogRef, err)
+	}
+	dstBase, err := archive.RefPrefix(testDstCatalogRef)
+	if err != nil {
+		t.Fatalf("archive.RefPrefix(%q): %v", testDstCatalogRef, err)
+	}
+	t.Cleanup(archive.SetRepoOpener(func(ref string) (oras.Target, error) {
+		if name, ok := strings.CutPrefix(ref, srcBase); ok {
+			gauge.start()
+			time.Sleep(delay)
+			gauge.end()
+			return src.Open(name), nil
+		}
+		if name, ok := strings.CutPrefix(ref, dstBase); ok {
+			return dst.Open(name), nil
+		}
+		return nil, fmt.Errorf("unexpected archives ref %s", ref)
 	}))
 }
 

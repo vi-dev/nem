@@ -1,4 +1,4 @@
-package ocix_test
+package archive_test
 
 import (
 	"bytes"
@@ -15,7 +15,7 @@ import (
 	"oras.land/oras-go/v2/content/oci"
 	"oras.land/oras-go/v2/registry/remote/errcode"
 
-	"github.com/vi-dev/nem/internal/ocix"
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/ocix/ocixtest"
 	"github.com/vi-dev/nem/internal/spec"
 )
@@ -32,7 +32,7 @@ func (f *fetchCountingTarget) Fetch(ctx context.Context, d ocispec.Descriptor) (
 	return f.ReadOnlyTarget.Fetch(ctx, d)
 }
 
-func TestPullArchiveFromReturnsRightPlatform(t *testing.T) {
+func TestPullReturnsRightPlatform(t *testing.T) {
 	ctx := context.Background()
 	store, err := oci.New(t.TempDir())
 	if err != nil {
@@ -46,9 +46,9 @@ func TestPullArchiveFromReturnsRightPlatform(t *testing.T) {
 	})
 
 	dir := t.TempDir()
-	path, err := ocix.PullArchiveFrom(ctx, store, "v1.26.5", spec.Platform{OS: "linux", Arch: "amd64"}, dir)
+	path, err := archive.Pull(ctx, store, "v1.26.5", spec.Platform{OS: "linux", Arch: "amd64"}, dir)
 	if err != nil {
-		t.Fatalf("PullArchiveFrom: %v", err)
+		t.Fatalf("Pull: %v", err)
 	}
 	got, err := os.ReadFile(path)
 	if err != nil {
@@ -61,9 +61,9 @@ func TestPullArchiveFromReturnsRightPlatform(t *testing.T) {
 		t.Fatalf("archive written to %q, want under %q", path, dir)
 	}
 
-	path2, err := ocix.PullArchiveFrom(ctx, store, "v1.26.5", spec.Platform{OS: "darwin", Arch: "arm64"}, dir)
+	path2, err := archive.Pull(ctx, store, "v1.26.5", spec.Platform{OS: "darwin", Arch: "arm64"}, dir)
 	if err != nil {
-		t.Fatalf("PullArchiveFrom (darwin): %v", err)
+		t.Fatalf("Pull (darwin): %v", err)
 	}
 	got2, err := os.ReadFile(path2)
 	if err != nil {
@@ -74,7 +74,7 @@ func TestPullArchiveFromReturnsRightPlatform(t *testing.T) {
 	}
 }
 
-func TestPullArchiveFromMissingTag(t *testing.T) {
+func TestPullMissingTag(t *testing.T) {
 	ctx := context.Background()
 	store, err := oci.New(t.TempDir())
 	if err != nil {
@@ -82,13 +82,13 @@ func TestPullArchiveFromMissingTag(t *testing.T) {
 	}
 	ocixtest.PushFakeArchive(t, store, "v1.26.5", map[string][]byte{"linux/amd64": []byte("x")})
 
-	_, err = ocix.PullArchiveFrom(ctx, store, "v9.9.9", spec.Platform{OS: "linux", Arch: "amd64"}, t.TempDir())
-	if !errors.Is(err, ocix.ErrArchiveNotFound) {
-		t.Fatalf("want ErrArchiveNotFound, got %v", err)
+	_, err = archive.Pull(ctx, store, "v9.9.9", spec.Platform{OS: "linux", Arch: "amd64"}, t.TempDir())
+	if !errors.Is(err, archive.ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
 	}
 }
 
-func TestPullArchiveFromMissingPlatform(t *testing.T) {
+func TestPullMissingPlatform(t *testing.T) {
 	ctx := context.Background()
 	store, err := oci.New(t.TempDir())
 	if err != nil {
@@ -96,9 +96,9 @@ func TestPullArchiveFromMissingPlatform(t *testing.T) {
 	}
 	ocixtest.PushFakeArchive(t, store, "v1.26.5", map[string][]byte{"linux/amd64": []byte("x")})
 
-	_, err = ocix.PullArchiveFrom(ctx, store, "v1.26.5", spec.Platform{OS: "darwin", Arch: "arm64"}, t.TempDir())
-	if !errors.Is(err, ocix.ErrArchiveNotFound) {
-		t.Fatalf("want ErrArchiveNotFound, got %v", err)
+	_, err = archive.Pull(ctx, store, "v1.26.5", spec.Platform{OS: "darwin", Arch: "arm64"}, t.TempDir())
+	if !errors.Is(err, archive.ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
 	}
 }
 
@@ -111,7 +111,7 @@ func (f resolveErrTarget) Resolve(_ context.Context, _ string) (ocispec.Descript
 	return ocispec.Descriptor{}, f.err
 }
 
-func TestPullArchiveFromNonNotFoundErrorPassesThrough(t *testing.T) {
+func TestPullNonNotFoundErrorPassesThrough(t *testing.T) {
 	ctx := context.Background()
 	store, err := oci.New(t.TempDir())
 	if err != nil {
@@ -122,19 +122,19 @@ func TestPullArchiveFromNonNotFoundErrorPassesThrough(t *testing.T) {
 	authErr := errors.New("401 unauthorized")
 	faulty := resolveErrTarget{Store: store, err: authErr}
 
-	_, err = ocix.PullArchiveFrom(ctx, faulty, "v1.26.5", spec.Platform{OS: "linux", Arch: "amd64"}, t.TempDir())
+	_, err = archive.Pull(ctx, faulty, "v1.26.5", spec.Platform{OS: "linux", Arch: "amd64"}, t.TempDir())
 	if err == nil {
 		t.Fatal("want error, got nil")
 	}
-	if errors.Is(err, ocix.ErrArchiveNotFound) {
-		t.Fatalf("auth/network error must not map to ErrArchiveNotFound: %v", err)
+	if errors.Is(err, archive.ErrNotFound) {
+		t.Fatalf("auth/network error must not map to ErrNotFound: %v", err)
 	}
 	if !errors.Is(err, authErr) {
 		t.Fatalf("want wrapped authErr, got %v", err)
 	}
 }
 
-func TestPullArchiveFromForbiddenMapsToArchiveNotFound(t *testing.T) {
+func TestPullForbiddenMapsToNotFound(t *testing.T) {
 	ctx := context.Background()
 	store, err := oci.New(t.TempDir())
 	if err != nil {
@@ -144,59 +144,13 @@ func TestPullArchiveFromForbiddenMapsToArchiveNotFound(t *testing.T) {
 
 	faulty := resolveErrTarget{Store: store, err: &errcode.ErrorResponse{StatusCode: 403}}
 
-	_, err = ocix.PullArchiveFrom(ctx, faulty, "v1.26.5", spec.Platform{OS: "linux", Arch: "amd64"}, t.TempDir())
-	if !errors.Is(err, ocix.ErrArchiveNotFound) {
-		t.Fatalf("want ErrArchiveNotFound for a 403 resolve error, got %v", err)
+	_, err = archive.Pull(ctx, faulty, "v1.26.5", spec.Platform{OS: "linux", Arch: "amd64"}, t.TempDir())
+	if !errors.Is(err, archive.ErrNotFound) {
+		t.Fatalf("want ErrNotFound for a 403 resolve error, got %v", err)
 	}
 }
 
-func TestArchivesRef(t *testing.T) {
-	cases := []struct {
-		name       string
-		catalogRef string
-		pkgName    string
-		want       string
-		wantErr    bool
-	}{
-		{
-			name:       "with tag",
-			catalogRef: "ghcr.io/org/cat:v2",
-			pkgName:    "go",
-			want:       "ghcr.io/org/cat/archives/go",
-		},
-		{
-			name:       "with digest",
-			catalogRef: "ghcr.io/org/cat@sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-			pkgName:    "go",
-			want:       "ghcr.io/org/cat/archives/go",
-		},
-		{
-			name:       "no slash",
-			catalogRef: "cat:v2",
-			pkgName:    "go",
-			wantErr:    true,
-		},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got, err := ocix.ArchivesRef(c.catalogRef, c.pkgName)
-			if c.wantErr {
-				if err == nil {
-					t.Fatalf("ArchivesRef(%q): want error, got nil", c.catalogRef)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("ArchivesRef(%q): unexpected error: %v", c.catalogRef, err)
-			}
-			if got != c.want {
-				t.Fatalf("ArchivesRef(%q) = %q, want %q", c.catalogRef, got, c.want)
-			}
-		})
-	}
-}
-
-func TestResolveArchiveTagIsFetchFree(t *testing.T) {
+func TestResolveIndexIsFetchFree(t *testing.T) {
 	ctx := context.Background()
 	store, err := oci.New(t.TempDir())
 	if err != nil {
@@ -209,9 +163,9 @@ func TestResolveArchiveTagIsFetchFree(t *testing.T) {
 	}
 
 	counting := &fetchCountingTarget{ReadOnlyTarget: store}
-	got, err := ocix.ResolveArchiveTag(ctx, counting, "v1.0.0")
+	got, err := archive.ResolveIndex(ctx, counting, "v1.0.0")
 	if err != nil {
-		t.Fatalf("ResolveArchiveTag: %v", err)
+		t.Fatalf("ResolveIndex: %v", err)
 	}
 	if got.Digest != want.Digest {
 		t.Fatalf("digest = %s, want %s", got.Digest, want.Digest)
@@ -221,7 +175,7 @@ func TestResolveArchiveTagIsFetchFree(t *testing.T) {
 	}
 }
 
-func TestResolveArchiveTagMissing(t *testing.T) {
+func TestResolveIndexMissing(t *testing.T) {
 	ctx := context.Background()
 	store, err := oci.New(t.TempDir())
 	if err != nil {
@@ -229,13 +183,13 @@ func TestResolveArchiveTagMissing(t *testing.T) {
 	}
 	ocixtest.PushFakeArchive(t, store, "v1.0.0", map[string][]byte{"linux/amd64": []byte("x")})
 
-	_, err = ocix.ResolveArchiveTag(ctx, store, "v9.9.9")
-	if !errors.Is(err, ocix.ErrArchiveNotFound) {
-		t.Fatalf("want ErrArchiveNotFound, got %v", err)
+	_, err = archive.ResolveIndex(ctx, store, "v9.9.9")
+	if !errors.Is(err, archive.ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
 	}
 }
 
-func TestArchiveLayerDigestMatchesContentWithoutFetchingIt(t *testing.T) {
+func TestResolveMatchesContentDigestWithoutFetchingIt(t *testing.T) {
 	ctx := context.Background()
 	store, err := oci.New(t.TempDir())
 	if err != nil {
@@ -249,14 +203,62 @@ func TestArchiveLayerDigestMatchesContentWithoutFetchingIt(t *testing.T) {
 	want := digest.FromBytes(payload)
 
 	counting := &fetchCountingTarget{ReadOnlyTarget: store}
-	got, err := ocix.ArchiveLayerDigest(ctx, counting, "v1.0.0", spec.Platform{OS: "linux", Arch: "amd64"})
+	desc, err := archive.Resolve(ctx, counting, "v1.0.0", spec.Platform{OS: "linux", Arch: "amd64"})
 	if err != nil {
-		t.Fatalf("ArchiveLayerDigest: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
-	if got != want {
-		t.Fatalf("digest = %s, want %s", got, want)
+	if desc.Digest != want {
+		t.Fatalf("digest = %s, want %s", desc.Digest, want)
 	}
 	if counting.fetchedBytes >= int64(len(payload)) {
 		t.Fatalf("fetched %d bytes, which includes the %d-byte archive layer: the layer must never be fetched", counting.fetchedBytes, len(payload))
 	}
+}
+
+func TestFetchVerifiesLayerDigest(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store, err := oci.New(root)
+	if err != nil {
+		t.Fatalf("oci.New: %v", err)
+	}
+	payload := []byte("archive payload to corrupt")
+	ocixtest.PushFakeArchive(t, store, "v1.0.0", map[string][]byte{"linux/amd64": payload})
+	plat := spec.Platform{OS: "linux", Arch: "amd64"}
+
+	rc, err := archive.Fetch(ctx, store, "v1.0.0", plat)
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	got, err := io.ReadAll(rc)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if err := rc.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("Fetch bytes = %q, want %q", got, payload)
+	}
+
+	desc2, err := archive.Resolve(ctx, store, "v1.0.0", plat)
+	if err != nil {
+		t.Fatalf("Digest: %v", err)
+	}
+	blob := filepath.Join(root, "blobs", "sha256", desc2.Digest.Encoded())
+	if err := os.Chmod(blob, 0o644); err != nil {
+		t.Fatalf("chmod blob: %v", err)
+	}
+	if err := os.WriteFile(blob, []byte("tampered content of same-ish"), 0o644); err != nil {
+		t.Fatalf("corrupt blob: %v", err)
+	}
+
+	rc, err = archive.Fetch(ctx, store, "v1.0.0", plat)
+	if err != nil {
+		t.Fatalf("Fetch after corruption: %v", err)
+	}
+	if _, err := io.ReadAll(rc); err == nil {
+		t.Fatal("reading a corrupted layer must fail digest verification")
+	}
+	rc.Close()
 }

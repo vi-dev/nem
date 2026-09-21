@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/project"
 	"github.com/vi-dev/nem/internal/spec"
@@ -14,6 +15,8 @@ type Entry struct {
 	Name    string
 	Ref     string
 	Catalog Catalog
+
+	Archives archive.Store
 }
 
 type Set struct{ entries []Entry }

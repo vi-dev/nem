@@ -8,12 +8,13 @@ import (
 
 	"oras.land/oras-go/v2"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
-func mirrorPackage(ctx context.Context, opts Options, manifest ocix.TitledManifest, store *ocix.Store, agg *aggregator) {
+func mirrorPackage(ctx context.Context, opts Options, manifest ocix.TitledManifest, store *ocix.Store, srcArchives archive.Store, dstArchives archive.ReadWriteStore, agg *aggregator) {
 	rep := report.FromContext(ctx)
 	label := fmt.Sprintf("Mirroring %s", manifest.Title)
 	failedOutcome := fmt.Sprintf("Failed %s", manifest.Title)
@@ -42,14 +43,14 @@ func mirrorPackage(ctx context.Context, opts Options, manifest ocix.TitledManife
 		return
 	}
 
-	src, err := openSrcArchives(opts.SrcRef, manifest.Title)
+	src, err := srcArchives.Open(ctx, manifest.Title)
 	if err != nil {
 		agg.failed.Add(1)
 		rep.Warn("%s: %v", manifest.Title, err)
 		task.Fail(failedOutcome)
 		return
 	}
-	dst, err := openDstArchives(opts.DstRef, manifest.Title)
+	dst, err := dstArchives.OpenRW(ctx, manifest.Title)
 	if err != nil {
 		agg.failed.Add(1)
 		rep.Warn("%s: %v", manifest.Title, err)
@@ -116,9 +117,9 @@ const (
 
 func mirrorVersion(ctx context.Context, src oras.ReadOnlyTarget, dst oras.Target, name, version string, prebuilt, dryRun bool, task report.Task) versionOutcome {
 	rep := report.FromContext(ctx)
-	srcDesc, err := ocix.ResolveArchiveTag(ctx, src, version)
+	srcDesc, err := archive.ResolveIndex(ctx, src, version)
 	switch {
-	case errors.Is(err, ocix.ErrArchiveNotFound):
+	case errors.Is(err, archive.ErrNotFound):
 		if prebuilt {
 			rep.Warn("%s %s: archive missing from source", name, version)
 			return outcomeFailed
@@ -132,13 +133,13 @@ func mirrorVersion(ctx context.Context, src oras.ReadOnlyTarget, dst oras.Target
 		return outcomeFailed
 	}
 
-	dstDesc, err := ocix.ResolveArchiveTag(ctx, dst, version)
+	dstDesc, err := archive.ResolveIndex(ctx, dst, version)
 	switch {
 	case err == nil:
 		if dstDesc.Digest == srcDesc.Digest {
 			return outcomePresent
 		}
-	case !errors.Is(err, ocix.ErrArchiveNotFound):
+	case !errors.Is(err, archive.ErrNotFound):
 		if report.IsCancellation(err) {
 			return outcomeCancelled
 		}

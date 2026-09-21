@@ -2,13 +2,20 @@ package mirror
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/publish/publishtest"
 	"github.com/vi-dev/nem/internal/testx"
+)
+
+const (
+	testSrcCatalogRef = "example.com/cat:v2"
+	testDstCatalogRef = "internal.example.com/cat:v2"
 )
 
 func newCatalog(t *testing.T, pkgs map[string]string) (oras.Target, string) {
@@ -31,14 +38,29 @@ func wireCatalog(t *testing.T, src oras.ReadOnlyTarget, srcTag string, dst oras.
 	return &dstOpened
 }
 
+func repoOpenerFor(t *testing.T, srcRef, dstRef string, src, dst *testx.ArchiveFixtures) func(string) (oras.Target, error) {
+	t.Helper()
+	bases := map[string]*testx.ArchiveFixtures{}
+	for ref, fx := range map[string]*testx.ArchiveFixtures{srcRef: src, dstRef: dst} {
+		base, err := archive.RefPrefix(ref)
+		if err != nil {
+			t.Fatalf("archive.RefPrefix(%q): %v", ref, err)
+		}
+		bases[base] = fx
+	}
+	return func(ref string) (oras.Target, error) {
+		for base, fx := range bases {
+			if name, ok := strings.CutPrefix(ref, base); ok {
+				return fx.Open(name), nil
+			}
+		}
+		return nil, fmt.Errorf("unexpected archives ref %s", ref)
+	}
+}
+
 func wireArchives(t *testing.T, src, dst *testx.ArchiveFixtures) {
 	t.Helper()
-	t.Cleanup(SetSrcArchivesOpener(func(_, name string) (oras.ReadOnlyTarget, error) {
-		return src.Open(name), nil
-	}))
-	t.Cleanup(SetDstArchivesOpener(func(_, name string) (oras.Target, error) {
-		return dst.Open(name), nil
-	}))
+	t.Cleanup(archive.SetRepoOpener(repoOpenerFor(t, testSrcCatalogRef, testDstCatalogRef, src, dst)))
 }
 
 func absoluteOCIPkgYAML(name, ociRef, version string) string {

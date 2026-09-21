@@ -11,10 +11,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/build"
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/config"
-	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/pkgtest"
 	"github.com/vi-dev/nem/internal/spec"
 )
@@ -121,8 +121,8 @@ func runCatalogBuild(cmd *cobra.Command, ref string, in buildInput) error {
 var runPkgTest = pkgtest.InstallAndRun
 
 func batchTestFor(set *catalog.Set) func(
-	*spec.Package, *ocix.ArchiveStore) func(context.Context, *spec.Package, string, string) error {
-	return func(pkg *spec.Package, store *ocix.ArchiveStore) func(context.Context, *spec.Package, string, string) error {
+	*spec.Package, *archive.Dir) func(context.Context, *spec.Package, string, string) error {
+	return func(pkg *spec.Package, store *archive.Dir) func(context.Context, *spec.Package, string, string) error {
 		if len(pkg.Test) == 0 {
 			return nil
 		}
@@ -174,7 +174,7 @@ func archiveTargetRef(t *build.Target, name string) (string, error) {
 	if t.IsDir() {
 		return filepath.Join(t.Dir, "archives", name), nil
 	}
-	return ocix.ArchivesRef(t.Ref, name)
+	return archive.Ref(t.Ref, name)
 }
 
 func renderSummary(rows []build.SummaryRow) error {

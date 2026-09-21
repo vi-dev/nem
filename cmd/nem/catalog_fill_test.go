@@ -12,8 +12,8 @@ import (
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/fill"
-	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/publish/publishtest"
 	"github.com/vi-dev/nem/internal/spec"
 
@@ -46,7 +46,7 @@ func TestCatalogFillCmd(t *testing.T) {
 	archives := memory.New()
 
 	t.Cleanup(fill.SetCatalogOpener(func(string) (oras.ReadOnlyTarget, string, error) { return src, "v2", nil }))
-	t.Cleanup(fill.SetArchivesOpener(func(string, string) (oras.Target, error) { return archives, nil }))
+	t.Cleanup(archive.SetRepoOpener(func(string) (oras.Target, error) { return archives, nil }))
 	t.Cleanup(fill.SetHTTPClient(up.Client()))
 
 	nemHome := t.TempDir()
@@ -59,12 +59,12 @@ func TestCatalogFillCmd(t *testing.T) {
 	}
 
 	for _, plat := range spec.SupportedPlatforms {
-		got, err := ocix.ArchiveLayerDigest(context.Background(), archives, "1.0.0", plat)
+		desc, err := archive.Resolve(context.Background(), archives, "1.0.0", plat)
 		if err != nil {
 			t.Fatalf("resolve published archive for %s: %v", plat, err)
 		}
-		if got.Encoded() != sha256Hex(t, "go-payload") {
-			t.Fatalf("%s digest = %s, want %s", plat, got.Encoded(), sha256Hex(t, "go-payload"))
+		if desc.Digest.Encoded() != sha256Hex(t, "go-payload") {
+			t.Fatalf("%s digest = %s, want %s", plat, desc.Digest.Encoded(), sha256Hex(t, "go-payload"))
 		}
 	}
 }
@@ -77,7 +77,7 @@ func TestCatalogFillCmdDryRunWritesNothing(t *testing.T) {
 	archives := memory.New()
 
 	t.Cleanup(fill.SetCatalogOpener(func(string) (oras.ReadOnlyTarget, string, error) { return src, "v2", nil }))
-	t.Cleanup(fill.SetArchivesOpener(func(string, string) (oras.Target, error) { return archives, nil }))
+	t.Cleanup(archive.SetRepoOpener(func(string) (oras.Target, error) { return archives, nil }))
 
 	nemHome := t.TempDir()
 	_, errb, err := runNem(t, nemHome, "catalog", "fill", "example.com/cat:v2", "--dry-run")
@@ -110,7 +110,7 @@ func TestCatalogFillCmdExitsNonzeroOnItemFailure(t *testing.T) {
 	archives := memory.New()
 
 	t.Cleanup(fill.SetCatalogOpener(func(string) (oras.ReadOnlyTarget, string, error) { return src, "v2", nil }))
-	t.Cleanup(fill.SetArchivesOpener(func(string, string) (oras.Target, error) { return archives, nil }))
+	t.Cleanup(archive.SetRepoOpener(func(string) (oras.Target, error) { return archives, nil }))
 	t.Cleanup(fill.SetHTTPClient(up.Client()))
 
 	nemHome := t.TempDir()

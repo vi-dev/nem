@@ -1,4 +1,4 @@
-package archive_test
+package extract_test
 
 import (
 	"archive/tar"
@@ -15,7 +15,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
 
-	"github.com/vi-dev/nem/internal/archive"
+	"github.com/vi-dev/nem/internal/extract"
 )
 
 type tarEntry struct {
@@ -202,7 +202,7 @@ func buildZip(t *testing.T, entries []zipEntry) []byte {
 	return buf.Bytes()
 }
 
-func extractBytes(t *testing.T, data []byte, opts archive.Options) (string, archive.Result, error) {
+func extractBytes(t *testing.T, data []byte, opts extract.Options) (string, extract.Result, error) {
 	t.Helper()
 	tmp := t.TempDir()
 	artifact := filepath.Join(tmp, "artifact")
@@ -218,7 +218,7 @@ func extractBytes(t *testing.T, data []byte, opts archive.Options) (string, arch
 		t.Fatalf("open root: %v", err)
 	}
 	defer root.Close()
-	res, err := archive.Extract(artifact, root, opts)
+	res, err := extract.Extract(artifact, root, opts)
 	return dest, res, err
 }
 
@@ -244,7 +244,7 @@ func TestExtractTarGzStripModesSymlink(t *testing.T) {
 		{name: "pkg-1.0/bin/tool-link", typeflag: tar.TypeSymlink, linkname: "tool"},
 	}))
 
-	dest, res, err := extractBytes(t, data, archive.Options{Strip: 1})
+	dest, res, err := extractBytes(t, data, extract.Options{Strip: 1})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestExtractZip(t *testing.T) {
 		{name: "src-1.0/emptydir", isDir: true},
 	})
 
-	dest, res, err := extractBytes(t, data, archive.Options{})
+	dest, res, err := extractBytes(t, data, extract.Options{})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestExtractZip(t *testing.T) {
 
 func TestExtractPlainTarUstar(t *testing.T) {
 	data := buildTar(t, []tarEntry{{name: "plain.txt", content: []byte("no compression")}})
-	dest, _, err := extractBytes(t, data, archive.Options{})
+	dest, _, err := extractBytes(t, data, extract.Options{})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestExtractPlainTarV7Checksum(t *testing.T) {
 	if bytes.Contains(data[:512], []byte("ustar")) {
 		t.Fatal("fixture unexpectedly carries ustar magic, precondition broken")
 	}
-	dest, _, err := extractBytes(t, data, archive.Options{})
+	dest, _, err := extractBytes(t, data, extract.Options{})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -316,7 +316,7 @@ func TestExtractTarXzAndZstd(t *testing.T) {
 		"xz":   xzBytes(t, tarBytes),
 		"zstd": zstdBytes(t, tarBytes),
 	} {
-		dest, _, err := extractBytes(t, data, archive.Options{})
+		dest, _, err := extractBytes(t, data, extract.Options{})
 		if err != nil {
 			t.Fatalf("Extract %s: %v", name, err)
 		}
@@ -331,7 +331,7 @@ func TestExtractTarBzip2(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode fixture: %v", err)
 	}
-	dest, _, err := extractBytes(t, data, archive.Options{})
+	dest, _, err := extractBytes(t, data, extract.Options{})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -339,7 +339,7 @@ func TestExtractTarBzip2(t *testing.T) {
 }
 
 func TestExtractSingleFileGz(t *testing.T) {
-	dest, res, err := extractBytes(t, gzipBytes(t, []byte("#!/bin/sh\necho hi\n")), archive.Options{SingleName: "tool"})
+	dest, res, err := extractBytes(t, gzipBytes(t, []byte("#!/bin/sh\necho hi\n")), extract.Options{SingleName: "tool"})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -360,7 +360,7 @@ func TestExtractSingleFileGzLarge(t *testing.T) {
 	if _, err := rng.Read(payload); err != nil {
 		t.Fatalf("fill payload: %v", err)
 	}
-	dest, _, err := extractBytes(t, gzipBytes(t, payload), archive.Options{SingleName: "blob"})
+	dest, _, err := extractBytes(t, gzipBytes(t, payload), extract.Options{SingleName: "blob"})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -371,14 +371,14 @@ func TestExtractSingleFileGzLarge(t *testing.T) {
 }
 
 func TestExtractSingleFileWithoutNameErrors(t *testing.T) {
-	_, _, err := extractBytes(t, gzipBytes(t, []byte("just bytes")), archive.Options{})
+	_, _, err := extractBytes(t, gzipBytes(t, []byte("just bytes")), extract.Options{})
 	if err == nil || !strings.Contains(err.Error(), "single file") {
 		t.Fatalf("error = %v, want single-file naming error", err)
 	}
 }
 
 func TestExtractSingleFileIgnoresStrip(t *testing.T) {
-	dest, _, err := extractBytes(t, gzipBytes(t, []byte("data")), archive.Options{Strip: 3, SingleName: "f"})
+	dest, _, err := extractBytes(t, gzipBytes(t, []byte("data")), extract.Options{Strip: 3, SingleName: "f"})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -390,7 +390,7 @@ func TestExtractCommonPrefixMultipleRoots(t *testing.T) {
 		{name: "a/x", content: []byte("1")},
 		{name: "b/y", content: []byte("2")},
 	}))
-	_, res, err := extractBytes(t, data, archive.Options{})
+	_, res, err := extractBytes(t, data, extract.Options{})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -404,7 +404,7 @@ func TestExtractCommonPrefixIgnoresPaxHeader(t *testing.T) {
 		{name: "pax_global_header", typeflag: tar.TypeXGlobalHeader, paxRecords: map[string]string{"comment": "x"}},
 		{name: "src-1.0/main.c", content: []byte("int main(){}")},
 	}))
-	dest, res, err := extractBytes(t, data, archive.Options{})
+	dest, res, err := extractBytes(t, data, extract.Options{})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -416,7 +416,7 @@ func TestExtractCommonPrefixIgnoresPaxHeader(t *testing.T) {
 
 func TestExtractEscapeEntryRejected(t *testing.T) {
 	data := gzipBytes(t, buildTar(t, []tarEntry{{name: "../evil", content: []byte("pwned")}}))
-	_, _, err := extractBytes(t, data, archive.Options{})
+	_, _, err := extractBytes(t, data, extract.Options{})
 	if err == nil || !strings.Contains(err.Error(), "escapes extraction root") {
 		t.Fatalf("error = %v, want containment error", err)
 	}
@@ -424,7 +424,7 @@ func TestExtractEscapeEntryRejected(t *testing.T) {
 
 func TestExtractZipEscapeEntryRejected(t *testing.T) {
 	data := buildZip(t, []zipEntry{{name: "../evil", content: []byte("pwned")}})
-	_, _, err := extractBytes(t, data, archive.Options{})
+	_, _, err := extractBytes(t, data, extract.Options{})
 	if err == nil || !strings.Contains(err.Error(), "escapes extraction root") {
 		t.Fatalf("error = %v, want containment error", err)
 	}
@@ -434,7 +434,7 @@ func TestExtractAbsoluteSymlinkRejected(t *testing.T) {
 	data := gzipBytes(t, buildTar(t, []tarEntry{
 		{name: "link", typeflag: tar.TypeSymlink, linkname: "/etc/passwd"},
 	}))
-	_, _, err := extractBytes(t, data, archive.Options{})
+	_, _, err := extractBytes(t, data, extract.Options{})
 	if err == nil || !strings.Contains(err.Error(), "absolute") {
 		t.Fatalf("error = %v, want absolute-target error", err)
 	}
@@ -445,7 +445,7 @@ func TestExtractHardlink(t *testing.T) {
 		{name: "pkg-1.0/real", content: []byte("data")},
 		{name: "pkg-1.0/sub/hard", typeflag: tar.TypeLink, linkname: "pkg-1.0/real"},
 	}))
-	dest, _, err := extractBytes(t, data, archive.Options{Strip: 1})
+	dest, _, err := extractBytes(t, data, extract.Options{Strip: 1})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -467,7 +467,7 @@ func TestExtractEscapingHardlinkTargetRejected(t *testing.T) {
 	data := gzipBytes(t, buildTar(t, []tarEntry{
 		{name: "hard", typeflag: tar.TypeLink, linkname: "../outside"},
 	}))
-	_, _, err := extractBytes(t, data, archive.Options{})
+	_, _, err := extractBytes(t, data, extract.Options{})
 	if err == nil || !strings.Contains(err.Error(), "escapes extraction root") {
 		t.Fatalf("error = %v, want escape error", err)
 	}
@@ -477,7 +477,7 @@ func TestExtractHardlinkTargetStrippedAwayRejected(t *testing.T) {
 	data := gzipBytes(t, buildTar(t, []tarEntry{
 		{name: "pkg-1.0/hard", typeflag: tar.TypeLink, linkname: "real"},
 	}))
-	_, _, err := extractBytes(t, data, archive.Options{Strip: 1})
+	_, _, err := extractBytes(t, data, extract.Options{Strip: 1})
 	if err == nil || !strings.Contains(err.Error(), "escapes extraction root") {
 		t.Fatalf("error = %v, want escape error", err)
 	}
@@ -505,7 +505,7 @@ func TestExtractEscapingRelativeSymlinkTargetRejected(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			dest, _, err := extractBytes(t, gzipBytes(t, buildTar(t, tc.entries)), archive.Options{})
+			dest, _, err := extractBytes(t, gzipBytes(t, buildTar(t, tc.entries)), extract.Options{})
 			if err == nil || !strings.Contains(err.Error(), "escapes extraction root") {
 				t.Fatalf("error = %v, want containment error", err)
 			}
@@ -589,7 +589,7 @@ func TestExtractSymlinkChainEscapeRejected(t *testing.T) {
 			}
 			defer root.Close()
 
-			if _, err := archive.Extract(artifact, root, archive.Options{}); err == nil {
+			if _, err := extract.Extract(artifact, root, extract.Options{}); err == nil {
 				t.Fatal("expected error, got nil")
 			}
 			for _, p := range tc.notExist {
@@ -601,7 +601,7 @@ func TestExtractSymlinkChainEscapeRejected(t *testing.T) {
 
 func TestExtractUnsupportedTarTypeRejected(t *testing.T) {
 	data := gzipBytes(t, buildTar(t, []tarEntry{{name: "dev", typeflag: tar.TypeChar}}))
-	_, _, err := extractBytes(t, data, archive.Options{})
+	_, _, err := extractBytes(t, data, extract.Options{})
 	if err == nil || !strings.Contains(err.Error(), "unsupported tar type") {
 		t.Fatalf("error = %v, want unsupported-type error", err)
 	}
@@ -612,7 +612,7 @@ func TestExtractStripDropsTopDirEntry(t *testing.T) {
 		{name: "top/", typeflag: tar.TypeDir},
 		{name: "top/file", content: []byte("x")},
 	}))
-	dest, _, err := extractBytes(t, data, archive.Options{Strip: 1})
+	dest, _, err := extractBytes(t, data, extract.Options{Strip: 1})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -632,7 +632,7 @@ func TestExtractPlainTarWithPKPrefixedFirstEntry(t *testing.T) {
 	if !bytes.HasPrefix(data, []byte("PK")) {
 		t.Fatalf("test fixture doesn't actually start with PK, precondition broken")
 	}
-	dest, _, err := extractBytes(t, data, archive.Options{})
+	dest, _, err := extractBytes(t, data, extract.Options{})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -641,7 +641,7 @@ func TestExtractPlainTarWithPKPrefixedFirstEntry(t *testing.T) {
 
 func TestExtractNegativeStripNoPanic(t *testing.T) {
 	data := gzipBytes(t, buildTar(t, []tarEntry{{name: "a/b/file", content: []byte("x")}}))
-	dest, _, err := extractBytes(t, data, archive.Options{Strip: -1})
+	dest, _, err := extractBytes(t, data, extract.Options{Strip: -1})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -659,14 +659,14 @@ func TestSingleNameFromRef(t *testing.T) {
 		"https://ex.com/":                       "",
 	}
 	for ref, want := range cases {
-		if got := archive.SingleNameFromRef(ref); got != want {
+		if got := extract.SingleNameFromRef(ref); got != want {
 			t.Errorf("SingleNameFromRef(%q) = %q, want %q", ref, got, want)
 		}
 	}
 }
 
 func TestExtractUnrecognizedFormatErrors(t *testing.T) {
-	_, _, err := extractBytes(t, []byte("not an archive at all"), archive.Options{})
+	_, _, err := extractBytes(t, []byte("not an archive at all"), extract.Options{})
 	if err == nil || !strings.Contains(err.Error(), "unrecognized archive format") {
 		t.Fatalf("error = %v, want unrecognized-format error", err)
 	}
@@ -680,7 +680,7 @@ func TestExtractTarDotPrefixedEntries(t *testing.T) {
 		{name: "./crystal-1.0/bin/crystal", content: []byte("bin"), mode: 0o755},
 		{name: "./crystal-1.0/bin/shards", typeflag: tar.TypeSymlink, linkname: "crystal"},
 	})
-	dest, _, err := extractBytes(t, data, archive.Options{Strip: 1})
+	dest, _, err := extractBytes(t, data, extract.Options{Strip: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -695,7 +695,7 @@ func TestExtractZipDotPrefixedEntries(t *testing.T) {
 		{name: "./tool-1.0/", isDir: true},
 		{name: "./tool-1.0/tool", content: []byte("bin"), mode: 0o755},
 	})
-	dest, _, err := extractBytes(t, data, archive.Options{Strip: 1})
+	dest, _, err := extractBytes(t, data, extract.Options{Strip: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -708,7 +708,7 @@ func TestExtractZipWithPrependedData(t *testing.T) {
 		{name: "qsv-1.0/qsv", content: []byte("bin"), mode: 0o755},
 	})
 	signed := append([]byte("\x0c\x04\x01ed25519ph fake signature block"), data...)
-	dest, _, err := extractBytes(t, signed, archive.Options{Strip: 1})
+	dest, _, err := extractBytes(t, signed, extract.Options{Strip: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

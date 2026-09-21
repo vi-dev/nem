@@ -11,37 +11,42 @@ import (
 	"strings"
 	"text/template"
 
-	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/registry"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/netx"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
-type ArchiveOpener func(name string) (oras.ReadOnlyTarget, error)
-
 type Source struct {
-	CatalogRef string
-
-	LocalArchives ArchiveOpener
+	Archives []archive.Store
 }
 
 var httpClient = netx.Client()
 
-var pullArchive = func(ctx context.Context, catalogRef, name, tag string, plat spec.Platform, dir string) (string, error) {
-	repo, err := ocix.RemoteArchives(catalogRef, name)
-	if err != nil {
-		return "", err
+func pullFrom(ctx context.Context, stores []archive.Store, name, tag string, plat spec.Platform, dir string) (string, error) {
+	err := fmt.Errorf("%s: %w", name, archive.ErrNotFound)
+	for _, s := range stores {
+		target, oerr := s.Open(ctx, name)
+		if errors.Is(oerr, archive.ErrNotFound) {
+			continue
+		}
+		if oerr != nil {
+			return "", oerr
+		}
+		path, perr := archive.Pull(ctx, target, tag, plat, dir)
+		switch {
+		case perr == nil:
+			return path, nil
+		case errors.Is(perr, archive.ErrNotFound):
+			err = perr
+		default:
+			return "", perr
+		}
 	}
-	return ocix.PullArchiveFrom(ctx, repo, tag, plat, dir)
-}
-
-func SetPullArchive(f func(ctx context.Context, catalogRef, name, tag string, plat spec.Platform, dir string) (string, error)) (restore func()) {
-	prev := pullArchive
-	pullArchive = f
-	return func() { pullArchive = prev }
+	return "", err
 }
 
 var remoteByRef = func(ctx context.Context, ref string, plat spec.Platform, dir string) (string, error) {
@@ -53,7 +58,7 @@ var remoteByRef = func(ctx context.Context, ref string, plat spec.Platform, dir 
 	if err != nil {
 		return "", err
 	}
-	return ocix.PullArchiveFrom(ctx, repo, parsed.ReferenceOrDefault(), plat, dir)
+	return archive.Pull(ctx, repo, parsed.ReferenceOrDefault(), plat, dir)
 }
 
 func Acquire(ctx context.Context, pkg *spec.Package, version string, plat spec.Platform, src Source, dir string, task report.Task) (string, error) {
@@ -67,8 +72,8 @@ func Acquire(ctx context.Context, pkg *spec.Package, version string, plat spec.P
 		return "", err
 	}
 
-	if src.CatalogRef != "" {
-		path, err := pullArchive(ctx, src.CatalogRef, pkg.Name, version, plat, dir)
+	if len(src.Archives) > 0 {
+		path, err := pullFrom(ctx, src.Archives, pkg.Name, version, plat, dir)
 		switch {
 		case err == nil:
 			if verr := VerifyFile(path, sha, meta); verr != nil {
@@ -76,7 +81,7 @@ func Acquire(ctx context.Context, pkg *spec.Package, version string, plat spec.P
 				return "", verr
 			}
 			return path, nil
-		case errors.Is(err, ocix.ErrArchiveNotFound):
+		case errors.Is(err, archive.ErrNotFound):
 
 		default:
 			return "", err
@@ -96,25 +101,10 @@ func acquireOCI(ctx context.Context, pkg *spec.Package, version string, plat spe
 		return "", err
 	}
 	if isRelativeOCIRef(ref) {
-		if src.LocalArchives != nil {
-			target, err := src.LocalArchives(pkg.Name)
-			if err != nil {
-				return "", err
-			}
-			path, err := ocix.PullArchiveFrom(ctx, target, ociRefTag(ref), plat, dir)
-			switch {
-			case err == nil:
-				return path, nil
-			case errors.Is(err, ocix.ErrArchiveNotFound):
-
-			default:
-				return "", err
-			}
-		}
-		if src.CatalogRef == "" {
+		if len(src.Archives) == 0 {
 			return "", errors.New("relative oci ref requires an oci catalog")
 		}
-		return pullArchive(ctx, src.CatalogRef, pkg.Name, ociRefTag(ref), plat, dir)
+		return pullFrom(ctx, src.Archives, pkg.Name, ociRefTag(ref), plat, dir)
 	}
 	return remoteByRef(ctx, ref, plat, dir)
 }

@@ -13,9 +13,9 @@ import (
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/home"
-	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
@@ -133,16 +133,29 @@ func runBatch(t *testing.T, h home.Home, set *catalog.Set, plan Plan, opts Batch
 	return rows, b.String()
 }
 
+type funcStore struct {
+	openRW func(name string) (oras.Target, error)
+}
+
+func (s funcStore) Open(_ context.Context, name string) (oras.ReadOnlyTarget, error) {
+	return s.openRW(name)
+}
+func (s funcStore) OpenRW(_ context.Context, name string) (oras.Target, error) {
+	return s.openRW(name)
+}
+
 func ociTarget(ref string) *Target { return &Target{Ref: ref} }
 
 func dirBatchTarget(t *testing.T) *Target {
 	t.Helper()
 	dir := t.TempDir()
+	d := archive.NewDir(dir)
 	return &Target{
 		Ref:     dir,
 		Dir:     dir,
-		Entry:   catalog.Entry{Name: dir, Catalog: catalog.NewDir(dir)},
-		Overlay: ocix.NewArchiveStore(dir),
+		Entry:   catalog.Entry{Name: dir, Catalog: catalog.NewDir(dir), Archives: d},
+		Overlay: d,
+		Store:   d,
 	}
 }
 
@@ -193,7 +206,7 @@ func TestRunBatchHandsDepArchiveToDependentThroughLocalStore(t *testing.T) {
 
 	var tested []string
 	rows, out := runBatch(t, h, sources, plan, BatchOptions{
-		TestFor: func(p *spec.Package, store *ocix.ArchiveStore) func(context.Context, *spec.Package, string, string) error {
+		TestFor: func(p *spec.Package, store *archive.Dir) func(context.Context, *spec.Package, string, string) error {
 			if store == nil {
 				t.Error("TestFor must receive the batch's local store")
 			}
@@ -350,12 +363,13 @@ func TestRunBatchPushesEachSuccessAndIsolatesPushFailures(t *testing.T) {
 
 	fixtures := testx.NewArchiveFixtures()
 	fixtures.Set("bravo", &testx.RejectPushTarget{Target: memory.New()})
-	testx.Swap(t, &archivesOpener, func(_, name string) (oras.Target, error) {
+	target := ociTarget("ghcr.io/x/cat:v2")
+	target.Store = funcStore{openRW: func(name string) (oras.Target, error) {
 		return fixtures.Open(name), nil
-	})
+	}}
 
 	rows, out := runBatch(t, h, sources, batchPlan(t, pkgs, a, b, c),
-		BatchOptions{Target: ociTarget("ghcr.io/x/cat:v2"), Push: true})
+		BatchOptions{Target: target, Push: true})
 
 	if len(rows) != 3 {
 		t.Fatalf("rows = %v, want three", rowStrings(rows))
@@ -381,7 +395,7 @@ func TestRunBatchPushesEachSuccessAndIsolatesPushFailures(t *testing.T) {
 	}
 
 	for _, name := range []string{"alpha", "charlie"} {
-		if _, err := ocix.PullArchiveFrom(context.Background(), fixtures.Open(name),
+		if _, err := archive.Pull(context.Background(), fixtures.Open(name),
 			"1.0.0", spec.Current(), t.TempDir()); err != nil {
 			t.Fatalf("%s's archive is not in the registry: %v", name, err)
 		}
@@ -395,11 +409,12 @@ func TestRunBatchReportsAnUnchangedPushAsPushed(t *testing.T) {
 		step: `mkdir -p "$NEM_OUTPUT/bin"` + "\n" + `echo hi > "$NEM_OUTPUT/bin/tool"`}
 	sources, pkgs := batchFixture(t, a)
 
-	target := memory.New()
-	testx.Swap(t, &archivesOpener, func(string, string) (oras.Target, error) { return target, nil })
+	store := memory.New()
+	target := ociTarget("ghcr.io/x/cat:v2")
+	target.Store = funcStore{openRW: func(string) (oras.Target, error) { return store, nil }}
 	plan := batchPlan(t, pkgs, a)
 
-	opts := BatchOptions{Target: ociTarget("ghcr.io/x/cat:v2"), Push: true}
+	opts := BatchOptions{Target: target, Push: true}
 	firstRows, firstOut := runBatch(t, h, sources, plan, opts)
 	if firstOut == "" {
 		t.Fatal("expected narration from the first run")
@@ -426,17 +441,17 @@ func TestRunBatchDirPushStagesIntoOverlay(t *testing.T) {
 		step: `test -f "$NEM_DEP_ALPHA_PREFIX/bin/tool" || exit 9` + "\n" + step}
 	sources, pkgs := batchFixture(t, a, b)
 
-	testx.Swap(t, &archivesOpener, func(ref, name string) (oras.Target, error) {
-		t.Errorf("a dir target must not open registry archives (%s, %s)", ref, name)
+	t.Cleanup(archive.SetRepoOpener(func(ref string) (oras.Target, error) {
+		t.Errorf("a dir target must not open registry archives (%s)", ref)
 		return memory.New(), nil
-	})
+	}))
 
 	target := dirBatchTarget(t)
 	rows, out := runBatch(t, h, sources, batchPlan(t, pkgs, a, b), BatchOptions{
 		Target: target, Push: true,
-		TestFor: func(_ *spec.Package, store *ocix.ArchiveStore) func(context.Context, *spec.Package, string, string) error {
-			if store.Root() != target.Dir {
-				t.Errorf("builds stage into %s, want the target overlay %s", store.Root(), target.Dir)
+		TestFor: func(_ *spec.Package, store *archive.Dir) func(context.Context, *spec.Package, string, string) error {
+			if store != target.Overlay {
+				t.Error("builds must stage into the target overlay store")
 			}
 			return nil
 		},
@@ -451,7 +466,7 @@ func TestRunBatchDirPushStagesIntoOverlay(t *testing.T) {
 	}
 
 	for _, s := range []batchSpec{a, b} {
-		if !target.Overlay.HasTag(s.name, s.version) {
+		if !target.Overlay.HasVersion(s.name, s.version) {
 			t.Fatalf("%s@%s is not staged in the target overlay %s\n%s",
 				s.name, s.version, target.Dir, out)
 		}
@@ -477,7 +492,7 @@ func TestRunBatchDirPushStagesNothingWhenTestsFail(t *testing.T) {
 	target := dirBatchTarget(t)
 	rows, out := runBatch(t, h, sources, batchPlan(t, pkgs, good, bad), BatchOptions{
 		Target: target, Push: true,
-		TestFor: func(pkg *spec.Package, _ *ocix.ArchiveStore) func(context.Context, *spec.Package, string, string) error {
+		TestFor: func(pkg *spec.Package, _ *archive.Dir) func(context.Context, *spec.Package, string, string) error {
 			if pkg.Name != "bravo" {
 				return nil
 			}
@@ -497,10 +512,10 @@ func TestRunBatchDirPushStagesNothingWhenTestsFail(t *testing.T) {
 		t.Fatalf("row 1 = %+v, want a failed bravo row naming the test error\n%s", rows[1], out)
 	}
 
-	if target.Overlay.HasTag("bravo", "1.0.0") || target.Overlay.Has("bravo") {
+	if target.Overlay.HasVersion("bravo", "1.0.0") || target.Overlay.Has("bravo") {
 		t.Fatalf("bravo@1.0.0 was published despite failing its tests (%s)", target.Dir)
 	}
-	if !target.Overlay.HasTag("alpha", "1.0.0") {
+	if !target.Overlay.HasVersion("alpha", "1.0.0") {
 		t.Fatalf("alpha@1.0.0 passed its tests and must be published (%s)\n%s", target.Dir, out)
 	}
 }
@@ -513,12 +528,12 @@ func TestRunBatchNoPushStillUsesTmpStore(t *testing.T) {
 	sources, pkgs := batchFixture(t, a)
 
 	target := dirBatchTarget(t)
-	var duringRoot string
+	var duringWasOverlay bool
 	var duringStores []string
 	rows, out := runBatch(t, h, sources, batchPlan(t, pkgs, a), BatchOptions{
 		Target: target,
-		TestFor: func(_ *spec.Package, store *ocix.ArchiveStore) func(context.Context, *spec.Package, string, string) error {
-			duringRoot = store.Root()
+		TestFor: func(_ *spec.Package, store *archive.Dir) func(context.Context, *spec.Package, string, string) error {
+			duringWasOverlay = store == target.Overlay
 			duringStores = batchStoreDirs(t, h)
 			return nil
 		},
@@ -529,7 +544,7 @@ func TestRunBatchNoPushStillUsesTmpStore(t *testing.T) {
 		t.Fatalf("no push happened, so nothing should be narrated as pushed\n%s", out)
 	}
 
-	if duringRoot == target.Dir {
+	if duringWasOverlay {
 		t.Fatalf("builds staged into the target overlay %s without --push", target.Dir)
 	}
 	if len(duringStores) != 1 {

@@ -22,6 +22,7 @@ import (
 	"oras.land/oras-go/v2/registry"
 	"oras.land/oras-go/v2/registry/remote"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/ocix/ocixtest"
 	"github.com/vi-dev/nem/internal/report"
@@ -299,9 +300,9 @@ func TestCopyTagCopiesClosureAndVerifiesDigest(t *testing.T) {
 		t.Fatalf("dst tag digest = %s, want %s", dstDesc.Digest, srcDesc.Digest)
 	}
 
-	path, err := ocix.PullArchiveFrom(ctx, dst, "v1.0.0", spec.Platform{OS: "linux", Arch: "amd64"}, t.TempDir())
+	path, err := archive.Pull(ctx, dst, "v1.0.0", spec.Platform{OS: "linux", Arch: "amd64"}, t.TempDir())
 	if err != nil {
-		t.Fatalf("PullArchiveFrom on copied dst: %v", err)
+		t.Fatalf("Pull on copied dst: %v", err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {

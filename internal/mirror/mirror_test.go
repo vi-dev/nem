@@ -3,12 +3,14 @@ package mirror
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/ocix/ocixtest"
 	"github.com/vi-dev/nem/internal/publish/publishtest"
 	"github.com/vi-dev/nem/internal/testx"
@@ -296,14 +298,25 @@ func TestRunWarnAndContinueSiblingCompletes(t *testing.T) {
 	}
 	dst := testx.NewArchiveFixtures()
 	brokenErr := errors.New("dst archives unreachable")
-	t.Cleanup(SetDstArchivesOpener(func(_, name string) (oras.Target, error) {
-		if name == "broken" {
-			return nil, brokenErr
+	srcBase, err := archive.RefPrefix(testSrcCatalogRef)
+	if err != nil {
+		t.Fatalf("archive.RefPrefix(%q): %v", testSrcCatalogRef, err)
+	}
+	dstBase, err := archive.RefPrefix(testDstCatalogRef)
+	if err != nil {
+		t.Fatalf("archive.RefPrefix(%q): %v", testDstCatalogRef, err)
+	}
+	t.Cleanup(archive.SetRepoOpener(func(ref string) (oras.Target, error) {
+		if name, ok := strings.CutPrefix(ref, dstBase); ok {
+			if name == "broken" {
+				return nil, brokenErr
+			}
+			return dst.Open(name), nil
 		}
-		return dst.Open(name), nil
-	}))
-	t.Cleanup(SetSrcArchivesOpener(func(_, name string) (oras.ReadOnlyTarget, error) {
-		return src.Open(name), nil
+		if name, ok := strings.CutPrefix(ref, srcBase); ok {
+			return src.Open(name), nil
+		}
+		return nil, fmt.Errorf("unexpected archives ref %s", ref)
 	}))
 
 	ctx, rep := testx.ReporterContext(context.Background())

@@ -10,7 +10,7 @@ const (
 	retryBackoff  = 200 * time.Millisecond
 )
 
-func withRetry(ctx context.Context, fn func(ctx context.Context) error) error {
+func WithRetry(ctx context.Context, fn func(ctx context.Context) error) error {
 	var err error
 	for attempt := 1; attempt <= retryAttempts; attempt++ {
 		if err = fn(ctx); err == nil {

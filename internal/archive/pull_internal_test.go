@@ -1,4 +1,4 @@
-package ocix
+package archive
 
 import (
 	"errors"
@@ -24,7 +24,7 @@ func TestArchiveAbsent(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := archiveAbsent(c.err); got != c.want {
+			if got := isNotFoundError(c.err); got != c.want {
 				t.Fatalf("archiveAbsent(%v) = %v, want %v", c.err, got, c.want)
 			}
 		})

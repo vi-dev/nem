@@ -9,6 +9,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/config"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/testx"
@@ -44,6 +45,12 @@ func TestOpenConfiguredBuildsEntriesInOrder(t *testing.T) {
 	if _, err := src.PackageNames(context.Background()); !errors.Is(err, ocix.ErrNotSynced) {
 		t.Fatalf("want ErrNotSynced from the unopened store, got %v", err)
 	}
+	if _, ok := entries[0].Archives.(*archive.Dir); !ok {
+		t.Fatalf("dev entry archives = %T, want *archive.Dir", entries[0].Archives)
+	}
+	if entries[1].Archives == nil {
+		t.Fatal("official entry archives should not be nil")
+	}
 }
 
 func TestOpenConfiguredSkipsDisabled(t *testing.T) {
@@ -66,12 +73,12 @@ func TestOpenConfiguredSkipsDisabled(t *testing.T) {
 }
 
 func TestOpenDetectsDirCatalog(t *testing.T) {
-	c, err := Open(context.Background(), t.TempDir())
+	entry, err := Open(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if _, ok := c.(*Dir); !ok {
-		t.Fatalf("want *Dir, got %T", c)
+	if _, ok := entry.Catalog.(*Dir); !ok {
+		t.Fatalf("want *Dir, got %T", entry.Catalog)
 	}
 }
 
@@ -80,12 +87,37 @@ func TestOpenDetectsFileCatalog(t *testing.T) {
 	if err := os.WriteFile(path, []byte("name: demo\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	c, err := Open(context.Background(), path)
+	entry, err := Open(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if _, ok := c.(*File); !ok {
-		t.Fatalf("want *File, got %T", c)
+	if _, ok := entry.Catalog.(*File); !ok {
+		t.Fatalf("want *File, got %T", entry.Catalog)
+	}
+}
+
+func TestOpenDirEntryServesDirArchives(t *testing.T) {
+	dir := t.TempDir()
+	entry, err := Open(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if _, ok := entry.Archives.(*archive.Dir); !ok {
+		t.Fatalf("dir entry archives = %T, want *archive.Dir", entry.Archives)
+	}
+}
+
+func TestOpenFileEntryHasNoArchives(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pkg.yaml")
+	if err := os.WriteFile(path, []byte("name: demo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	entry, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if _, aerr := entry.Archives.Open(context.Background(), "tool"); !errors.Is(aerr, archive.ErrNotFound) {
+		t.Fatalf("file entry archives err = %v, want ErrNotFound", aerr)
 	}
 }
 
@@ -111,12 +143,18 @@ func TestOpenPullsRemoteRef(t *testing.T) {
 		return want, nil
 	})
 	const ref = "ghcr.io/vi-dev/nem-catalog:latest"
-	c, err := Open(context.Background(), ref)
+	entry, err := Open(context.Background(), ref)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if c != Catalog(want) {
-		t.Fatalf("want the remote-opened catalog, got %T", c)
+	if entry.Catalog != Catalog(want) {
+		t.Fatalf("want the remote-opened catalog, got %T", entry.Catalog)
+	}
+	if entry.Ref != ref {
+		t.Fatalf("entry ref = %q, want %q", entry.Ref, ref)
+	}
+	if entry.Archives == nil {
+		t.Fatal("remote entry archives should not be nil")
 	}
 	if gotRef != ref {
 		t.Fatalf("remote opener got ref %q, want %q", gotRef, ref)

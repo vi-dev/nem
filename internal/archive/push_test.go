@@ -1,4 +1,4 @@
-package ocix
+package archive
 
 import (
 	"bytes"
@@ -23,7 +23,7 @@ import (
 	"github.com/vi-dev/nem/internal/spec"
 )
 
-func TestPushArchiveMergesPlatformsAndRoundTrips(t *testing.T) {
+func TestPushMergesPlatformsAndRoundTrips(t *testing.T) {
 	ctx := context.Background()
 	store, err := oci.New(t.TempDir())
 	if err != nil {
@@ -34,23 +34,23 @@ func TestPushArchiveMergesPlatformsAndRoundTrips(t *testing.T) {
 	dArc := []byte("darwin-archive-bytes")
 	lArc := []byte("linux-archive-bytes")
 
-	if _, pushed, err := PushArchive(ctx, store, "v1", darwin, dArc, false); err != nil || !pushed {
+	if _, pushed, err := Push(ctx, store, "v1", darwin, BytesBlob(dArc), false); err != nil || !pushed {
 		t.Fatalf("push darwin: pushed=%v err=%v", pushed, err)
 	}
-	if _, pushed, err := PushArchive(ctx, store, "v1", linux, lArc, false); err != nil || !pushed {
+	if _, pushed, err := Push(ctx, store, "v1", linux, BytesBlob(lArc), false); err != nil || !pushed {
 		t.Fatalf("push linux: pushed=%v err=%v", pushed, err)
 	}
 
-	if _, pushed, err := PushArchive(ctx, store, "v1", darwin, dArc, false); err != nil || pushed {
+	if _, pushed, err := Push(ctx, store, "v1", darwin, BytesBlob(dArc), false); err != nil || pushed {
 		t.Fatalf("re-push darwin unchanged: pushed=%v (want false) err=%v", pushed, err)
 	}
 
-	if _, pushed, err := PushArchive(ctx, store, "v1", darwin, dArc, true); err != nil || !pushed {
+	if _, pushed, err := Push(ctx, store, "v1", darwin, BytesBlob(dArc), true); err != nil || !pushed {
 		t.Fatalf("force re-push: pushed=%v (want true) err=%v", pushed, err)
 	}
 
 	for plat, want := range map[spec.Platform][]byte{darwin: dArc, linux: lArc} {
-		p, err := PullArchiveFrom(ctx, store, "v1", plat, t.TempDir())
+		p, err := Pull(ctx, store, "v1", plat, t.TempDir())
 		if err != nil {
 			t.Fatalf("pull %s: %v", plat, err)
 		}
@@ -72,27 +72,27 @@ func writeTempArchiveFile(t *testing.T, data []byte) (path, sha256Hex string) {
 	return path, hex.EncodeToString(sum[:])
 }
 
-func TestPublishArchiveLayerFileAndCommitRoundTrips(t *testing.T) {
+func TestStageAndCommitRoundTrips(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
 	payload := []byte("streamed-archive-bytes")
 	path, sha := writeTempArchiveFile(t, payload)
 	plat := spec.Platform{OS: "linux", Arch: "amd64"}
 
-	entry, err := PublishArchiveLayerFile(ctx, store, plat, path, sha, int64(len(payload)))
+	entry, err := Stage(ctx, store, plat, FileBlob(path, sha, int64(len(payload))))
 	if err != nil {
-		t.Fatalf("PublishArchiveLayerFile: %v", err)
+		t.Fatalf("Stage: %v", err)
 	}
 	if entry.Platform == nil || entry.Platform.OS != "linux" || entry.Platform.Architecture != "amd64" {
 		t.Fatalf("entry platform = %+v", entry.Platform)
 	}
-	if _, err := CommitArchiveManifests(ctx, store, "v1.0.0", []ocispec.Descriptor{entry}); err != nil {
-		t.Fatalf("CommitArchiveManifests: %v", err)
+	if _, err := Commit(ctx, store, "v1.0.0", []ocispec.Descriptor{entry}); err != nil {
+		t.Fatalf("Commit: %v", err)
 	}
 
-	pulled, err := PullArchiveFrom(ctx, store, "v1.0.0", plat, t.TempDir())
+	pulled, err := Pull(ctx, store, "v1.0.0", plat, t.TempDir())
 	if err != nil {
-		t.Fatalf("PullArchiveFrom: %v", err)
+		t.Fatalf("Pull: %v", err)
 	}
 	got, err := os.ReadFile(pulled)
 	if err != nil {
@@ -103,49 +103,32 @@ func TestPublishArchiveLayerFileAndCommitRoundTrips(t *testing.T) {
 	}
 }
 
-func TestPublishArchiveLayerFileSkipsOpeningWhenBlobAlreadyExists(t *testing.T) {
-	ctx := context.Background()
-	store := memory.New()
-	payload := []byte("unchanged-payload")
-	path, sha := writeTempArchiveFile(t, payload)
-	plat := spec.Platform{OS: "linux", Arch: "amd64"}
-
-	if _, err := PublishArchiveLayerFile(ctx, store, plat, path, sha, int64(len(payload))); err != nil {
-		t.Fatalf("initial publish: %v", err)
-	}
-
-	missingPath := filepath.Join(t.TempDir(), "does-not-exist")
-	if _, err := PublishArchiveLayerFile(ctx, store, plat, missingPath, sha, int64(len(payload))); err != nil {
-		t.Fatalf("re-publish unchanged: %v", err)
-	}
-}
-
-func TestPublishArchiveLayerFileAndCommitHealsChangedContent(t *testing.T) {
+func TestStageAndCommitHealsChangedContent(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
 	plat := spec.Platform{OS: "linux", Arch: "amd64"}
 
 	oldPayload := []byte("stale-payload")
 	oldPath, oldSha := writeTempArchiveFile(t, oldPayload)
-	oldEntry, err := PublishArchiveLayerFile(ctx, store, plat, oldPath, oldSha, int64(len(oldPayload)))
+	oldEntry, err := Stage(ctx, store, plat, FileBlob(oldPath, oldSha, int64(len(oldPayload))))
 	if err != nil {
 		t.Fatalf("initial publish: %v", err)
 	}
-	if _, err := CommitArchiveManifests(ctx, store, "v1.0.0", []ocispec.Descriptor{oldEntry}); err != nil {
+	if _, err := Commit(ctx, store, "v1.0.0", []ocispec.Descriptor{oldEntry}); err != nil {
 		t.Fatalf("initial commit: %v", err)
 	}
 
 	newPayload := []byte("healed-payload-with-different-content")
 	newPath, newSha := writeTempArchiveFile(t, newPayload)
-	newEntry, err := PublishArchiveLayerFile(ctx, store, plat, newPath, newSha, int64(len(newPayload)))
+	newEntry, err := Stage(ctx, store, plat, FileBlob(newPath, newSha, int64(len(newPayload))))
 	if err != nil {
 		t.Fatalf("heal publish: %v", err)
 	}
-	if _, err := CommitArchiveManifests(ctx, store, "v1.0.0", []ocispec.Descriptor{newEntry}); err != nil {
+	if _, err := Commit(ctx, store, "v1.0.0", []ocispec.Descriptor{newEntry}); err != nil {
 		t.Fatalf("heal commit: %v", err)
 	}
 
-	pulled, err := PullArchiveFrom(ctx, store, "v1.0.0", plat, t.TempDir())
+	pulled, err := Pull(ctx, store, "v1.0.0", plat, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,35 +138,35 @@ func TestPublishArchiveLayerFileAndCommitHealsChangedContent(t *testing.T) {
 	}
 }
 
-func TestPublishArchiveLayerFileMergesWithPushArchivePlatforms(t *testing.T) {
+func TestStageMergesWithPushPlatforms(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
 	darwin := spec.Platform{OS: "darwin", Arch: "arm64"}
 	linux := spec.Platform{OS: "linux", Arch: "amd64"}
 	dArc := []byte("darwin-bytes")
 
-	if _, _, err := PushArchive(ctx, store, "v1", darwin, dArc, false); err != nil {
-		t.Fatalf("PushArchive darwin: %v", err)
+	if _, _, err := Push(ctx, store, "v1", darwin, BytesBlob(dArc), false); err != nil {
+		t.Fatalf("Push darwin: %v", err)
 	}
 	lArc := []byte("linux-bytes-from-a-file")
 	path, sha := writeTempArchiveFile(t, lArc)
-	entry, err := PublishArchiveLayerFile(ctx, store, linux, path, sha, int64(len(lArc)))
+	entry, err := Stage(ctx, store, linux, FileBlob(path, sha, int64(len(lArc))))
 	if err != nil {
-		t.Fatalf("PublishArchiveLayerFile linux: %v", err)
+		t.Fatalf("Stage linux: %v", err)
 	}
-	if _, err := CommitArchiveManifests(ctx, store, "v1", []ocispec.Descriptor{entry}); err != nil {
-		t.Fatalf("CommitArchiveManifests linux: %v", err)
+	if _, err := Commit(ctx, store, "v1", []ocispec.Descriptor{entry}); err != nil {
+		t.Fatalf("Commit linux: %v", err)
 	}
 
-	plats, err := ArchivePlatforms(ctx, store, "v1")
+	plats, err := ResolvePlatforms(ctx, store, "v1")
 	if err != nil {
-		t.Fatalf("ArchivePlatforms: %v", err)
+		t.Fatalf("Platforms: %v", err)
 	}
 	if len(plats) != 2 {
 		t.Fatalf("platforms = %v, want both darwin and linux merged", plats)
 	}
 	for plat, want := range map[spec.Platform][]byte{darwin: dArc, linux: lArc} {
-		p, err := PullArchiveFrom(ctx, store, "v1", plat, t.TempDir())
+		p, err := Pull(ctx, store, "v1", plat, t.TempDir())
 		if err != nil {
 			t.Fatalf("pull %s: %v", plat, err)
 		}
@@ -212,7 +195,7 @@ func (c *indexPushCountingTarget) Tag(ctx context.Context, d ocispec.Descriptor,
 	return c.Target.Tag(ctx, d, ref)
 }
 
-func TestCommitArchiveManifestsPushesIndexOnceForABatch(t *testing.T) {
+func TestCommitPushesIndexOnceForABatch(t *testing.T) {
 	ctx := context.Background()
 	counted := &indexPushCountingTarget{Target: memory.New()}
 	plats := []spec.Platform{
@@ -224,9 +207,9 @@ func TestCommitArchiveManifestsPushesIndexOnceForABatch(t *testing.T) {
 	for _, plat := range plats {
 		payload := []byte("payload-" + plat.String())
 		path, sha := writeTempArchiveFile(t, payload)
-		entry, err := PublishArchiveLayerFile(ctx, counted, plat, path, sha, int64(len(payload)))
+		entry, err := Stage(ctx, counted, plat, FileBlob(path, sha, int64(len(payload))))
 		if err != nil {
-			t.Fatalf("PublishArchiveLayerFile %s: %v", plat, err)
+			t.Fatalf("Stage %s: %v", plat, err)
 		}
 		entries = append(entries, entry)
 	}
@@ -234,8 +217,8 @@ func TestCommitArchiveManifestsPushesIndexOnceForABatch(t *testing.T) {
 		t.Fatalf("index pushes after per-platform publish alone = %d, want 0 (no index touched yet)", got)
 	}
 
-	if _, err := CommitArchiveManifests(ctx, counted, "v1.0.0", entries); err != nil {
-		t.Fatalf("CommitArchiveManifests: %v", err)
+	if _, err := Commit(ctx, counted, "v1.0.0", entries); err != nil {
+		t.Fatalf("Commit: %v", err)
 	}
 	if got := counted.indexPushes.Load(); got != 1 {
 		t.Fatalf("index pushes = %d, want exactly 1 for a %d-platform batch", got, len(plats))
@@ -244,34 +227,34 @@ func TestCommitArchiveManifestsPushesIndexOnceForABatch(t *testing.T) {
 		t.Fatalf("tag calls = %d, want exactly 1 for a %d-platform batch", got, len(plats))
 	}
 
-	got, err := ArchivePlatforms(ctx, counted, "v1.0.0")
+	got, err := ResolvePlatforms(ctx, counted, "v1.0.0")
 	if err != nil {
-		t.Fatalf("ArchivePlatforms: %v", err)
+		t.Fatalf("Platforms: %v", err)
 	}
 	if len(got) != len(plats) {
 		t.Fatalf("platforms in committed index = %v, want all %d", got, len(plats))
 	}
 }
 
-func TestCommitArchiveManifestsSkipsWhenMergedResultUnchanged(t *testing.T) {
+func TestCommitSkipsWhenMergedResultUnchanged(t *testing.T) {
 	ctx := context.Background()
 	counted := &indexPushCountingTarget{Target: memory.New()}
 	plat := spec.Platform{OS: "linux", Arch: "amd64"}
 	payload := []byte("stable-payload")
 	path, sha := writeTempArchiveFile(t, payload)
-	entry, err := PublishArchiveLayerFile(ctx, counted, plat, path, sha, int64(len(payload)))
+	entry, err := Stage(ctx, counted, plat, FileBlob(path, sha, int64(len(payload))))
 	if err != nil {
-		t.Fatalf("PublishArchiveLayerFile: %v", err)
+		t.Fatalf("Stage: %v", err)
 	}
 
-	if _, err := CommitArchiveManifests(ctx, counted, "v1.0.0", []ocispec.Descriptor{entry}); err != nil {
+	if _, err := Commit(ctx, counted, "v1.0.0", []ocispec.Descriptor{entry}); err != nil {
 		t.Fatalf("first commit: %v", err)
 	}
 	if got := counted.indexPushes.Load(); got != 1 {
 		t.Fatalf("index pushes after first commit = %d, want 1", got)
 	}
 
-	if _, err := CommitArchiveManifests(ctx, counted, "v1.0.0", []ocispec.Descriptor{entry}); err != nil {
+	if _, err := Commit(ctx, counted, "v1.0.0", []ocispec.Descriptor{entry}); err != nil {
 		t.Fatalf("second (unchanged) commit: %v", err)
 	}
 	if got := counted.indexPushes.Load(); got != 1 {
@@ -289,7 +272,7 @@ type recordingPushTarget struct {
 }
 
 func (r *recordingPushTarget) Push(ctx context.Context, d ocispec.Descriptor, content io.Reader) error {
-	if d.MediaType == MediaTypeArchive {
+	if d.MediaType == MediaType {
 		r.archivePushes++
 		if _, ok := content.(*os.File); ok {
 			r.sawFileReader = true
@@ -298,14 +281,14 @@ func (r *recordingPushTarget) Push(ctx context.Context, d ocispec.Descriptor, co
 	return r.Target.Push(ctx, d, content)
 }
 
-func TestPublishArchiveLayerFileStreamsWithoutBuffering(t *testing.T) {
+func TestStageStreamsWithoutBuffering(t *testing.T) {
 	ctx := context.Background()
 	rec := &recordingPushTarget{Target: memory.New()}
 	payload := bytes.Repeat([]byte("x"), 5*1024*1024)
 	path, sha := writeTempArchiveFile(t, payload)
 
-	if _, err := PublishArchiveLayerFile(ctx, rec, spec.Platform{OS: "linux", Arch: "amd64"}, path, sha, int64(len(payload))); err != nil {
-		t.Fatalf("PublishArchiveLayerFile: %v", err)
+	if _, err := Stage(ctx, rec, spec.Platform{OS: "linux", Arch: "amd64"}, FileBlob(path, sha, int64(len(payload)))); err != nil {
+		t.Fatalf("Stage: %v", err)
 	}
 	if rec.archivePushes != 1 {
 		t.Fatalf("archive layer pushes = %d, want 1", rec.archivePushes)
@@ -323,14 +306,14 @@ type flakyArchiveLayerTarget struct {
 }
 
 func (f *flakyArchiveLayerTarget) Exists(ctx context.Context, d ocispec.Descriptor) (bool, error) {
-	if d.MediaType == MediaTypeArchive {
+	if d.MediaType == MediaType {
 		return false, nil
 	}
 	return f.Target.Exists(ctx, d)
 }
 
 func (f *flakyArchiveLayerTarget) Push(ctx context.Context, d ocispec.Descriptor, r io.Reader) error {
-	if d.MediaType != MediaTypeArchive {
+	if d.MediaType != MediaType {
 		return f.Target.Push(ctx, d, r)
 	}
 	f.mu.Lock()
@@ -349,14 +332,14 @@ func (f *flakyArchiveLayerTarget) Push(ctx context.Context, d ocispec.Descriptor
 	return f.Target.Push(ctx, d, bytes.NewReader(data))
 }
 
-func TestPublishArchiveLayerFileReopensFileOnRetry(t *testing.T) {
+func TestStageReopensFileOnRetry(t *testing.T) {
 	ctx := context.Background()
 	flaky := &flakyArchiveLayerTarget{Target: memory.New()}
 	payload := bytes.Repeat([]byte("retry-me-"), 1000)
 	path, sha := writeTempArchiveFile(t, payload)
 
-	if _, err := PublishArchiveLayerFile(ctx, flaky, spec.Platform{OS: "linux", Arch: "amd64"}, path, sha, int64(len(payload))); err != nil {
-		t.Fatalf("PublishArchiveLayerFile: %v", err)
+	if _, err := Stage(ctx, flaky, spec.Platform{OS: "linux", Arch: "amd64"}, FileBlob(path, sha, int64(len(payload)))); err != nil {
+		t.Fatalf("Stage: %v", err)
 	}
 	if !bytes.Equal(flaky.got, payload) {
 		t.Fatal("retried push received a partially-consumed reader instead of a freshly reopened file")
@@ -368,11 +351,11 @@ type alwaysFailArchiveLayerTarget struct {
 }
 
 func (alwaysFailArchiveLayerTarget) Exists(_ context.Context, d ocispec.Descriptor) (bool, error) {
-	return d.MediaType != MediaTypeArchive, nil
+	return d.MediaType != MediaType, nil
 }
 
 func (alwaysFailArchiveLayerTarget) Push(_ context.Context, d ocispec.Descriptor, r io.Reader) error {
-	if d.MediaType == MediaTypeArchive {
+	if d.MediaType == MediaType {
 		io.Copy(io.Discard, r)
 		return errors.New("simulated permanent failure")
 	}
@@ -391,12 +374,12 @@ func (alwaysFailArchiveLayerTarget) Fetch(_ context.Context, _ ocispec.Descripto
 	return nil, errdef.ErrNotFound
 }
 
-func TestPublishArchiveLayerFileFailsAfterRetriesExhausted(t *testing.T) {
+func TestStageFailsAfterRetriesExhausted(t *testing.T) {
 	ctx := context.Background()
 	payload := []byte("x")
 	path, sha := writeTempArchiveFile(t, payload)
 
-	entry, err := PublishArchiveLayerFile(ctx, alwaysFailArchiveLayerTarget{}, spec.Platform{OS: "linux", Arch: "amd64"}, path, sha, int64(len(payload)))
+	entry, err := Stage(ctx, alwaysFailArchiveLayerTarget{}, spec.Platform{OS: "linux", Arch: "amd64"}, FileBlob(path, sha, int64(len(payload))))
 	if err == nil {
 		t.Fatal("want error once every attempt fails, got nil")
 	}
@@ -405,5 +388,121 @@ func TestPublishArchiveLayerFileFailsAfterRetriesExhausted(t *testing.T) {
 	}
 	if entry.Digest != "" {
 		t.Fatalf("entry = %+v, want a zero-value descriptor on failure", entry)
+	}
+}
+
+type swallowTagTarget struct {
+	oras.Target
+}
+
+func (swallowTagTarget) Tag(context.Context, ocispec.Descriptor, string) error { return nil }
+
+func TestPushFailsWhenCommitDoesNotLand(t *testing.T) {
+	plat := spec.Platform{OS: "linux", Arch: "amd64"}
+	target := swallowTagTarget{Target: memory.New()}
+	if _, _, err := Push(context.Background(), target, "v1", plat, BytesBlob([]byte("x")), false); err == nil {
+		t.Fatal("push must fail when the committed index cannot be resolved")
+	}
+}
+
+func TestPushFailsWhenIndexHoldsAnotherManifest(t *testing.T) {
+	plat := spec.Platform{OS: "linux", Arch: "amd64"}
+	target := memory.New()
+	if _, pushed, err := Push(context.Background(), target, "v1", plat, BytesBlob([]byte("old")), false); err != nil || !pushed {
+		t.Fatalf("seed push: %v", err)
+	}
+	if _, _, err := Push(context.Background(), swallowTagTarget{Target: target}, "v1", plat, BytesBlob([]byte("new")), false); err == nil {
+		t.Fatal("push must fail when the index does not hold the committed manifest")
+	}
+}
+
+type failOnceTarget struct {
+	oras.Target
+	failed atomic.Bool
+}
+
+func (f *failOnceTarget) Push(ctx context.Context, desc ocispec.Descriptor, r io.Reader) error {
+	if !f.failed.Swap(true) {
+		return errors.New("transient blob push failure")
+	}
+	return f.Target.Push(ctx, desc, r)
+}
+
+func TestPushRetriesTransientBlobPushFailure(t *testing.T) {
+	plat := spec.Platform{OS: "linux", Arch: "amd64"}
+	target := &failOnceTarget{Target: memory.New()}
+	if _, pushed, err := Push(context.Background(), target, "v1", plat, BytesBlob([]byte("x")), false); err != nil || !pushed {
+		t.Fatalf("Push after transient failure: pushed=%v err=%v", pushed, err)
+	}
+}
+
+func TestCommitFailsWhenCommitDoesNotLand(t *testing.T) {
+	plat := spec.Platform{OS: "linux", Arch: "amd64"}
+	seed := memory.New()
+	entry, pushed, err := Push(context.Background(), seed, "v1", plat, BytesBlob([]byte("x")), false)
+	if err != nil || !pushed {
+		t.Fatalf("seed push: %v", err)
+	}
+	target := swallowTagTarget{Target: memory.New()}
+	if _, err := Commit(context.Background(), target, "v1", []ocispec.Descriptor{entry}); err == nil {
+		t.Fatal("commit must fail when the tagged index cannot be resolved")
+	}
+}
+
+func countingBlob(data []byte) (Blob, *atomic.Int64) {
+	var opens atomic.Int64
+	b := BytesBlob(data)
+	inner := b.Open
+	b.Open = func() (io.ReadCloser, error) {
+		opens.Add(1)
+		return inner()
+	}
+	return b, &opens
+}
+
+func TestPushNoOpNeverOpensBlob(t *testing.T) {
+	ctx := context.Background()
+	plat := spec.Platform{OS: "linux", Arch: "amd64"}
+	target := memory.New()
+	payload := []byte("idempotent payload")
+	if _, pushed, err := Push(ctx, target, "v1", plat, BytesBlob(payload), false); err != nil || !pushed {
+		t.Fatalf("seed push: pushed=%v err=%v", pushed, err)
+	}
+
+	blob, opens := countingBlob(payload)
+	_, pushed, err := Push(ctx, target, "v1", plat, blob, false)
+	if err != nil {
+		t.Fatalf("second push: %v", err)
+	}
+	if pushed {
+		t.Fatal("second push of identical content must be a no-op")
+	}
+	if got := opens.Load(); got != 0 {
+		t.Fatalf("no-op push opened the blob %d times, want 0", got)
+	}
+}
+
+type failLayerOnceTarget struct {
+	oras.Target
+	failed atomic.Bool
+}
+
+func (f *failLayerOnceTarget) Push(ctx context.Context, desc ocispec.Descriptor, r io.Reader) error {
+	if desc.MediaType == MediaType && !f.failed.Swap(true) {
+		return errors.New("transient layer push failure")
+	}
+	return f.Target.Push(ctx, desc, r)
+}
+
+func TestPushRetryReopensBlob(t *testing.T) {
+	ctx := context.Background()
+	plat := spec.Platform{OS: "linux", Arch: "amd64"}
+	target := &failLayerOnceTarget{Target: memory.New()}
+	blob, opens := countingBlob([]byte("retry payload"))
+	if _, pushed, err := Push(ctx, target, "v1", plat, blob, false); err != nil || !pushed {
+		t.Fatalf("push after transient failure: pushed=%v err=%v", pushed, err)
+	}
+	if got := opens.Load(); got < 2 {
+		t.Fatalf("blob opened %d times, want at least 2 across retry attempts", got)
 	}
 }

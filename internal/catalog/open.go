@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/config"
 	"github.com/vi-dev/nem/internal/home"
 	"github.com/vi-dev/nem/internal/ocix"
@@ -20,7 +21,8 @@ func OpenConfigured(cfg *config.Config, h home.Home) (*Set, error) {
 		}
 		switch e.Type {
 		case "dir":
-			entries = append(entries, Entry{Name: e.Name, Catalog: NewDir(e.Path)})
+			entries = append(entries, Entry{Name: e.Name, Catalog: NewDir(e.Path),
+				Archives: archive.NewDir(e.Path)})
 		case "oci":
 			storePath, err := h.CatalogStore(e.Name)
 			if err != nil {
@@ -29,26 +31,31 @@ func OpenConfigured(cfg *config.Config, h home.Home) (*Set, error) {
 			src := NewLazyOCI(e.Name, func(ctx context.Context) (*ocix.Store, error) {
 				return ocix.OpenLocalStore(ctx, storePath)
 			})
-			entries = append(entries, Entry{Name: e.Name, Ref: e.Ref, Catalog: src})
+			entries = append(entries, Entry{Name: e.Name, Ref: e.Ref, Catalog: src,
+				Archives: archive.Remote(e.Ref)})
 		}
 	}
 	return NewSet(entries...), nil
 }
 
-func Open(ctx context.Context, cat string) (Catalog, error) {
+func Open(ctx context.Context, cat string) (Entry, error) {
 	info, err := os.Stat(cat)
 	switch {
 	case err == nil && info.IsDir():
-		return NewDir(cat), nil
+		return Entry{Name: cat, Catalog: NewDir(cat), Archives: archive.NewDir(cat)}, nil
 	case err == nil:
-		return NewFile(cat), nil
+		return Entry{Name: cat, Catalog: NewFile(cat), Archives: archive.NopStore}, nil
 	case !os.IsNotExist(err) || looksLikePath(cat):
-		return nil, err
+		return Entry{}, err
 	}
 	if err := ocix.WithTagOrDigest(cat); err != nil {
-		return nil, err
+		return Entry{}, err
 	}
-	return openRemote(ctx, cat)
+	src, err := openRemote(ctx, cat)
+	if err != nil {
+		return Entry{}, err
+	}
+	return Entry{Name: cat, Ref: cat, Catalog: src, Archives: archive.Remote(cat)}, nil
 }
 
 func looksLikePath(arg string) bool {

@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,10 +14,13 @@ import (
 	"sync/atomic"
 	"testing"
 
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content/memory"
 
-	"github.com/vi-dev/nem/internal/ocix"
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/spec"
+	"github.com/vi-dev/nem/internal/testx"
 )
 
 var testPlat = spec.Platform{OS: "linux", Arch: "amd64"}
@@ -39,11 +44,36 @@ func ociPkg(ociRef string) *spec.Package {
 	}
 }
 
-func withPullArchive(t *testing.T, fn func(ctx context.Context, catalogRef, name, tag string, plat spec.Platform, dir string) (string, error)) {
+type fakeStore struct {
+	target oras.ReadOnlyTarget
+	err    error
+}
+
+func (f fakeStore) Open(context.Context, string) (oras.ReadOnlyTarget, error) {
+	return f.target, f.err
+}
+
+type resolveErrorTarget struct{ err error }
+
+func (r resolveErrorTarget) Fetch(context.Context, ocispec.Descriptor) (io.ReadCloser, error) {
+	return nil, r.err
+}
+
+func (r resolveErrorTarget) Exists(context.Context, ocispec.Descriptor) (bool, error) {
+	return false, r.err
+}
+
+func (r resolveErrorTarget) Resolve(context.Context, string) (ocispec.Descriptor, error) {
+	return ocispec.Descriptor{}, r.err
+}
+
+func stagedStore(t *testing.T, name, tag string, plat spec.Platform, blob []byte) fakeStore {
 	t.Helper()
-	orig := pullArchive
-	pullArchive = fn
-	t.Cleanup(func() { pullArchive = orig })
+	mem := memory.New()
+	if _, _, err := archive.Push(context.Background(), mem, tag, plat, archive.BytesBlob(blob), false); err != nil {
+		t.Fatal(err)
+	}
+	return fakeStore{target: mem}
 }
 
 func hitCountingServer(t *testing.T, body []byte) (*httptest.Server, *atomic.Int64) {
@@ -64,20 +94,10 @@ func TestAcquireRegistryHitSkipsUpstreamButVerifiesSha256(t *testing.T) {
 	wrongBytes := []byte("wrong archive bytes from registry")
 	dir := t.TempDir()
 
-	withPullArchive(t, func(ctx context.Context, catalogRef, name, tag string, plat spec.Platform, dir2 string) (string, error) {
-		f, err := os.CreateTemp(dir2, "fake-archive-*.tmp")
-		if err != nil {
-			t.Fatalf("CreateTemp: %v", err)
-		}
-		if _, err := f.Write(wrongBytes); err != nil {
-			t.Fatalf("write fake archive: %v", err)
-		}
-		f.Close()
-		return f.Name(), nil
-	})
+	store := stagedStore(t, "go", "v1.2.3", testPlat, wrongBytes)
 
 	pkg := urlPkg(srv.URL, strings.Repeat("a", 64))
-	src := Source{CatalogRef: "ghcr.io/org/cat:v2"}
+	src := Source{Archives: []archive.Store{store}}
 
 	_, err := Acquire(context.Background(), pkg, "v1.2.3", testPlat, src, dir, nil)
 	if _, ok := errors.AsType[*ChecksumMismatchError](err); !ok {
@@ -88,18 +108,41 @@ func TestAcquireRegistryHitSkipsUpstreamButVerifiesSha256(t *testing.T) {
 	}
 }
 
-func TestAcquireArchiveNotFoundFallsBackToUpstream(t *testing.T) {
+func TestAcquirePrefersEarlierStore(t *testing.T) {
+	blob := []byte("layer-one")
+	sum := sha256.Sum256(blob)
+	wantSHA := hex.EncodeToString(sum[:])
+
+	first := stagedStore(t, "go", "v1.2.3", testPlat, blob)
+	second := fakeStore{err: fmt.Errorf("wrap: %w", archive.ErrNotFound)}
+
+	pkg := urlPkg("https://example.invalid/must-not-be-fetched", wantSHA)
+	src := Source{Archives: []archive.Store{first, second}}
+	dir := t.TempDir()
+
+	path, err := Acquire(context.Background(), pkg, "v1.2.3", testPlat, src, dir, nil)
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != string(blob) {
+		t.Errorf("bytes = %q, want %q", got, blob)
+	}
+}
+
+func TestAcquireFallsThroughNotFoundToUpstream(t *testing.T) {
 	body := []byte("upstream fallback bytes")
 	sum := sha256.Sum256(body)
 	wantSHA := hex.EncodeToString(sum[:])
-	srv, hits := hitCountingServer(t, body)
 
-	withPullArchive(t, func(ctx context.Context, catalogRef, name, tag string, plat spec.Platform, dir string) (string, error) {
-		return "", ocix.ErrArchiveNotFound
-	})
+	srv := testx.NewFileServer(t)
+	srv.Set("/pkg", body)
 
-	pkg := urlPkg(srv.URL, wantSHA)
-	src := Source{CatalogRef: "ghcr.io/org/cat:v2"}
+	src := Source{Archives: []archive.Store{fakeStore{err: archive.ErrNotFound}}}
+	pkg := urlPkg(srv.URL+"/pkg", wantSHA)
 	dir := t.TempDir()
 
 	path, err := Acquire(context.Background(), pkg, "v1.2.3", testPlat, src, dir, nil)
@@ -115,8 +158,30 @@ func TestAcquireArchiveNotFoundFallsBackToUpstream(t *testing.T) {
 	if string(got) != string(body) {
 		t.Errorf("downloaded bytes = %q, want %q", got, body)
 	}
-	if hits.Load() != 1 {
-		t.Errorf("upstream hit %d times, want 1", hits.Load())
+	if srv.Hits() != 1 {
+		t.Errorf("upstream hit %d times, want 1", srv.Hits())
+	}
+}
+
+func TestAcquireNonNotFoundOpenErrorAbortsWithoutFallback(t *testing.T) {
+	body := []byte("must never be fetched")
+	srv, hits := hitCountingServer(t, body)
+
+	openErr := errors.New("401 unauthorized")
+	src := Source{Archives: []archive.Store{fakeStore{err: openErr}}}
+
+	pkg := urlPkg(srv.URL, strings.Repeat("a", 64))
+	dir := t.TempDir()
+
+	_, err := Acquire(context.Background(), pkg, "v1.2.3", testPlat, src, dir, nil)
+	if err == nil {
+		t.Fatal("want error, got nil")
+	}
+	if !errors.Is(err, openErr) {
+		t.Errorf("want wrapped openErr, got %v", err)
+	}
+	if hits.Load() != 0 {
+		t.Errorf("upstream hit %d times, want 0 (non-not-found open error must not fall back)", hits.Load())
 	}
 }
 
@@ -124,13 +189,12 @@ func TestAcquireNonNotFoundPullErrorAbortsWithoutFallback(t *testing.T) {
 	body := []byte("must never be fetched")
 	srv, hits := hitCountingServer(t, body)
 
-	pullErr := errors.New("401 unauthorized")
-	withPullArchive(t, func(ctx context.Context, catalogRef, name, tag string, plat spec.Platform, dir string) (string, error) {
-		return "", pullErr
-	})
+	pullErr := errors.New("500 internal server error")
+	first := fakeStore{target: resolveErrorTarget{err: pullErr}}
+	second := fakeStore{err: errors.New("second store must not be tried after a non-not-found pull error")}
+	src := Source{Archives: []archive.Store{first, second}}
 
 	pkg := urlPkg(srv.URL, strings.Repeat("a", 64))
-	src := Source{CatalogRef: "ghcr.io/org/cat:v2"}
 	dir := t.TempDir()
 
 	_, err := Acquire(context.Background(), pkg, "v1.2.3", testPlat, src, dir, nil)
@@ -147,49 +211,32 @@ func TestAcquireNonNotFoundPullErrorAbortsWithoutFallback(t *testing.T) {
 
 func TestAcquireOCIArtifactPullSuccess(t *testing.T) {
 	dir := t.TempDir()
-	archivePath := dir + "/prewritten-archive"
-	if err := os.WriteFile(archivePath, []byte("archive bytes"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	var gotCatalogRef, gotName, gotTag string
-	withPullArchive(t, func(ctx context.Context, catalogRef, name, tag string, plat spec.Platform, dir string) (string, error) {
-		gotCatalogRef, gotName, gotTag = catalogRef, name, tag
-		return archivePath, nil
-	})
+	blob := []byte("archive bytes")
+	store := stagedStore(t, "go", "v1.2.3", testPlat, blob)
 
 	pkg := ociPkg(":{{.Version}}")
-	src := Source{CatalogRef: "ghcr.io/org/cat:v2"}
+	src := Source{Archives: []archive.Store{store}}
 
 	path, err := Acquire(context.Background(), pkg, "v1.2.3", testPlat, src, dir, nil)
 	if err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
-	if path != archivePath {
-		t.Errorf("path = %q, want %q", path, archivePath)
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
 	}
-	if gotCatalogRef != "ghcr.io/org/cat:v2" {
-		t.Errorf("catalogRef = %q", gotCatalogRef)
-	}
-	if gotName != "go" {
-		t.Errorf("name = %q", gotName)
-	}
-	if gotTag != "v1.2.3" {
-		t.Errorf("tag = %q, want %q", gotTag, "v1.2.3")
+	if string(got) != string(blob) {
+		t.Errorf("bytes = %q, want %q", got, blob)
 	}
 }
 
 func TestAcquireOCIArtifactPullNotFoundErrorsWithoutFallback(t *testing.T) {
-	withPullArchive(t, func(ctx context.Context, catalogRef, name, tag string, plat spec.Platform, dir string) (string, error) {
-		return "", ocix.ErrArchiveNotFound
-	})
-
 	pkg := ociPkg(":{{.Version}}")
-	src := Source{CatalogRef: "ghcr.io/org/cat:v2"}
+	src := Source{Archives: []archive.Store{fakeStore{err: archive.ErrNotFound}}}
 	dir := t.TempDir()
 
 	_, err := Acquire(context.Background(), pkg, "v1.2.3", testPlat, src, dir, nil)
-	if !errors.Is(err, ocix.ErrArchiveNotFound) {
+	if !errors.Is(err, archive.ErrNotFound) {
 		t.Fatalf("want ErrArchiveNotFound, got %v", err)
 	}
 }
@@ -200,13 +247,8 @@ func TestAcquireDirCatalogGoesStraightUpstream(t *testing.T) {
 	wantSHA := hex.EncodeToString(sum[:])
 	srv, hits := hitCountingServer(t, body)
 
-	withPullArchive(t, func(ctx context.Context, catalogRef, name, tag string, plat spec.Platform, dir string) (string, error) {
-		t.Fatal("pullArchive must not be called for a dir catalog")
-		return "", nil
-	})
-
 	pkg := urlPkg(srv.URL, wantSHA)
-	src := Source{CatalogRef: ""}
+	src := Source{}
 	dir := t.TempDir()
 
 	path, err := Acquire(context.Background(), pkg, "v1.2.3", testPlat, src, dir, nil)
@@ -236,20 +278,10 @@ func TestAcquireRegistrySuccessAcceptsWithoutUpstream(t *testing.T) {
 	wantSHA := hex.EncodeToString(sum[:])
 	dir := t.TempDir()
 
-	withPullArchive(t, func(ctx context.Context, catalogRef, name, tag string, plat spec.Platform, dir2 string) (string, error) {
-		f, err := os.CreateTemp(dir2, "fake-archive-*.tmp")
-		if err != nil {
-			t.Fatalf("CreateTemp: %v", err)
-		}
-		if _, err := f.Write(archiveBytes); err != nil {
-			t.Fatalf("write fake archive: %v", err)
-		}
-		f.Close()
-		return f.Name(), nil
-	})
+	store := stagedStore(t, "go", "v1.2.3", testPlat, archiveBytes)
 
 	pkg := urlPkg(srv.URL, wantSHA)
-	src := Source{CatalogRef: "ghcr.io/org/cat:v2"}
+	src := Source{Archives: []archive.Store{store}}
 
 	path, err := Acquire(context.Background(), pkg, "v1.2.3", testPlat, src, dir, nil)
 	if err != nil {
@@ -295,13 +327,10 @@ func TestAcquireAbsoluteOCIRefUsesRemoteByRef(t *testing.T) {
 		gotRef = ref
 		return archivePath, nil
 	}
-	withPullArchive(t, func(ctx context.Context, catalogRef, name, tag string, plat spec.Platform, dir string) (string, error) {
-		t.Fatal("pullArchive must not be called for an absolute oci ref")
-		return "", nil
-	})
 
 	pkg := ociPkg("ghcr.io/other/repo:{{.Version}}")
-	path, err := Acquire(context.Background(), pkg, "v1.2.3", testPlat, Source{}, dir, nil)
+	poisoned := Source{Archives: []archive.Store{fakeStore{err: errors.New("catalog archives must not be consulted for an absolute ref")}}}
+	path, err := Acquire(context.Background(), pkg, "v1.2.3", testPlat, poisoned, dir, nil)
 	if err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
@@ -315,10 +344,9 @@ func TestAcquireAbsoluteOCIRefUsesRemoteByRef(t *testing.T) {
 
 func TestAcquireOCIRefTemplateErrorPropagates(t *testing.T) {
 	pkg := ociPkg(":{{.Bogus}}")
-	src := Source{CatalogRef: "ghcr.io/org/cat:v2"}
 	dir := t.TempDir()
 
-	_, err := Acquire(context.Background(), pkg, "v1.2.3", testPlat, src, dir, nil)
+	_, err := Acquire(context.Background(), pkg, "v1.2.3", testPlat, Source{}, dir, nil)
 	if err == nil {
 		t.Fatal("want error for unknown template key")
 	}
@@ -335,9 +363,9 @@ func TestVerifyFileOpenErrorWraps(t *testing.T) {
 	}
 }
 
-func TestAcquireRelativeOCIRefWithoutCatalogErrors(t *testing.T) {
+func TestAcquireOCIRelativeRefWithoutStoresErrors(t *testing.T) {
 	pkg := ociPkg(":{{.Version}}")
-	src := Source{CatalogRef: ""}
+	src := Source{}
 	dir := t.TempDir()
 
 	_, err := Acquire(context.Background(), pkg, "v1.2.3", testPlat, src, dir, nil)
@@ -386,23 +414,20 @@ func TestVerifyFileMismatch(t *testing.T) {
 }
 
 func TestAcquireRelativeOCIRefPrefersLocalArchives(t *testing.T) {
-	s := ocix.NewArchiveStore(t.TempDir())
-	target, err := s.Open("tool")
+	s := archive.NewDir(t.TempDir())
+	target, err := s.OpenRW(context.Background(), "tool")
 	if err != nil {
 		t.Fatalf("store open: %v", err)
 	}
-	if _, _, err := ocix.PushArchive(context.Background(), target, "v1.2.3", testPlat, []byte("local bytes"), false); err != nil {
+	if _, _, err := archive.Push(context.Background(), target, "v1.2.3", testPlat, archive.BytesBlob([]byte("local bytes")), false); err != nil {
 		t.Fatalf("seed store: %v", err)
 	}
 
-	withPullArchive(t, func(context.Context, string, string, string, spec.Platform, string) (string, error) {
-		t.Fatal("catalog pull must not run on a local hit")
-		return "", nil
-	})
+	mustNotRun := fakeStore{err: errors.New("catalog pull must not run on a local hit")}
 
 	pkg := ociPkg(":{{.Version}}")
 	pkg.Name = "tool"
-	src := Source{LocalArchives: func(name string) (oras.ReadOnlyTarget, error) { return s.Open(name) }}
+	src := Source{Archives: []archive.Store{s, mustNotRun}}
 	path, err := Acquire(context.Background(), pkg, "v1.2.3", testPlat, src, t.TempDir(), nil)
 	if err != nil {
 		t.Fatalf("Acquire: %v", err)
@@ -414,24 +439,22 @@ func TestAcquireRelativeOCIRefPrefersLocalArchives(t *testing.T) {
 }
 
 func TestAcquireRelativeOCIRefLocalMissFallsBack(t *testing.T) {
-	s := ocix.NewArchiveStore(t.TempDir())
-	called := false
-	withPullArchive(t, func(_ context.Context, _, _, _ string, _ spec.Platform, dir string) (string, error) {
-		called = true
-		f, _ := os.CreateTemp(dir, "a-*.tmp")
-		f.Close()
-		return f.Name(), nil
-	})
+	s := archive.NewDir(t.TempDir())
+	blob := []byte("catalog bytes")
+	fallback := stagedStore(t, "tool", "v1.2.3", testPlat, blob)
+
 	pkg := ociPkg(":{{.Version}}")
 	pkg.Name = "tool"
-	src := Source{
-		CatalogRef:    "ghcr.io/org/cat:v2",
-		LocalArchives: func(name string) (oras.ReadOnlyTarget, error) { return s.Open(name) },
-	}
-	if _, err := Acquire(context.Background(), pkg, "v1.2.3", testPlat, src, t.TempDir(), nil); err != nil {
+	src := Source{Archives: []archive.Store{s, fallback}}
+	path, err := Acquire(context.Background(), pkg, "v1.2.3", testPlat, src, t.TempDir(), nil)
+	if err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
-	if !called {
-		t.Fatal("catalog pull must run after a local miss")
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != string(blob) {
+		t.Fatalf("fallback store must be used after a local miss: got %q, want %q", got, blob)
 	}
 }

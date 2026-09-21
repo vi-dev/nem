@@ -8,7 +8,7 @@ import (
 
 func TestWithRetryRetriesUpToLimitThenReturnsLastError(t *testing.T) {
 	var calls int
-	err := withRetry(context.Background(), func(context.Context) error {
+	err := WithRetry(context.Background(), func(context.Context) error {
 		calls++
 		return errors.New("boom")
 	})
@@ -22,7 +22,7 @@ func TestWithRetryRetriesUpToLimitThenReturnsLastError(t *testing.T) {
 
 func TestWithRetrySucceedsAfterTransientFailures(t *testing.T) {
 	var calls int
-	err := withRetry(context.Background(), func(context.Context) error {
+	err := WithRetry(context.Background(), func(context.Context) error {
 		calls++
 		if calls < retryAttempts {
 			return errors.New("transient")
@@ -41,7 +41,7 @@ func TestWithRetryDoesNotCallFnAgainOncePreCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	var calls int
-	err := withRetry(ctx, func(context.Context) error {
+	err := WithRetry(ctx, func(context.Context) error {
 		calls++
 		return errors.New("would be retried if this counted")
 	})

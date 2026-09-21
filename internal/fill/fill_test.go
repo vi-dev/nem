@@ -13,6 +13,7 @@ import (
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/ocix/ocixtest"
 	"github.com/vi-dev/nem/internal/publish/publishtest"
@@ -157,12 +158,12 @@ func TestRunHealsStaleArchive(t *testing.T) {
 	}
 
 	for _, plat := range spec.SupportedPlatforms {
-		got, err := ocix.ArchiveLayerDigest(context.Background(), s, "1.0.0", plat)
+		desc, err := archive.Resolve(context.Background(), s, "1.0.0", plat)
 		if err != nil {
 			t.Fatalf("resolve %s: %v", plat, err)
 		}
-		if got.Encoded() != testx.Sha256Hex(newPayload) {
-			t.Fatalf("%s digest = %s, want healed %s", plat, got.Encoded(), testx.Sha256Hex(newPayload))
+		if desc.Digest.Encoded() != testx.Sha256Hex(newPayload) {
+			t.Fatalf("%s digest = %s, want healed %s", plat, desc.Digest.Encoded(), testx.Sha256Hex(newPayload))
 		}
 	}
 }
@@ -221,12 +222,12 @@ func TestRunFillsMultiPlatformWithOneIndexCommit(t *testing.T) {
 	}
 
 	for _, plat := range spec.SupportedPlatforms {
-		got, err := ocix.ArchiveLayerDigest(context.Background(), counted, "1.0.0", plat)
+		desc, err := archive.Resolve(context.Background(), counted, "1.0.0", plat)
 		if err != nil {
 			t.Fatalf("resolve published archive for %s: %v", plat, err)
 		}
-		if got.Encoded() != testx.Sha256Hex(payload) {
-			t.Fatalf("%s digest = %s, want %s", plat, got.Encoded(), testx.Sha256Hex(payload))
+		if desc.Digest.Encoded() != testx.Sha256Hex(payload) {
+			t.Fatalf("%s digest = %s, want %s", plat, desc.Digest.Encoded(), testx.Sha256Hex(payload))
 		}
 	}
 }
@@ -278,7 +279,7 @@ func TestRunPartialBatchCommitsSuccessfulPlatforms(t *testing.T) {
 		t.Fatalf("go task failed=%v outcome=%q, want failed \"Failed go\"", failed, outcome)
 	}
 
-	plats, err := ocix.ArchivePlatforms(context.Background(), counted, "1.0.0")
+	plats, err := archive.ResolvePlatforms(context.Background(), counted, "1.0.0")
 	if err != nil {
 		t.Fatalf("ArchivePlatforms: %v", err)
 	}
@@ -310,7 +311,7 @@ func TestRunBatchCommitFailureCountsAsFailedNotFilled(t *testing.T) {
 		"go": urlPkg("go", "1.0.0", up.URL+"/go/{{.Version}}", testx.Sha256Hex(payload)),
 	})
 	wireCatalog(t, store, tag)
-	t.Cleanup(SetArchivesOpener(func(_, _ string) (oras.Target, error) {
+	t.Cleanup(archive.SetRepoOpener(func(string) (oras.Target, error) {
 		return &rejectIndexTagTarget{Target: memory.New()}, nil
 	}))
 
@@ -420,8 +421,9 @@ func TestRunWarnAndContinueSiblingCompletes(t *testing.T) {
 
 	healthyArchives := memory.New()
 	brokenErr := errors.New("archives unreachable")
-	t.Cleanup(SetArchivesOpener(func(_, name string) (oras.Target, error) {
-		if name == "broken" {
+	base := archiveRefBase(t)
+	t.Cleanup(archive.SetRepoOpener(func(ref string) (oras.Target, error) {
+		if name, _ := strings.CutPrefix(ref, base); name == "broken" {
 			return nil, brokenErr
 		}
 		return healthyArchives, nil
@@ -464,7 +466,7 @@ func TestRunPublishFailureIsWarnedAndCounted(t *testing.T) {
 		"go": urlPkg("go", "1.0.0", up.URL+"/go/{{.Version}}", testx.Sha256Hex(payload)),
 	})
 	wireCatalog(t, store, tag)
-	t.Cleanup(SetArchivesOpener(func(_, _ string) (oras.Target, error) {
+	t.Cleanup(archive.SetRepoOpener(func(string) (oras.Target, error) {
 		return &testx.RejectPushTarget{Target: memory.New()}, nil
 	}))
 
@@ -493,7 +495,7 @@ func TestRunMidPublishCancellationIsNotWarnedOrCounted(t *testing.T) {
 	wireCatalog(t, store, tag)
 
 	baseCtx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(SetArchivesOpener(func(_, _ string) (oras.Target, error) {
+	t.Cleanup(archive.SetRepoOpener(func(string) (oras.Target, error) {
 		return &testx.CancelOnPushTarget{Target: memory.New(), Cancel: cancel}, nil
 	}))
 

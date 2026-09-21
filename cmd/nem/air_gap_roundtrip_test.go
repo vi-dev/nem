@@ -15,7 +15,7 @@ import (
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
-	"github.com/vi-dev/nem/internal/fetch"
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/fill"
 	"github.com/vi-dev/nem/internal/mirror"
 	"github.com/vi-dev/nem/internal/ocix"
@@ -90,7 +90,15 @@ func TestAirGappedCatalogRoundTrip(t *testing.T) {
 	t.Cleanup(fill.SetCatalogOpener(func(string) (oras.ReadOnlyTarget, string, error) {
 		return srcCatalog, "v2", nil
 	}))
-	t.Cleanup(fill.SetArchivesOpener(func(_, name string) (oras.Target, error) {
+	fillSrcBase, err := archive.RefPrefix("example.com/cat:v2")
+	if err != nil {
+		t.Fatalf("archive.Ref: %v", err)
+	}
+	t.Cleanup(archive.SetRepoOpener(func(ref string) (oras.Target, error) {
+		name, ok := strings.CutPrefix(ref, fillSrcBase)
+		if !ok {
+			return nil, fmt.Errorf("unexpected archives ref %s", ref)
+		}
 		return srcArchives.open(name), nil
 	}))
 	t.Cleanup(fill.SetHTTPClient(up.Client()))
@@ -115,11 +123,22 @@ func TestAirGappedCatalogRoundTrip(t *testing.T) {
 	t.Cleanup(mirror.SetDstCatalogOpener(func(string) (oras.Target, string, error) {
 		return dstCatalog, "v2", nil
 	}))
-	t.Cleanup(mirror.SetSrcArchivesOpener(func(_, name string) (oras.ReadOnlyTarget, error) {
-		return srcArchives.open(name), nil
-	}))
-	t.Cleanup(mirror.SetDstArchivesOpener(func(_, name string) (oras.Target, error) {
-		return dstArchives.open(name), nil
+	mirrorSrcBase, err := archive.RefPrefix("example.com/cat:v2")
+	if err != nil {
+		t.Fatalf("archive.Ref: %v", err)
+	}
+	mirrorDstBase, err := archive.RefPrefix("internal.example.com/cat:v2")
+	if err != nil {
+		t.Fatalf("archive.Ref: %v", err)
+	}
+	t.Cleanup(archive.SetRepoOpener(func(ref string) (oras.Target, error) {
+		if name, ok := strings.CutPrefix(ref, mirrorSrcBase); ok {
+			return srcArchives.open(name), nil
+		}
+		if name, ok := strings.CutPrefix(ref, mirrorDstBase); ok {
+			return dstArchives.open(name), nil
+		}
+		return nil, fmt.Errorf("unexpected archives ref %s", ref)
 	}))
 
 	_, errb, err = runNem(t, connectedNemHome, "catalog", "mirror", "example.com/cat:v2", "internal.example.com/cat:v2")
@@ -174,8 +193,9 @@ func TestAirGappedCatalogRoundTrip(t *testing.T) {
 		t.Fatalf("catalog update: %v\n%s", err, errb)
 	}
 
-	t.Cleanup(fetch.SetPullArchive(func(ctx context.Context, catalogRef, name, tag string, plat spec.Platform, dir string) (string, error) {
-		return ocix.PullArchiveFrom(ctx, dstArchives.open(name), tag, plat, dir)
+	t.Cleanup(archive.SetRepoOpener(func(ref string) (oras.Target, error) {
+		name := ref[strings.LastIndex(ref, "/")+1:]
+		return dstArchives.open(name), nil
 	}))
 
 	out, errb, err := runNem(t, consumerNemHome, "use", "air:tool@v1.0.0")

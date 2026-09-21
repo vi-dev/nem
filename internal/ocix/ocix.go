@@ -8,8 +8,6 @@ import (
 const (
 	MediaTypePkg = "application/vnd.nem.pkg.v2+yaml"
 
-	MediaTypeArchive = "application/vnd.nem.archive.v2"
-
 	AnnotationSchemaVersion = "org.vi-dev.nem.catalog.schemaVersion"
 
 	SchemaVersion    = "2"
@@ -27,8 +25,6 @@ const (
 )
 
 var ErrNotSynced = errors.New("catalog store not synced")
-
-var ErrArchiveNotFound = errors.New("archive not found in registry")
 
 type PkgNotInIndexError struct{ Name string }
 

@@ -13,6 +13,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"oras.land/oras-go/v2"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/home"
 	"github.com/vi-dev/nem/internal/netx"
 	"github.com/vi-dev/nem/internal/ocix"
@@ -44,21 +45,12 @@ func (s Summary) String() string {
 		verb, s.Packages, s.Filled, s.Healed, s.Present, s.NotFillable)
 }
 
-var (
-	openCatalog  = ocix.RemoteCatalog
-	openArchives = ocix.RemoteArchivesRW
-)
+var openCatalog = ocix.RemoteCatalog
 
 func SetCatalogOpener(f func(ref string) (oras.ReadOnlyTarget, string, error)) (restore func()) {
 	prev := openCatalog
 	openCatalog = f
 	return func() { openCatalog = prev }
-}
-
-func SetArchivesOpener(f func(catalogRef, name string) (oras.Target, error)) (restore func()) {
-	prev := openArchives
-	openArchives = f
-	return func() { openArchives = prev }
 }
 
 var httpClient = netx.Client()
@@ -95,6 +87,7 @@ func Run(ctx context.Context, h home.Home, opts Options) (Summary, error) {
 
 	summary := Summary{Packages: len(pkgs), DryRun: opts.DryRun}
 	var agg aggregator
+	archives := archive.Remote(opts.CatalogRef)
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(min(runtime.NumCPU(), 8))
@@ -103,7 +96,7 @@ func Run(ctx context.Context, h home.Home, opts Options) (Summary, error) {
 			if gctx.Err() != nil {
 				return nil
 			}
-			fillPackage(gctx, h, opts, nm, store, &agg)
+			fillPackage(gctx, h, opts, nm, store, archives, &agg)
 			return nil
 		})
 	}

@@ -3,12 +3,12 @@ package install
 import (
 	"os"
 
-	"github.com/vi-dev/nem/internal/archive"
+	extractpkg "github.com/vi-dev/nem/internal/extract"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
 func extract(artifactPath string, root *os.Root, strip int, singleName string) error {
-	_, err := archive.Extract(artifactPath, root, archive.Options{Strip: strip, SingleName: singleName})
+	_, err := extractpkg.Extract(artifactPath, root, extractpkg.Options{Strip: strip, SingleName: singleName})
 	return err
 }
 
@@ -18,7 +18,7 @@ func singleFileName(pkg *spec.Package, version string, plat spec.Platform) strin
 		if err != nil {
 			return ""
 		}
-		return archive.SingleNameFromRef(name)
+		return extractpkg.SingleNameFromRef(name)
 	}
 	if pkg.Artifact.URL == "" {
 		return ""
@@ -27,5 +27,5 @@ func singleFileName(pkg *spec.Package, version string, plat spec.Platform) strin
 	if err != nil {
 		return ""
 	}
-	return archive.SingleNameFromRef(raw)
+	return extractpkg.SingleNameFromRef(raw)
 }

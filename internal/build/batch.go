@@ -3,13 +3,14 @@ package build
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/home"
-	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
@@ -19,7 +20,7 @@ type BatchOptions struct {
 	Push   bool
 	Force  bool
 
-	TestFor func(pkg *spec.Package, store *ocix.ArchiveStore) func(ctx context.Context, p *spec.Package, version, artifactPath string) error
+	TestFor func(pkg *spec.Package, store *archive.Dir) func(ctx context.Context, p *spec.Package, version, artifactPath string) error
 }
 
 type SummaryRow struct {
@@ -105,14 +106,14 @@ func Verdict(rows []SummaryRow) (built, pushed, failed, skipped, pushFailed int,
 	return built, pushed, failed, skipped, pushFailed, err
 }
 
-func batchStore(h home.Home, opts BatchOptions) (*ocix.ArchiveStore, func(), error) {
+func batchStore(h home.Home, opts BatchOptions) (*archive.Dir, func(), error) {
 	if opts.Push && opts.Target.IsDir() {
 		return opts.Target.Overlay, func() {}, nil
 	}
 	return newBatchStore(h)
 }
 
-func newBatchStore(h home.Home) (*ocix.ArchiveStore, func(), error) {
+func newBatchStore(h home.Home) (*archive.Dir, func(), error) {
 	if err := os.MkdirAll(h.Tmp(), 0o755); err != nil {
 		return nil, nil, fmt.Errorf("create tmp dir: %w", err)
 	}
@@ -120,7 +121,7 @@ func newBatchStore(h home.Home) (*ocix.ArchiveStore, func(), error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("create batch archive store: %w", err)
 	}
-	return ocix.NewArchiveStore(root), func() { os.RemoveAll(root) }, nil
+	return archive.NewDir(root), func() { os.RemoveAll(root) }, nil
 }
 
 func currentPlatformEntries(plan Plan) []PlanEntry {
@@ -142,7 +143,7 @@ func firstExhaustedNeed(needs []string, live map[string]int) (string, bool) {
 	return "", false
 }
 
-func pushBuiltEntry(ctx context.Context, store *ocix.ArchiveStore, name, version string, opts BatchOptions) SummaryRow {
+func pushBuiltEntry(ctx context.Context, store *archive.Dir, name, version string, opts BatchOptions) SummaryRow {
 	rep := report.FromContext(ctx)
 	row := SummaryRow{Name: name, Version: version, Result: "built", Detail: "-"}
 	if !opts.Push {
@@ -169,31 +170,28 @@ func pushBuiltEntry(ctx context.Context, store *ocix.ArchiveStore, name, version
 	return row
 }
 
-func pushFromStore(ctx context.Context, store *ocix.ArchiveStore, name, version string, opts BatchOptions) (bool, error) {
-	staged, err := store.Open(name)
+func pushFromStore(ctx context.Context, store *archive.Dir, name, version string, opts BatchOptions) (bool, error) {
+	staged, err := store.Open(ctx, name)
 	if err != nil {
 		return false, err
 	}
 	plat := spec.Current()
-	archive, err := ocix.ReadArchive(ctx, staged, version, plat)
+	desc, err := archive.Resolve(ctx, staged, version, plat)
 	if err != nil {
 		return false, err
 	}
-	remote, err := archivesOpener(opts.Target.Ref, name)
+	remote, err := opts.Target.Store.OpenRW(ctx, name)
 	if err != nil {
 		return false, err
 	}
-	entry, pushed, err := ocix.PushArchive(ctx, remote, version, plat, archive, opts.Force)
+	blob := archive.Blob{Digest: desc.Digest, Size: desc.Size, Open: func() (io.ReadCloser, error) {
+		return archive.Fetch(ctx, staged, version, plat)
+	}}
+	_, pushed, err := archive.Push(ctx, remote, version, plat, blob, opts.Force)
 	if err != nil {
 		return false, err
 	}
-	if !pushed {
-		return false, nil
-	}
-	if err := ocix.VerifyArchiveCommitted(ctx, remote, version, plat, entry); err != nil {
-		return false, err
-	}
-	return true, nil
+	return pushed, nil
 }
 
 func firstLine(s string) string {

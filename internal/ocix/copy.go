@@ -82,7 +82,7 @@ func (f *observedTarget) Fetch(ctx context.Context, desc ocispec.Descriptor) (io
 
 func CopyTag(ctx context.Context, src oras.ReadOnlyTarget, dst oras.Target, tag string) (ocispec.Descriptor, error) {
 	var result ocispec.Descriptor
-	err := withRetry(ctx, func(ctx context.Context) error {
+	err := WithRetry(ctx, func(ctx context.Context) error {
 		copied, err := CopyIndexClosure(ctx, src, tag, dst, tag)
 		if err != nil {
 			return fmt.Errorf("copy tag %s: %w", tag, err)

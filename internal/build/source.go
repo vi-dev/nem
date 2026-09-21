@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/vi-dev/nem/internal/archive"
+	"github.com/vi-dev/nem/internal/extract"
 	"github.com/vi-dev/nem/internal/fetch"
 	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
@@ -35,7 +35,7 @@ func unpackSource(archivePath, destDir, singleName string) (root string, err err
 	}
 	defer dirRoot.Close()
 
-	res, err := archive.Extract(archivePath, dirRoot, archive.Options{SingleName: singleName})
+	res, err := extract.Extract(archivePath, dirRoot, extract.Options{SingleName: singleName})
 	if err != nil {
 		return "", err
 	}
@@ -50,5 +50,5 @@ func sourceSingleName(pkg *spec.Package, version string) string {
 	if err != nil {
 		return ""
 	}
-	return archive.SingleNameFromRef(url)
+	return extract.SingleNameFromRef(url)
 }

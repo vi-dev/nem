@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/config"
 	"github.com/vi-dev/nem/internal/fetch"
@@ -69,11 +70,15 @@ func runSync(cmd *cobra.Command, global bool) error {
 			}
 		}
 
+		src := fetch.Source{}
+		if hit.Entry.Archives != nil {
+			src.Archives = []archive.Store{hit.Entry.Archives}
+		}
 		jobs = append(jobs, install.Job{
 			Pkg:     hit.Pkg,
 			Version: entry.Version,
 			Catalog: entry.Catalog,
-			Source:  fetch.Source{CatalogRef: hit.Entry.Ref},
+			Source:  src,
 		})
 	}
 

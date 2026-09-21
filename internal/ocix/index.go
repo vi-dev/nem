@@ -1,6 +1,7 @@
 package ocix
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -92,7 +93,7 @@ func PackageManifest(pkgBytes []byte) ([]byte, ocispec.Descriptor, error) {
 
 func PushPackageManifest(ctx context.Context, target oras.Target, pkgBytes []byte) (ocispec.Descriptor, error) {
 	layer := content.NewDescriptorFromBytes(MediaTypePkg, pkgBytes)
-	if err := pushBlobIfAbsent(ctx, target, layer, pkgBytes); err != nil {
+	if err := PushBlobIfAbsent(ctx, target, layer, bytes.NewReader(pkgBytes)); err != nil {
 		return ocispec.Descriptor{}, err
 	}
 	if err := PushEmptyConfig(ctx, target); err != nil {
@@ -102,7 +103,7 @@ func PushPackageManifest(ctx context.Context, target oras.Target, pkgBytes []byt
 	if err != nil {
 		return ocispec.Descriptor{}, err
 	}
-	if err := pushBlobIfAbsent(ctx, target, manDesc, manBytes); err != nil {
+	if err := PushBlobIfAbsent(ctx, target, manDesc, bytes.NewReader(manBytes)); err != nil {
 		return ocispec.Descriptor{}, err
 	}
 	return manDesc, nil

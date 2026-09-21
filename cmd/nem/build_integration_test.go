@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/home"
-	"github.com/vi-dev/nem/internal/ocix"
 )
 
 func assertNoLeakedTestAlias(t *testing.T, nemHome string) {
@@ -34,7 +34,7 @@ func assertNoLeakedTestAlias(t *testing.T, nemHome string) {
 
 func assertStaged(t *testing.T, catalogDir, name, version string) {
 	t.Helper()
-	if !ocix.NewArchiveStore(catalogDir).HasTag(name, version) {
+	if !archive.NewDir(catalogDir).HasVersion(name, version) {
 		t.Fatalf("%s@%s is not staged under %s", name, version,
 			filepath.Join(catalogDir, "archives", name))
 	}
@@ -42,7 +42,7 @@ func assertStaged(t *testing.T, catalogDir, name, version string) {
 
 func assertNothingStaged(t *testing.T, catalogDir, name string) {
 	t.Helper()
-	if ocix.NewArchiveStore(catalogDir).Has(name) {
+	if archive.NewDir(catalogDir).Has(name) {
 		t.Fatalf("a failed build staged archives under %s",
 			filepath.Join(catalogDir, "archives", name))
 	}
