@@ -265,7 +265,7 @@ func apply(ctx context.Context, path string, data []byte, pkg *spec.Package, tar
 			return nil, "", fmt.Errorf("edited manifest is not newest-first at %s", check.Versions[i].Version)
 		}
 	}
-	if err := catalog.NewFile(path).UpdateManifest(check.Name, edited); err != nil {
+	if err := catalog.NewFile(path).UpdateManifest(ctx, check.Name, edited); err != nil {
 		return nil, "", err
 	}
 	return added, check.Versions[0].Version, nil

@@ -254,6 +254,8 @@ var _ catalog.Catalog = (*fakeCatalogSource)(nil)
 
 func (f *fakeCatalogSource) PackageNames(context.Context) ([]string, error) { return f.names, nil }
 
+func (f *fakeCatalogSource) ReadManifest(context.Context, string) ([]byte, error) { return nil, nil }
+
 func (f *fakeCatalogSource) Summaries(context.Context) ([]catalog.Summary, error) {
 	out := make([]catalog.Summary, 0, len(f.names))
 	for _, n := range f.names {

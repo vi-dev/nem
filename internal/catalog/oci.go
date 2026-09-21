@@ -111,6 +111,21 @@ func (s *OCI) Package(ctx context.Context, name string) (*spec.Package, string, 
 	return pkg, dig, nil
 }
 
+func (s *OCI) ReadManifest(ctx context.Context, name string) ([]byte, error) {
+	store, err := s.openStore(ctx)
+	if err != nil {
+		return nil, err
+	}
+	data, _, err := store.PkgBytes(ctx, name)
+	if _, ok := errors.AsType[*ocix.PkgNotInIndexError](err); ok {
+		return nil, &PackageNotFoundError{Name: name}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
 func (s *OCI) Versions(ctx context.Context, name string) ([]string, error) {
 	pkg, _, err := s.Package(ctx, name)
 	if err != nil {

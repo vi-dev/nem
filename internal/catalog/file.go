@@ -75,7 +75,7 @@ func (f *File) Summaries(_ context.Context) ([]Summary, error) {
 	return []Summary{{Name: pkg.Name, Description: pkg.Description, Latest: latest}}, nil
 }
 
-func (f *File) ReadManifest(name string) ([]byte, error) {
+func (f *File) ReadManifest(_ context.Context, name string) ([]byte, error) {
 	data, err := os.ReadFile(f.path)
 	if os.IsNotExist(err) {
 		return nil, &PackageNotFoundError{Name: name}
@@ -83,10 +83,17 @@ func (f *File) ReadManifest(name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	pkg, err := spec.Parse(data)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: %w", f.path, err)
+	}
+	if pkg.Name != name {
+		return nil, &PackageNotFoundError{Name: name}
+	}
 	return data, nil
 }
 
-func (f *File) CreateManifest(name string, data []byte) error {
+func (f *File) CreateManifest(_ context.Context, name string, data []byte) error {
 	if err := validateManifest(name, data); err != nil {
 		return err
 	}
@@ -98,7 +105,7 @@ func (f *File) CreateManifest(name string, data []byte) error {
 	return fsx.WriteAtomic(f.path, data, 0o644)
 }
 
-func (f *File) UpdateManifest(name string, data []byte) error {
+func (f *File) UpdateManifest(_ context.Context, name string, data []byte) error {
 	info, err := os.Stat(f.path)
 	if os.IsNotExist(err) {
 		return &PackageNotFoundError{Name: name}

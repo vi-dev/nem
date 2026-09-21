@@ -42,7 +42,7 @@ func Lint(ctx context.Context, target string, packages ...string) ([]Finding, er
 				continue
 			}
 			seen[name] = true
-			data, err := d.ReadManifest(name)
+			data, err := d.ReadManifest(ctx, name)
 			if err != nil {
 				return nil, err
 			}
@@ -64,7 +64,7 @@ func Lint(ctx context.Context, target string, packages ...string) ([]Finding, er
 	}
 	var findings []Finding
 	for _, name := range names {
-		data, err := d.ReadManifest(name)
+		data, err := d.ReadManifest(ctx, name)
 		if err != nil {
 			findings = append(findings, Finding{Pkg: name, Msg: err.Error()})
 			continue

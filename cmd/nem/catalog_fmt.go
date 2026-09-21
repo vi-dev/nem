@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 
@@ -28,7 +29,7 @@ func newCatalogFmtCmd() *cobra.Command {
 				return err
 			}
 			if !info.IsDir() {
-				return fmtFile(target, packages)
+				return fmtFile(cmd.Context(), target, packages)
 			}
 
 			d := catalog.NewDir(target)
@@ -47,7 +48,7 @@ func newCatalogFmtCmd() *cobra.Command {
 					continue
 				}
 				seen[name] = true
-				data, err := d.ReadManifest(name)
+				data, err := d.ReadManifest(cmd.Context(), name)
 				if err != nil {
 					return err
 				}
@@ -58,7 +59,7 @@ func newCatalogFmtCmd() *cobra.Command {
 				if bytes.Equal(data, formatted) {
 					continue
 				}
-				if err := d.UpdateManifest(name, formatted); err != nil {
+				if err := d.UpdateManifest(cmd.Context(), name, formatted); err != nil {
 					return err
 				}
 				console.Success("Formatted %s", name)
@@ -72,7 +73,7 @@ func newCatalogFmtCmd() *cobra.Command {
 	return cmd
 }
 
-func fmtFile(path string, packages []string) error {
+func fmtFile(ctx context.Context, path string, packages []string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -93,7 +94,7 @@ func fmtFile(path string, packages []string) error {
 	if bytes.Equal(data, formatted) {
 		return nil
 	}
-	if err := catalog.NewFile(path).UpdateManifest(declared, formatted); err != nil {
+	if err := catalog.NewFile(path).UpdateManifest(ctx, declared, formatted); err != nil {
 		return err
 	}
 	display := declared

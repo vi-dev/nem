@@ -92,7 +92,8 @@ func (s stubCatalog) Versions(context.Context, string) ([]string, error) { retur
 func (s stubCatalog) Package(context.Context, string) (*spec.Package, string, error) {
 	return nil, "", s.err
 }
-func (s stubCatalog) PackageNames(context.Context) ([]string, error) { return nil, s.err }
+func (s stubCatalog) PackageNames(context.Context) ([]string, error)       { return nil, s.err }
+func (s stubCatalog) ReadManifest(context.Context, string) ([]byte, error) { return nil, s.err }
 
 func TestSetSummariesDedupAndUnsynced(t *testing.T) {
 	a := writeDirCatalog(t, "shared", "only-a")

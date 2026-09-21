@@ -106,7 +106,7 @@ func (d *Dir) Summaries(ctx context.Context) ([]Summary, error) {
 	return summaries, nil
 }
 
-func (d *Dir) ReadManifest(name string) ([]byte, error) {
+func (d *Dir) ReadManifest(_ context.Context, name string) ([]byte, error) {
 	if !spec.NameRE.MatchString(name) {
 		return nil, fmt.Errorf("invalid package name %q", name)
 	}
@@ -120,7 +120,7 @@ func (d *Dir) ReadManifest(name string) ([]byte, error) {
 	return data, nil
 }
 
-func (d *Dir) CreateManifest(name string, data []byte) error {
+func (d *Dir) CreateManifest(_ context.Context, name string, data []byte) error {
 	if !spec.NameRE.MatchString(name) {
 		return fmt.Errorf("invalid package name %q", name)
 	}
@@ -139,7 +139,7 @@ func (d *Dir) CreateManifest(name string, data []byte) error {
 	return fsx.WriteAtomic(path, data, 0o644)
 }
 
-func (d *Dir) UpdateManifest(name string, data []byte) error {
+func (d *Dir) UpdateManifest(_ context.Context, name string, data []byte) error {
 	if !spec.NameRE.MatchString(name) {
 		return fmt.Errorf("invalid package name %q", name)
 	}
