@@ -47,7 +47,7 @@ func newCatalogTestCmd() *cobra.Command {
 					return err
 				}
 			}
-			sels, err := build.Select(ctx, target, sources, selectors, false)
+			sels, err := build.Select(ctx, target, selectors)
 			if err != nil {
 				return err
 			}

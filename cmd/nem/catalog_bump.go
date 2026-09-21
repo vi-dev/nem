@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/vi-dev/nem/internal/bump"
-	"github.com/vi-dev/nem/internal/spec"
 )
 
 func newCatalogBumpCmd() *cobra.Command {
@@ -23,13 +22,9 @@ func newCatalogBumpCmd() *cobra.Command {
 			if len(args) == 1 {
 				cat = args[0]
 			}
-			refs := make([]spec.Ref, 0, len(packages))
-			for _, p := range packages {
-				ref, err := spec.ParseRef(p)
-				if err != nil {
-					return err
-				}
-				refs = append(refs, ref)
+			refs, err := parsePackageRefs(packages)
+			if err != nil {
+				return err
 			}
 			res, err := bump.Run(cmd.Context(), cat, bump.Options{Packages: refs, Backfill: backfill, DryRun: dryRun})
 			if err != nil {

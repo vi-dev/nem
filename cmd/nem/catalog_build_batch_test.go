@@ -191,18 +191,17 @@ func TestCatalogBuildWithDepsComposesWithMissing(t *testing.T) {
 		t.Fatalf("--with-deps must compose with --missing: %v\nstderr: %s", err, errb)
 	}
 	if row := tableRow(out, 1, "bapp"); row == nil ||
-		!strings.Contains(strings.Join(row, " "), "forced") {
-		t.Fatalf("bapp row = %v, want the forced selection to win over the missing scan:\n%s", row, out)
+		!strings.Contains(strings.Join(row, " "), "missing archive") {
+		t.Fatalf("bapp row = %v, want the root's missing archive selected:\n%s", row, out)
 	}
 	if row := tableRow(out, 1, "blib"); row == nil ||
 		!strings.Contains(strings.Join(row, " "), "dep of bapp") {
 		t.Fatalf("blib row = %v, want the dep selection to win over the missing scan:\n%s", row, out)
 	}
-	if row := tableRow(out, 1, "bsolo"); row == nil ||
-		!strings.Contains(strings.Join(row, " "), "missing archive") {
-		t.Fatalf("bsolo row = %v, want the missing scan to still contribute:\n%s", row, out)
+	if tableRow(out, 1, "bsolo") != nil {
+		t.Fatalf("--missing must scan only the selected roots, not unrelated packages:\n%s", out)
 	}
-	if !strings.Contains(errb, "Checked 3 oci packages:") {
+	if !strings.Contains(errb, "Checked 1 oci packages:") {
 		t.Fatalf("the missing scan must narrate what it checked:\n%s", errb)
 	}
 }
@@ -290,14 +289,6 @@ func TestCatalogBuildBatchResolvesDepsFromTheTargetCatalog(t *testing.T) {
 	}
 }
 
-func TestCatalogBuildRejectsAnEmptySelectionBeforeOpeningTheTarget(t *testing.T) {
-	nemHome := t.TempDir()
-	_, _, err := runNem(t, nemHome, "catalog", "build", "ghcr.io/org/cat:v2")
-	if err == nil || !strings.Contains(err.Error(), "select packages with --missing or --package") {
-		t.Fatalf("err = %v, want the no-selection rejection", err)
-	}
-}
-
 func TestCatalogBuildFlagValidation(t *testing.T) {
 	nemHome := t.TempDir()
 	dir := writeLintFixture(t, map[string]string{
@@ -305,12 +296,6 @@ func TestCatalogBuildFlagValidation(t *testing.T) {
 	})
 	recipe := filepath.Join(dir, "pkgs", "blib", "pkg.yaml")
 
-	t.Run("no selection", func(t *testing.T) {
-		_, _, err := runNem(t, nemHome, "catalog", "build", dir)
-		if err == nil || !strings.Contains(err.Error(), "select packages with --missing or --package") {
-			t.Fatalf("err = %v, want the no-selection rejection", err)
-		}
-	})
 	t.Run("with-deps without a root", func(t *testing.T) {
 		_, _, err := runNem(t, nemHome, "catalog", "build", dir, "--with-deps", "--missing")
 		if err == nil || !strings.Contains(err.Error(), "--with-deps needs at least one --package") {
@@ -319,7 +304,7 @@ func TestCatalogBuildFlagValidation(t *testing.T) {
 	})
 	t.Run("two positionals", func(t *testing.T) {
 		_, _, err := runNem(t, nemHome, "catalog", "build", dir, dir, "--missing")
-		if err == nil || !strings.Contains(err.Error(), "accepts 1 arg") {
+		if err == nil || !strings.Contains(err.Error(), "accepts at most 1 arg") {
 			t.Fatalf("err = %v, want exactly one catalog positional", err)
 		}
 	})
@@ -350,4 +335,58 @@ func TestCatalogBuildFlagValidation(t *testing.T) {
 			t.Fatalf("the hint must redirect a recipe path to a catalog ref:\n%s", errb)
 		}
 	})
+}
+
+func TestCatalogBuildDefaultsToEveryBuildablePackage(t *testing.T) {
+	nemHome := t.TempDir()
+	dir := writeLintFixture(t, map[string]string{
+		"blib": batchRecipe("blib", "https://example.com/blib.tar.gz", "", "make"),
+		"zdup": twoVersionRecipe("zdup"),
+		"go":   lintFixtureGoPkg,
+	})
+	t.Chdir(dir)
+
+	out, errb, err := runNem(t, nemHome, "catalog", "build", "--dry-run")
+	if err != nil {
+		t.Fatalf("catalog build --dry-run: %v\nstderr: %s", err, errb)
+	}
+	for name, version := range map[string]string{"blib": "v1.0.0", "zdup": "2.0.0"} {
+		row := tableRow(out, 1, name)
+		if row == nil || row[2] != version || !strings.Contains(strings.Join(row, " "), "latest") {
+			t.Fatalf("%s row = %v, want its latest version selected as latest:\n%s", name, row, out)
+		}
+	}
+	if got := planVersions(out, "zdup"); len(got) != 1 {
+		t.Fatalf("zdup plan versions = %v, want only the latest:\n%s", got, out)
+	}
+	if tableRow(out, 1, "go") != nil {
+		t.Fatalf("a prebuilt package must not be planned:\n%s", out)
+	}
+}
+
+func TestCatalogBuildMissingScopesToSelectedPackages(t *testing.T) {
+	nemHome := t.TempDir()
+	dir := writeLintFixture(t, map[string]string{
+		"blib": batchRecipe("blib", "https://example.com/blib.tar.gz", "", "make"),
+		"zdup": twoVersionRecipe("zdup"),
+	})
+
+	out, errb, err := runNem(t, nemHome, "catalog", "build", dir, "--missing", "--package", "zdup", "--dry-run")
+	if err != nil {
+		t.Fatalf("catalog build --missing --package: %v\nstderr: %s", err, errb)
+	}
+	if got := planVersions(out, "zdup"); len(got) != 2 {
+		t.Fatalf("zdup plan versions = %v, want every incomplete version:\n%s", got, out)
+	}
+	if tableRow(out, 1, "blib") != nil {
+		t.Fatalf("--missing must scan only the selected packages:\n%s", out)
+	}
+
+	out, errb, err = runNem(t, nemHome, "catalog", "build", dir, "--missing", "--package", "zdup@1.0.0", "--dry-run")
+	if err != nil {
+		t.Fatalf("catalog build --missing --package name@version: %v\nstderr: %s", err, errb)
+	}
+	if got := planVersions(out, "zdup"); len(got) != 1 || got[0] != "1.0.0" {
+		t.Fatalf("zdup plan versions = %v, want just the pinned version:\n%s", got, out)
+	}
 }

@@ -3,39 +3,38 @@ package build
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/resolve"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
-func Select(ctx context.Context, t *Target, configured *catalog.Set, packages []string, withDeps bool) ([]Selection, error) {
-	var sels []Selection
-	names := map[string]bool{}
-	add := func(s Selection) {
-		names[s.Pkg.Name] = true
-		sels = append(sels, s)
-	}
-
-	roots := make([]*spec.Package, 0, len(packages))
+func Select(ctx context.Context, t *Target, packages []string) ([]Selection, error) {
+	sels := make([]Selection, 0, len(packages))
 	for _, p := range packages {
 		pkg, version, err := selectPackage(ctx, t, p)
 		if err != nil {
 			return nil, err
 		}
-
-		add(Selection{Pkg: pkg, Version: version, Reason: "forced", Platforms: pkg.SupportedBy()})
-		roots = append(roots, pkg)
+		sels = append(sels, Selection{Pkg: pkg, Version: version, Reason: "forced", Platforms: pkg.SupportedBy()})
 	}
+	return sels, nil
+}
 
-	if !withDeps {
-		return sels, nil
+func SelectDeps(ctx context.Context, t *Target, configured *catalog.Set, roots []Selection) ([]Selection, error) {
+	names := map[string]bool{}
+	var pkgs []*spec.Package
+	for _, r := range roots {
+		if names[r.Pkg.Name] {
+			continue
+		}
+		names[r.Pkg.Name] = true
+		pkgs = append(pkgs, r.Pkg)
 	}
 	catalogs := configured.Prepend(t.Entry)
-	for _, root := range roots {
+	var sels []Selection
+	for _, root := range pkgs {
 		deps, err := selectDependencies(ctx, t, root, catalogs)
 		if err != nil {
 			return nil, err
@@ -44,18 +43,38 @@ func Select(ctx context.Context, t *Target, configured *catalog.Set, packages []
 			if names[d.Pkg.Name] {
 				continue
 			}
-			add(d)
+			names[d.Pkg.Name] = true
+			sels = append(sels, d)
 		}
 	}
 	return sels, nil
 }
 
-func selectPackage(ctx context.Context, t *Target, selector string) (*spec.Package, string, error) {
-	name, version, pinned := strings.Cut(selector, "@")
-	if name == "" || (pinned && version == "") {
-		return nil, "", fmt.Errorf("invalid package selection %q: want name or name@version", selector)
+func SelectAll(ctx context.Context, t *Target) ([]Selection, error) {
+	pkgs, err := t.Packages(ctx)
+	if err != nil {
+		return nil, err
 	}
-	pkg, _, err := t.Entry.Catalog.Package(ctx, name)
+	var sels []Selection
+	for _, pkg := range pkgs {
+		if !buildable(pkg) || len(pkg.Versions) == 0 {
+			continue
+		}
+		sels = append(sels, Selection{Pkg: pkg, Version: pkg.Versions[0].Version, Reason: "latest", Platforms: pkg.SupportedBy()})
+	}
+	return sels, nil
+}
+
+func buildable(pkg *spec.Package) bool {
+	return pkg.Artifact.OCI != "" && pkg.Build != nil
+}
+
+func selectPackage(ctx context.Context, t *Target, selector string) (*spec.Package, string, error) {
+	ref, err := spec.ParseRef(selector)
+	if err != nil {
+		return nil, "", err
+	}
+	pkg, _, err := t.Entry.Catalog.Package(ctx, ref.Name)
 	if err != nil {
 		if nf, ok := errors.AsType[*catalog.PackageNotFoundError](err); ok {
 			nf.Catalogs = []string{t.Ref}
@@ -63,7 +82,8 @@ func selectPackage(ctx context.Context, t *Target, selector string) (*spec.Packa
 		}
 		return nil, "", err
 	}
-	if !pinned {
+	version := ref.Version
+	if version == "" {
 		version = pkg.Versions[0].Version
 	}
 	return pkg, version, nil
@@ -130,28 +150,60 @@ func Merge(a, b []Selection) []Selection {
 
 type MissingStats struct{ Checked, Skipped int }
 
-func SelectMissing(ctx context.Context, t *Target) ([]Selection, MissingStats, error) {
-	pkgs, err := t.Packages(ctx)
-	if err != nil {
-		return nil, MissingStats{}, err
+func SelectMissing(ctx context.Context, t *Target, scope []spec.Ref) ([]Selection, MissingStats, error) {
+	type candidate struct {
+		pkg      *spec.Package
+		versions []string
+	}
+	var candidates []candidate
+	var stats MissingStats
+	if len(scope) == 0 {
+		pkgs, err := t.Packages(ctx)
+		if err != nil {
+			return nil, MissingStats{}, err
+		}
+		for _, pkg := range pkgs {
+			if !buildable(pkg) {
+				stats.Skipped++
+				continue
+			}
+			candidates = append(candidates, candidate{pkg: pkg, versions: versionsOf(pkg)})
+		}
+	}
+	for _, ref := range scope {
+		pkg, _, err := t.Entry.Catalog.Package(ctx, ref.Name)
+		if err != nil {
+			if nf, ok := errors.AsType[*catalog.PackageNotFoundError](err); ok {
+				nf.Catalogs = []string{t.Ref}
+				return nil, MissingStats{}, nf
+			}
+			return nil, MissingStats{}, err
+		}
+		if !buildable(pkg) {
+			stats.Skipped++
+			continue
+		}
+		versions := versionsOf(pkg)
+		if ref.Version != "" {
+			if !pkg.HasEqualVersion(ref.Version) {
+				return nil, MissingStats{}, &catalog.VersionNotFoundError{Name: ref.Name, Version: ref.Version, Catalog: t.Ref}
+			}
+			versions = []string{ref.Version}
+		}
+		candidates = append(candidates, candidate{pkg: pkg, versions: versions})
 	}
 
-	var stats MissingStats
+	seen := map[string]bool{}
 	var sels []Selection
-	for _, pkg := range pkgs {
-		if pkg.Artifact.OCI == "" {
-			stats.Skipped++
-			continue
-		}
-		if pkg.Build == nil {
-			stats.Skipped++
-			continue
-		}
+	for _, c := range candidates {
 		stats.Checked++
-
-		plats := pkg.SupportedBy()
-		for _, v := range pkg.Versions {
-			have, err := t.ArchivePlatforms(ctx, pkg.Name, v.Version)
+		plats := c.pkg.SupportedBy()
+		for _, v := range c.versions {
+			if seen[c.pkg.Name+"@"+v] {
+				continue
+			}
+			seen[c.pkg.Name+"@"+v] = true
+			have, err := t.ArchivePlatforms(ctx, c.pkg.Name, v)
 			if err != nil {
 				return nil, MissingStats{}, err
 			}
@@ -162,14 +214,17 @@ func SelectMissing(ctx context.Context, t *Target) ([]Selection, MissingStats, e
 				}
 			}
 			if len(absent) > 0 {
-				sels = append(sels, Selection{
-					Pkg:       pkg,
-					Version:   v.Version,
-					Reason:    "missing archive",
-					Platforms: absent,
-				})
+				sels = append(sels, Selection{Pkg: c.pkg, Version: v, Reason: "missing archive", Platforms: absent})
 			}
 		}
 	}
 	return sels, stats, nil
+}
+
+func versionsOf(pkg *spec.Package) []string {
+	out := make([]string, len(pkg.Versions))
+	for i, v := range pkg.Versions {
+		out[i] = v.Version
+	}
+	return out
 }

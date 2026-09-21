@@ -14,6 +14,7 @@ import (
 	"github.com/vi-dev/nem/internal/fsx"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/report"
+	"github.com/vi-dev/nem/internal/spec"
 )
 
 var syncCatalog = func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) (string, error) {
@@ -328,4 +329,16 @@ func looksLikeDir(ref string) bool {
 	}
 	info, err := os.Stat(ref)
 	return err == nil && info.IsDir()
+}
+
+func parsePackageRefs(packages []string) ([]spec.Ref, error) {
+	refs := make([]spec.Ref, 0, len(packages))
+	for _, p := range packages {
+		ref, err := spec.ParseRef(p)
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, ref)
+	}
+	return refs, nil
 }

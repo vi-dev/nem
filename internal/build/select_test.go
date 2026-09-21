@@ -137,7 +137,7 @@ func TestSelectMissingDirOverlay(t *testing.T) {
 		t.Fatalf("OpenTarget: %v", err)
 	}
 
-	sels, stats, err := build.SelectMissing(ctx, tgt)
+	sels, stats, err := build.SelectMissing(ctx, tgt, nil)
 	if err != nil {
 		t.Fatalf("SelectMissing: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestSelectMissingDirOverlay(t *testing.T) {
 		t.Fatalf("PushArchive: %v", err)
 	}
 
-	sels, stats, err = build.SelectMissing(ctx, tgt)
+	sels, stats, err = build.SelectMissing(ctx, tgt, nil)
 	if err != nil {
 		t.Fatalf("SelectMissing (after staging): %v", err)
 	}
@@ -198,7 +198,7 @@ func TestSelectMissingSkipsNoBuild(t *testing.T) {
 		t.Fatalf("OpenTarget: %v", err)
 	}
 
-	sels, stats, err := build.SelectMissing(ctx, tgt)
+	sels, stats, err := build.SelectMissing(ctx, tgt, nil)
 	if err != nil {
 		t.Fatalf("SelectMissing: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestSelectMissingDirRejectsInvalidSpec(t *testing.T) {
 		t.Fatalf("OpenTarget: %v", err)
 	}
 
-	_, _, err = build.SelectMissing(ctx, tgt)
+	_, _, err = build.SelectMissing(ctx, tgt, nil)
 	if err == nil {
 		t.Fatal("want an error: the dir scan must route through the validating Load path")
 	}
@@ -303,7 +303,7 @@ func TestSelectMissingOCI(t *testing.T) {
 		return store, nil
 	}))
 
-	sels, stats, err := build.SelectMissing(ctx, tgt)
+	sels, stats, err := build.SelectMissing(ctx, tgt, nil)
 	if err != nil {
 		t.Fatalf("SelectMissing: %v", err)
 	}
@@ -326,7 +326,7 @@ func TestSelectMissingOCI(t *testing.T) {
 		t.Fatalf("PushArchive: %v", err)
 	}
 
-	sels, _, err = build.SelectMissing(ctx, tgt)
+	sels, _, err = build.SelectMissing(ctx, tgt, nil)
 	if err != nil {
 		t.Fatalf("SelectMissing (after push): %v", err)
 	}
@@ -381,7 +381,7 @@ func TestSelectMissingAbortsOnRegistryFailure(t *testing.T) {
 		return erroringArchives{err: errors.New("registry unreachable")}, nil
 	}))
 
-	_, _, err := build.SelectMissing(ctx, tgt)
+	_, _, err := build.SelectMissing(ctx, tgt, nil)
 	if err == nil {
 		t.Fatal("a non-not-found registry failure must abort the scan")
 	}
@@ -432,7 +432,7 @@ func assertReasons(t *testing.T, sels []build.Selection, want map[string]string)
 func TestSelectBarePackageNameTakesTheLatestVersion(t *testing.T) {
 	tgt := selectDirTarget(t)
 
-	sels, err := build.Select(context.Background(), tgt, catalog.NewSet(), []string{"tgttool"}, false)
+	sels, err := build.Select(context.Background(), tgt, []string{"tgttool"})
 	if err != nil {
 		t.Fatalf("Select: %v", err)
 	}
@@ -455,14 +455,12 @@ func TestSelectRejectsMalformedSelectors(t *testing.T) {
 		selector string
 		want     string
 	}{
-		{"empty version", "tgttool@",
-			`invalid package selection "tgttool@": want name or name@version`},
-		{"empty name", "@v1.0.0",
-			`invalid package selection "@v1.0.0": want name or name@version`},
+		{"empty version", "tgttool@", `invalid ref "tgttool@": empty version after @`},
+		{"empty name", "@v1.0.0", `invalid package name ""`},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := build.Select(context.Background(), tgt, catalog.NewSet(), []string{tc.selector}, false)
+			_, err := build.Select(context.Background(), tgt, []string{tc.selector})
 			if err == nil || err.Error() != tc.want {
 				t.Fatalf("err = %v, want %q", err, tc.want)
 			}
@@ -473,7 +471,7 @@ func TestSelectRejectsMalformedSelectors(t *testing.T) {
 func TestSelectNamesTheCatalogForAnUnknownPackage(t *testing.T) {
 	tgt := selectDirTarget(t)
 
-	_, err := build.Select(context.Background(), tgt, catalog.NewSet(), []string{"ghost@v1.0.0"}, false)
+	_, err := build.Select(context.Background(), tgt, []string{"ghost@v1.0.0"})
 	if err == nil {
 		t.Fatal("an unknown package must be rejected")
 	}
@@ -489,11 +487,11 @@ func TestMergeKeepsForcedSelectionsOverTheMissingScan(t *testing.T) {
 	ctx := context.Background()
 	tgt := selectDirTarget(t)
 
-	sels, err := build.Select(ctx, tgt, catalog.NewSet(), []string{"tgttool@v2.0.0"}, false)
+	sels, err := build.Select(ctx, tgt, []string{"tgttool@v2.0.0"})
 	if err != nil {
 		t.Fatalf("Select: %v", err)
 	}
-	missing, _, err := build.SelectMissing(ctx, tgt)
+	missing, _, err := build.SelectMissing(ctx, tgt, nil)
 	if err != nil {
 		t.Fatalf("SelectMissing: %v", err)
 	}
@@ -507,10 +505,7 @@ func TestMergeKeepsForcedSelectionsOverTheMissingScan(t *testing.T) {
 func TestSelectWithDepsSkipsPrebuiltAndBuildLessDeps(t *testing.T) {
 	tgt := selectDirTarget(t)
 
-	sels, err := build.Select(context.Background(), tgt, catalog.NewSet(), []string{"apptool@v1.0.0"}, true)
-	if err != nil {
-		t.Fatalf("Select: %v", err)
-	}
+	sels := selectWithDeps(t, tgt, "apptool@v1.0.0")
 	assertReasons(t, sels, map[string]string{
 		"apptool@v1.0.0": "forced",
 		"tgttool@v2.0.0": "dep of apptool",
@@ -529,22 +524,15 @@ func TestSelectWithDepsSkipsDepsTheTargetHolds(t *testing.T) {
 		t.Fatalf("PushArchive: %v", err)
 	}
 
-	sels, err := build.Select(ctx, tgt, catalog.NewSet(), []string{"apptool@v1.0.0"}, true)
-	if err != nil {
-		t.Fatalf("Select: %v", err)
-	}
-	assertReasons(t, sels, map[string]string{"apptool@v1.0.0": "forced"})
+	assertReasons(t, selectWithDeps(t, tgt, "apptool@v1.0.0"), map[string]string{"apptool@v1.0.0": "forced"})
 }
 
 func TestSelectWithDepsComposesWithTheMissingScan(t *testing.T) {
 	ctx := context.Background()
 	tgt := selectDirTarget(t)
 
-	sels, err := build.Select(ctx, tgt, catalog.NewSet(), []string{"apptool@v1.0.0"}, true)
-	if err != nil {
-		t.Fatalf("Select: %v", err)
-	}
-	missing, stats, err := build.SelectMissing(ctx, tgt)
+	sels := selectWithDeps(t, tgt, "apptool@v1.0.0")
+	missing, stats, err := build.SelectMissing(ctx, tgt, nil)
 	if err != nil {
 		t.Fatalf("SelectMissing: %v", err)
 	}
@@ -557,4 +545,54 @@ func TestSelectWithDepsComposesWithTheMissingScan(t *testing.T) {
 		"tgttool@v2.0.0": "dep of apptool",
 		"tgttool@v1.0.0": "missing archive",
 	})
+}
+
+func selectWithDeps(t *testing.T, tgt *build.Target, packages ...string) []build.Selection {
+	t.Helper()
+	ctx := context.Background()
+	roots, err := build.Select(ctx, tgt, packages)
+	if err != nil {
+		t.Fatalf("Select: %v", err)
+	}
+	deps, err := build.SelectDeps(ctx, tgt, catalog.NewSet(), roots)
+	if err != nil {
+		t.Fatalf("SelectDeps: %v", err)
+	}
+	return build.Merge(roots, deps)
+}
+
+func TestSelectAllTakesTheLatestOfEveryBuildablePackage(t *testing.T) {
+	tgt := selectDirTarget(t)
+
+	sels, err := build.SelectAll(context.Background(), tgt)
+	if err != nil {
+		t.Fatalf("SelectAll: %v", err)
+	}
+	assertReasons(t, sels, map[string]string{
+		"apptool@v1.0.0": "latest",
+		"tgttool@v2.0.0": "latest",
+	})
+}
+
+func TestSelectMissingScopedToPackages(t *testing.T) {
+	ctx := context.Background()
+	tgt := selectDirTarget(t)
+
+	sels, stats, err := build.SelectMissing(ctx, tgt, []spec.Ref{{Name: "tgttool", Version: "v1.0.0"}, {Name: "pretool"}})
+	if err != nil {
+		t.Fatalf("SelectMissing: %v", err)
+	}
+	if stats.Checked != 1 || stats.Skipped != 1 {
+		t.Fatalf("stats = %+v, want the prebuilt package skipped and tgttool checked", stats)
+	}
+	assertReasons(t, sels, map[string]string{"tgttool@v1.0.0": "missing archive"})
+
+	_, _, err = build.SelectMissing(ctx, tgt, []spec.Ref{{Name: "tgttool", Version: "v9.9.9"}})
+	if _, ok := errors.AsType[*catalog.VersionNotFoundError](err); !ok {
+		t.Fatalf("err = %v, want VersionNotFoundError for a version the manifest lacks", err)
+	}
+	_, _, err = build.SelectMissing(ctx, tgt, []spec.Ref{{Name: "ghost"}})
+	if _, ok := errors.AsType[*catalog.PackageNotFoundError](err); !ok {
+		t.Fatalf("err = %v, want PackageNotFoundError for an unknown package", err)
+	}
 }

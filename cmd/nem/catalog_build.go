@@ -31,18 +31,27 @@ type buildInput struct {
 func newCatalogBuildCmd() *cobra.Command {
 	var in buildInput
 	cmd := &cobra.Command{
-		Use:   "build <catalog>",
+		Use:   "build [catalog]",
 		Short: "Build a catalog's compile-from-source packages on the host platform",
 		Long: "Build and (optionally) push compile-from-source packages on the host platform.\n" +
 			"The catalog supplies the package manifests and, with --push, receives the archives.",
-		Args: cobra.ExactArgs(1),
+		Args: cobra.MaximumNArgs(1),
+		ValidArgsFunction: firstArgOnly(func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+			return nil, cobra.ShellCompDirectiveFilterDirs
+		}),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCatalogBuild(cmd, args[0], in)
+			cat := "."
+			if len(args) == 1 {
+				cat = args[0]
+			}
+			return runCatalogBuild(cmd, cat, in)
 		},
 	}
 	cmd.Flags().StringArrayVar(&in.packages, "package", nil,
-		"build name@version package (repeatable; omitted version means latest)")
-	cmd.Flags().BoolVar(&in.missing, "missing", false, "build every package whose archive is missing")
+		"build name[@version] (repeatable; omitted version means latest; default: every buildable package)")
+	_ = cmd.RegisterFlagCompletionFunc("package", completeCatalogDirPackages)
+	cmd.Flags().BoolVar(&in.missing, "missing", false,
+		"select every version and platform of the selected packages whose archive is missing")
 	cmd.Flags().BoolVar(&in.withDeps, "with-deps", false,
 		"also build every package's dependency whose archive is missing")
 	cmd.Flags().BoolVar(&in.push, "push", false, "publish built archives into the catalog")
@@ -51,21 +60,18 @@ func newCatalogBuildCmd() *cobra.Command {
 	return cmd
 }
 
-func runCatalogBuild(cmd *cobra.Command, ref string, in buildInput) error {
-	if !in.missing && len(in.packages) == 0 {
-		return errors.New("select packages with --missing or --package")
-	}
+func runCatalogBuild(cmd *cobra.Command, cat string, in buildInput) error {
 	if in.withDeps && len(in.packages) == 0 {
 		return errors.New("--with-deps needs at least one --package")
 	}
 
 	ctx := cmd.Context()
-	target, err := build.OpenTarget(ctx, ref)
+	target, err := build.OpenTarget(ctx, cat)
 	if err != nil {
 		return err
 	}
 	if target.File {
-		return errors.New("catalog build takes a catalog directory or OCI ref, not a recipe path")
+		return errors.New("catalog build takes a catalog directory or OCI ref, not a pkg.yaml")
 	}
 
 	cfg, err := config.OpenConfig(nemHome)
@@ -77,18 +83,37 @@ func runCatalogBuild(cmd *cobra.Command, ref string, in buildInput) error {
 		return err
 	}
 
-	sels, err := build.Select(ctx, target, configured, in.packages, in.withDeps)
+	roots, err := build.Select(ctx, target, in.packages)
 	if err != nil {
 		return err
 	}
-	if in.missing {
-		missing, stats, err := build.SelectMissing(ctx, target)
+	var sels []build.Selection
+	switch {
+	case in.missing:
+		refs, err := parsePackageRefs(in.packages)
+		if err != nil {
+			return err
+		}
+		missing, stats, err := build.SelectMissing(ctx, target, refs)
 		if err != nil {
 			return err
 		}
 		console.Info("Checked %d oci packages: %d incomplete versions, %d prebuilt skipped",
 			stats.Checked, len(missing), stats.Skipped)
-		sels = build.Merge(sels, missing)
+		sels = missing
+	case len(roots) > 0:
+		sels = roots
+	default:
+		if sels, err = build.SelectAll(ctx, target); err != nil {
+			return err
+		}
+	}
+	if in.withDeps {
+		deps, err := build.SelectDeps(ctx, target, configured, roots)
+		if err != nil {
+			return err
+		}
+		sels = build.Merge(sels, deps)
 	}
 	plan, err := build.ComputePlan(sels)
 	if err != nil {

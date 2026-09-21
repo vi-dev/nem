@@ -43,10 +43,6 @@ func hintFor(err error) string {
 	if _, ok := errors.AsType[*build.CycleError](err); ok {
 		return "Break the dependency cycle or build the packages separately"
 	}
-	if recipeRefGivenAsCatalog(err.Error()) {
-		return "catalog build takes a catalog directory or OCI ref, not a recipe path: " +
-			"`nem catalog build . --package <name>@<version>`"
-	}
 	if strings.Contains(err.Error(), "relative oci ref requires an oci catalog") {
 		return "Source-built archives are not servable from a plain checkout; deps built in this batch are, " +
 			"and published ones need an OCI catalog (nem catalog add ... ghcr.io/...)"
@@ -62,18 +58,4 @@ func hintFor(err error) string {
 		return "Check your network connection or proxy settings"
 	}
 	return ""
-}
-
-func recipeRefGivenAsCatalog(msg string) bool {
-	for _, prefix := range []string{`parse oci ref "`, `oci ref "`} {
-		_, rest, found := strings.Cut(msg, prefix)
-		if !found {
-			continue
-		}
-		ref, _, ok := strings.Cut(rest, `"`)
-		if ok && (strings.HasSuffix(ref, ".yaml") || strings.HasSuffix(ref, ".yml")) {
-			return true
-		}
-	}
-	return false
 }
