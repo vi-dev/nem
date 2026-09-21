@@ -29,7 +29,7 @@ func PublishCatalog(t testing.TB, target oras.Target, ref string, pkgs map[strin
 
 	restore := publish.SetTargetOpener(func(context.Context, string) (oras.Target, error) { return target, nil })
 	defer restore()
-	if err := publish.Publish(context.Background(), dir, ref, publish.Options{}); err != nil {
+	if _, err := publish.Publish(context.Background(), dir, ref, publish.Options{}); err != nil {
 		t.Fatalf("publish test catalog to %s: %v", ref, err)
 	}
 }

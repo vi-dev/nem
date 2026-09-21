@@ -10,7 +10,7 @@ type Manifest struct {
 	Pkg, Path string
 }
 
-func Manifests(dir string) ([]Manifest, error) {
+func manifests(dir string) ([]Manifest, error) {
 	pkgsDir := filepath.Join(dir, "pkgs")
 	entries, err := os.ReadDir(pkgsDir)
 	if err != nil {
@@ -34,7 +34,7 @@ func ManifestPaths(target string) ([]string, error) {
 	if !info.IsDir() {
 		return []string{target}, nil
 	}
-	manifests, err := Manifests(target)
+	manifests, err := manifests(target)
 	if err != nil {
 		return nil, err
 	}

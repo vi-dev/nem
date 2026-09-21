@@ -3,9 +3,7 @@ package publish
 import (
 	"context"
 	"fmt"
-	"os"
 	"runtime"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -13,6 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"oras.land/oras-go/v2"
 
+	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
@@ -46,53 +45,55 @@ type pkgEntry struct {
 	Version     string
 }
 
-func Publish(ctx context.Context, dir, ref string, opts Options) error {
-	r := report.FromContext(ctx)
+type Package struct {
+	Name    string
+	Version string
+	Pushed  bool
+}
 
+type Result struct {
+	Tags      []string
+	Packages  []Package
+	Pushed    int
+	Unchanged int
+}
+
+func Publish(ctx context.Context, cat, ref string, opts Options) (*Result, error) {
 	if err := ocix.WithoutTagOrDigest(ref); err != nil {
-		return err
+		return nil, err
 	}
 
-	findings, err := Lint(ctx, dir)
+	entries, err := enumerate(ctx, cat)
 	if err != nil {
-		return err
-	}
-	if len(findings) > 0 {
-		return lintError(findings)
+		return nil, err
 	}
 
-	entries, err := enumerate(dir)
-	if err != nil {
-		return err
+	res := &Result{Tags: effectiveTags(opts.Tags, nowFunc()), Packages: make([]Package, 0, len(entries))}
+	for _, e := range entries {
+		res.Packages = append(res.Packages, Package{Name: e.Name, Version: e.Version})
 	}
-
-	tags := effectiveTags(opts.Tags, nowFunc())
-
 	if opts.DryRun {
-		reportPlan(r, ref, entries, tags)
-		return nil
+		return res, nil
 	}
 
 	target, err := openTarget(ctx, ref)
 	if err != nil {
-		return fmt.Errorf("open %s: %w", ref, err)
+		return nil, fmt.Errorf("open %s: %w", ref, err)
 	}
 	if err := ocix.PushEmptyConfig(ctx, target); err != nil {
-		return fmt.Errorf("push empty config: %w", err)
+		return nil, fmt.Errorf("push empty config: %w", err)
 	}
 
-	idxEntries, pushed, skipped, err := pushPackages(ctx, target, entries, opts.Force)
+	idxEntries, err := pushPackages(ctx, target, entries, opts.Force, res)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	idxBytes, idxDesc := ocix.AssembleCatalogIndex(idxEntries)
-	if err := ocix.PushBlobAndTag(ctx, target, idxBytes, idxDesc, tags); err != nil {
-		return fmt.Errorf("push catalog index: %w", err)
+	if err := ocix.PushBlobAndTag(ctx, target, idxBytes, idxDesc, res.Tags); err != nil {
+		return nil, fmt.Errorf("push catalog index: %w", err)
 	}
-
-	r.Info("Published %s: %d pushed, %d unchanged, tags %s", ref, pushed, skipped, strings.Join(tags, ", "))
-	return nil
+	return res, nil
 }
 
 func effectiveTags(optTags []string, now time.Time) []string {
@@ -104,68 +105,43 @@ func effectiveTags(optTags []string, now time.Time) []string {
 	return append(append([]string(nil), base...), release)
 }
 
-func lintError(findings []Finding) error {
-	msgs := make([]string, len(findings))
-	for i, f := range findings {
-		msgs[i] = f.String()
-	}
-	return fmt.Errorf("catalog lint failed:\n%s", strings.Join(msgs, "\n"))
-}
-
-func reportPlan(r report.Reporter, ref string, entries []pkgEntry, tags []string) {
-	r.Info("Dry run: publish %s (%d packages)", ref, len(entries))
-	for _, e := range entries {
-		r.Info("  %s %s", e.Name, e.Version)
-	}
-	r.Info("Tags: %s", strings.Join(tags, ", "))
-}
-
-func enumerate(dir string) ([]pkgEntry, error) {
-	info, err := os.Stat(dir)
-	if err != nil {
-		return nil, fmt.Errorf("stat %s: %w", dir, err)
-	}
-	if !info.IsDir() {
-		e, err := readEntry(dir)
-		if err != nil {
-			return nil, err
-		}
-		return []pkgEntry{e}, nil
-	}
-
-	manifests, err := Manifests(dir)
+func enumerate(ctx context.Context, cat string) ([]pkgEntry, error) {
+	entry, err := catalog.Open(ctx, cat)
 	if err != nil {
 		return nil, err
 	}
-
-	var out []pkgEntry
-	for _, m := range manifests {
-		e, err := readEntry(m.Path)
+	switch entry.Catalog.(type) {
+	case *catalog.Dir, *catalog.File:
+	default:
+		return nil, fmt.Errorf("%s: publish reads a local catalog directory or pkg.yaml", cat)
+	}
+	names, err := entry.Catalog.PackageNames(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(names) == 0 {
+		return nil, fmt.Errorf("no package manifests under %s", cat)
+	}
+	out := make([]pkgEntry, 0, len(names))
+	for _, name := range names {
+		data, err := entry.Catalog.ReadManifest(ctx, name)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, e)
+		pkg, err := spec.Parse(data)
+		if err != nil {
+			return nil, fmt.Errorf("parse %s: %w", name, err)
+		}
+		var version string
+		if len(pkg.Versions) > 0 {
+			version = pkg.Versions[0].Version
+		}
+		out = append(out, pkgEntry{Bytes: data, Name: pkg.Name, Description: pkg.Description, Version: version})
 	}
 	return out, nil
 }
 
-func readEntry(path string) (pkgEntry, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return pkgEntry{}, fmt.Errorf("read %s: %w", path, err)
-	}
-	pkg, err := spec.Parse(data)
-	if err != nil {
-		return pkgEntry{}, fmt.Errorf("parse %s: %w", path, err)
-	}
-	var version string
-	if len(pkg.Versions) > 0 {
-		version = pkg.Versions[0].Version
-	}
-	return pkgEntry{Bytes: data, Name: pkg.Name, Description: pkg.Description, Version: version}, nil
-}
-
-func pushPackages(ctx context.Context, target oras.Target, entries []pkgEntry, force bool) ([]ocix.CatalogIndexEntry, int, int, error) {
+func pushPackages(ctx context.Context, target oras.Target, entries []pkgEntry, force bool, res *Result) ([]ocix.CatalogIndexEntry, error) {
 	idxEntries := make([]ocix.CatalogIndexEntry, len(entries))
 	var pushed, skipped atomic.Int64
 
@@ -182,6 +158,7 @@ func pushPackages(ctx context.Context, target oras.Target, entries []pkgEntry, f
 				return err
 			}
 			idxEntries[i] = entry
+			res.Packages[i].Pushed = wasPushed
 			if wasPushed {
 				pushed.Add(1)
 			} else {
@@ -191,9 +168,11 @@ func pushPackages(ctx context.Context, target oras.Target, entries []pkgEntry, f
 		})
 	}
 	if err := g.Wait(); err != nil {
-		return nil, 0, 0, err
+		return nil, err
 	}
-	return idxEntries, int(pushed.Load()), int(skipped.Load()), nil
+	res.Pushed = int(pushed.Load())
+	res.Unchanged = int(skipped.Load())
+	return idxEntries, nil
 }
 
 func pushOne(ctx context.Context, target oras.Target, e pkgEntry, force bool) (ocix.CatalogIndexEntry, bool, error) {
