@@ -23,19 +23,6 @@ type Summary struct {
 	Packages int
 	Copied   int
 	Failed   int
-	DryRun   bool
-}
-
-func (s Summary) String() string {
-	verb := "Mirrored"
-	if s.DryRun {
-		verb = "Would mirror"
-	}
-	if s.Failed > 0 {
-		return fmt.Sprintf("%s %d packages, %d tag(s), %d tag(s) failed",
-			verb, s.Packages, s.Copied, s.Failed)
-	}
-	return fmt.Sprintf("%s %d packages, %d tag(s)", verb, s.Packages, s.Copied)
 }
 
 var (
@@ -72,7 +59,7 @@ func Run(ctx context.Context, opts Options) (Summary, error) {
 	}
 
 	pkgs := store.Packages()
-	summary := Summary{Packages: len(pkgs), DryRun: opts.DryRun}
+	summary := Summary{Packages: len(pkgs)}
 	var agg aggregator
 
 	srcArchives := archive.Remote(opts.SrcRef)
@@ -118,7 +105,12 @@ func syncCatalog(ctx context.Context, opts Options) (*ocix.Store, error) {
 }
 
 func pullCatalog(ctx context.Context, srcRef string) (*ocix.Store, error) {
-	labels := report.TaskLabels{Run: "Pulling catalog", Segment: "copying", Done: "Pulled catalog", Fail: "Pull failed"}
+	labels := report.TaskLabels{
+		Run:     "Pulling catalog " + srcRef,
+		Segment: "pulling manifest",
+		Done:    "Pulled catalog " + srcRef,
+		Fail:    "Failed to pull catalog " + srcRef,
+	}
 	var store *ocix.Store
 	err := report.RunTask(ctx, labels, func(progress report.ProgressFunc) error {
 		src, srcTag, err := openSrcCatalog(srcRef)
@@ -138,7 +130,12 @@ func pullCatalog(ctx context.Context, srcRef string) (*ocix.Store, error) {
 }
 
 func pushCatalog(ctx context.Context, store *ocix.Store, dstRef string) error {
-	labels := report.TaskLabels{Run: "Pushing catalog", Segment: "copying", Done: "Pushed catalog", Fail: "Push failed"}
+	labels := report.TaskLabels{
+		Run:     "Pushing catalog " + dstRef,
+		Segment: "pushing manifest",
+		Done:    "Pushed catalog " + dstRef,
+		Fail:    "Failed to push catalog " + dstRef,
+	}
 	return report.RunTask(ctx, labels, func(progress report.ProgressFunc) error {
 		dst, dstTag, err := openDstCatalog(dstRef)
 		if err != nil {

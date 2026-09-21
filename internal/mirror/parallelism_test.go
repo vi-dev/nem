@@ -162,7 +162,7 @@ waitForFullFanOut:
 		t.Fatalf("task count = %d while %d probes are in flight, want at least %d", len(tasks), limit, limit)
 	}
 	for _, task := range tasks {
-		if task.Label == "Pulling catalog" || task.Label == "Pushing catalog" {
+		if strings.HasPrefix(task.Label, "Pulling catalog ") || strings.HasPrefix(task.Label, "Pushing catalog ") {
 			continue
 		}
 		if done, failed, _ := task.Snapshot(); done || failed {

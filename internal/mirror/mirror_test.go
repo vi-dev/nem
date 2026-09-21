@@ -443,19 +443,6 @@ func TestRunDeterministicSummaryUnderParallel(t *testing.T) {
 	}
 }
 
-func TestSummaryString(t *testing.T) {
-	s := Summary{Packages: 600, Copied: 102, Failed: 1}
-	want := "Mirrored 600 packages, 102 tag(s), 1 tag(s) failed"
-	if got := s.String(); got != want {
-		t.Fatalf("String() = %q, want %q", got, want)
-	}
-	s = Summary{Packages: 600, Copied: 102}
-	want = "Mirrored 600 packages, 102 tag(s)"
-	if got := s.String(); got != want {
-		t.Fatalf("String() = %q, want %q", got, want)
-	}
-}
-
 func TestRunRejectsUntaggedRefs(t *testing.T) {
 	ctx, _ := testx.ReporterContext(context.Background())
 	if _, err := Run(ctx, Options{SrcRef: "example.com/cat", DstRef: "internal.example.com/cat:v2"}); err == nil {
@@ -518,16 +505,16 @@ func TestPullCatalogReportsProgressOnPullingTask(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	task := rep.TaskFor("Pulling catalog")
+	task := rep.TaskFor("Pulling catalog example.com/cat:v2")
 	if task == nil {
 		t.Fatal("no Pulling catalog task")
 	}
 	if len(task.Statuses()) == 0 {
 		t.Fatal("no Status call recorded on the pull task: Progress alone never renders (segment stays \"\")")
 	}
-	wantStableProgress(t, "Pulling catalog", task.ProgressCalls(), n+1)
+	wantStableProgress(t, "Pulling catalog example.com/cat:v2", task.ProgressCalls(), n+1)
 
-	if rep.TaskFor("Pushing catalog") != nil {
+	if rep.TaskFor("Pushing catalog internal.example.com/cat:v2") != nil {
 		t.Fatal("dry run must never create a Pushing catalog task")
 	}
 }
@@ -549,16 +536,16 @@ func TestPushCatalogReportsProgressOnPushingTask(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	task := rep.TaskFor("Pushing catalog")
+	task := rep.TaskFor("Pushing catalog internal.example.com/cat:v2")
 	if task == nil {
 		t.Fatal("no Pushing catalog task")
 	}
 	if len(task.Statuses()) == 0 {
 		t.Fatal("no Status call recorded on the push task: Progress alone never renders (segment stays \"\")")
 	}
-	wantStableProgress(t, "Pushing catalog", task.ProgressCalls(), n+1)
+	wantStableProgress(t, "Pushing catalog internal.example.com/cat:v2", task.ProgressCalls(), n+1)
 
-	if done, failed, outcome := task.Snapshot(); !done || failed || outcome != "Pushed catalog" {
-		t.Fatalf("push task done=%v failed=%v outcome=%q, want done \"Pushed catalog\"", done, failed, outcome)
+	if done, failed, outcome := task.Snapshot(); !done || failed || outcome != "Pushed catalog internal.example.com/cat:v2" {
+		t.Fatalf("push task done=%v failed=%v outcome=%q, want done \"Pushed catalog internal.example.com/cat:v2\"", done, failed, outcome)
 	}
 }
