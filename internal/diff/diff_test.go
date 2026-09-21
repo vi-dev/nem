@@ -1,28 +1,32 @@
 package diff
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"oras.land/oras-go/v2"
-	"oras.land/oras-go/v2/content/oci"
-
-	"github.com/vi-dev/nem/internal/ocix"
-	"github.com/vi-dev/nem/internal/ocix/ocixtest"
-	"github.com/vi-dev/nem/internal/report"
+	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/testx"
 )
 
-func runDiff(t *testing.T, opts Options, ref, target string) (stdout, stderr string, err error) {
+func compare(t *testing.T, base, target string, packages ...string) *Result {
 	t.Helper()
-	var out, errb bytes.Buffer
-	console := report.New(&out, &errb, report.Options{Color: report.ColorNever})
-	err = Run(context.Background(), ref, target, opts, console)
-	return out.String(), errb.String(), err
+	res, err := Compare(context.Background(), base, target, packages)
+	if err != nil {
+		t.Fatalf("Compare: %v", err)
+	}
+	return res
+}
+
+func statuses(changes []Change) string {
+	parts := make([]string, 0, len(changes))
+	for _, r := range changes {
+		parts = append(parts, r.Name+"="+r.Status)
+	}
+	return strings.Join(parts, " ")
 }
 
 func writeFixture(t *testing.T, pkgs map[string]string) string {
@@ -96,243 +100,222 @@ build:
     - run: make
 `
 
-func withFakeCatalog(t *testing.T, store oras.ReadOnlyTarget) {
-	t.Helper()
-	t.Cleanup(SetCatalogOpener(func(ref string) (oras.ReadOnlyTarget, string, error) { return store, "v2", nil }))
+func renamed(fixture, name string) string {
+	return strings.Replace(fixture, "name: atool", "name: "+name, 1)
 }
 
-func newCatalogStore(t *testing.T, entries []ocixtest.FakeEntry) oras.Target {
-	t.Helper()
-	store, err := oci.New(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	ocixtest.PushFakeCatalog(t, store, entries, ocix.SchemaVersion)
-	return store
-}
+func TestCompareUpdatedRow(t *testing.T) {
+	local := writeFixture(t, map[string]string{"atool": fixtureV2})
+	remote := writeFixture(t, map[string]string{"atool": fixtureV1})
 
-func decodeRows(t *testing.T, out string) []Row {
-	t.Helper()
-	var rows []Row
-	if err := json.Unmarshal([]byte(out), &rows); err != nil {
-		t.Fatalf("unmarshal diff JSON: %v\noutput: %s", err, out)
+	res := compare(t, local, remote)
+	if len(res.Changes) != 1 {
+		t.Fatalf("changes = %d, want 1", len(res.Changes))
 	}
-	return rows
-}
-
-func TestDiffJSONUnchangedAndUpdated(t *testing.T) {
-	dir := writeFixture(t, map[string]string{"atool": fixtureV2})
-	store := newCatalogStore(t, []ocixtest.FakeEntry{
-		{Name: "atool", Description: "Test tool", Latest: "1.0.0", YAML: []byte(fixtureV1)},
-	})
-	withFakeCatalog(t, store)
-
-	out, errOut, err := runDiff(t, Options{JSON: true}, "ghcr.io/org/cat:v2", dir)
-	if err != nil {
-		t.Fatalf("diff: %v\nstderr: %s", err, errOut)
+	r := res.Changes[0]
+	if r.Name != "atool" || r.Status != StatusUpdated {
+		t.Fatalf("c = %+v, want atool updated", r)
 	}
-	rows := decodeRows(t, out)
-	if len(rows) != 1 {
-		t.Fatalf("rows = %d, want 1", len(rows))
+	if r.Base != "1.1.0" || r.Target != "1.0.0" {
+		t.Fatalf("base/target = %q/%q, want 1.1.0/1.0.0", r.Base, r.Target)
 	}
-	r := rows[0]
-	if r.Name != "atool" || r.Status != "updated" {
-		t.Fatalf("row = %+v, want atool updated", r)
+	if len(r.Diff) != 1 || r.Diff[0] != "1.1.0" {
+		t.Fatalf("diff = %v, want [1.1.0]", r.Diff)
 	}
-	if r.Published != "1.0.0" || r.Local != "1.1.0" {
-		t.Fatalf("published/local = %q/%q, want 1.0.0/1.1.0", r.Published, r.Local)
-	}
-	if len(r.VersionsAdded) != 1 || r.VersionsAdded[0] != "1.1.0" {
-		t.Fatalf("versionsAdded = %v, want [1.1.0]", r.VersionsAdded)
-	}
-	if r.VersionsRemoved == nil || len(r.VersionsRemoved) != 0 {
-		t.Fatalf("versionsRemoved = %v, want []", r.VersionsRemoved)
-	}
-	if r.Source {
-		t.Fatal("source = true, want false for a prebuilt package")
+	if r.Build {
+		t.Fatal("build = true, want false for a prebuilt package")
 	}
 }
 
-func TestDiffJSONIncludesUnchangedRows(t *testing.T) {
-	dir := writeFixture(t, map[string]string{"atool": fixtureV1})
-	store := newCatalogStore(t, []ocixtest.FakeEntry{
-		{Name: "atool", Description: "Test tool", Latest: "1.0.0", YAML: []byte(fixtureV1)},
-	})
-	withFakeCatalog(t, store)
-
-	out, errOut, err := runDiff(t, Options{JSON: true}, "ghcr.io/org/cat:v2", dir)
-	if err != nil {
-		t.Fatalf("diff: %v\nstderr: %s", err, errOut)
-	}
-	rows := decodeRows(t, out)
-	if len(rows) != 1 || rows[0].Status != "unchanged" {
-		t.Fatalf("rows = %+v, want one unchanged row", rows)
-	}
-	if rows[0].Published != "1.0.0" || rows[0].Local != "1.0.0" {
-		t.Fatalf("published/local = %q/%q, want 1.0.0/1.0.0", rows[0].Published, rows[0].Local)
-	}
-}
-
-func TestDiffJSONNewPackage(t *testing.T) {
-	dir := writeFixture(t, map[string]string{
+func TestCompareNewPackage(t *testing.T) {
+	local := writeFixture(t, map[string]string{
 		"atool": fixtureV1,
 		"ztool": sourcePkgFixture,
 	})
-	store := newCatalogStore(t, []ocixtest.FakeEntry{
-		{Name: "atool", Description: "Test tool", Latest: "1.0.0", YAML: []byte(fixtureV1)},
-	})
-	withFakeCatalog(t, store)
+	remote := writeFixture(t, map[string]string{"atool": fixtureV1})
 
-	out, errOut, err := runDiff(t, Options{JSON: true}, "ghcr.io/org/cat:v2", dir)
-	if err != nil {
-		t.Fatalf("diff: %v\nstderr: %s", err, errOut)
+	res := compare(t, local, remote)
+	if len(res.Changes) != 1 {
+		t.Fatalf("changes = %+v, want only the new ztool c", res.Changes)
 	}
-	rows := decodeRows(t, out)
-	if len(rows) != 2 {
-		t.Fatalf("rows = %d, want 2 (sorted: atool, ztool)", len(rows))
+	z := res.Changes[0]
+	if z.Name != "ztool" || z.Status != StatusNew || !z.Build {
+		t.Fatalf("c = %+v, want new build c", z)
 	}
-	if rows[0].Name != "atool" || rows[1].Name != "ztool" {
-		t.Fatalf("order = %s, %s; want atool, ztool", rows[0].Name, rows[1].Name)
+	if z.Base != "1.1.0" || z.Target != "" {
+		t.Fatalf("base/target = %q/%q, want 1.1.0/empty", z.Base, z.Target)
 	}
-	z := rows[1]
-	if z.Status != "new" || !z.Source {
-		t.Fatalf("row = %+v, want new source row", z)
-	}
-	if z.Published != "" {
-		t.Fatalf("published = %q, want empty for new", z.Published)
-	}
-	if got := strings.Count(out, "\"published\""); got != 1 {
-		t.Fatalf("published keys = %d, want 1 (the key must be omitted for the new row): %s", got, out)
-	}
-	if len(z.VersionsAdded) != 2 || z.VersionsAdded[0] != "1.1.0" || z.VersionsAdded[1] != "1.0.0" {
-		t.Fatalf("versionsAdded = %v, want all declared versions", z.VersionsAdded)
+	if len(z.Diff) != 2 || z.Diff[0] != "1.1.0" || z.Diff[1] != "1.0.0" {
+		t.Fatalf("diff = %v, want all declared versions", z.Diff)
 	}
 }
 
-func TestDiffRespelledVersionIsNotADelta(t *testing.T) {
-	published := strings.Replace(fixtureV1, "version: 1.0.0", "version: v1.0.0", 1)
-	dir := writeFixture(t, map[string]string{"atool": fixtureV1})
-	store := newCatalogStore(t, []ocixtest.FakeEntry{
-		{Name: "atool", Description: "Test tool", Latest: "v1.0.0", YAML: []byte(published)},
+func TestCompareManifestChangeWithoutNewVersionActsOnLatest(t *testing.T) {
+	local := writeFixture(t, map[string]string{
+		"atool": strings.Replace(fixtureV2, "description: Test tool", "description: Edited", 1),
 	})
-	withFakeCatalog(t, store)
+	remote := writeFixture(t, map[string]string{"atool": fixtureV2})
 
-	out, errOut, err := runDiff(t, Options{JSON: true}, "ghcr.io/org/cat:v2", dir)
-	if err != nil {
-		t.Fatalf("diff: %v\nstderr: %s", err, errOut)
+	res := compare(t, local, remote)
+	if len(res.Changes) != 1 || res.Changes[0].Status != StatusUpdated {
+		t.Fatalf("changes = %+v, want one updated change", res.Changes)
 	}
-	rows := decodeRows(t, out)
-	if len(rows) != 1 || rows[0].Status != "updated" {
-		t.Fatalf("rows = %+v, want one updated row (digest differs)", rows)
-	}
-	if len(rows[0].VersionsAdded) != 0 || len(rows[0].VersionsRemoved) != 0 {
-		t.Fatalf("deltas = %v/%v, want both empty for a respelled version",
-			rows[0].VersionsAdded, rows[0].VersionsRemoved)
+	if d := res.Changes[0].Diff; len(d) != 1 || d[0] != "1.1.0" {
+		t.Fatalf("diff = %v, want the base's latest as the fallback", d)
 	}
 }
 
-func TestDiffReportsRemovedPackages(t *testing.T) {
-	dir := writeFixture(t, map[string]string{"atool": fixtureV1})
-	store := newCatalogStore(t, []ocixtest.FakeEntry{
-		{Name: "atool", Description: "Test tool", Latest: "1.0.0", YAML: []byte(fixtureV1)},
-		{Name: "ztool", Description: "Gone", Latest: "1.1.0", YAML: []byte(sourcePkgFixture)},
-	})
-	withFakeCatalog(t, store)
+func TestCompareRespelledVersionIsNotADelta(t *testing.T) {
+	published := strings.Replace(fixtureV2, "version: 1.0.0", "version: v1.0.0", 1)
+	local := writeFixture(t, map[string]string{"atool": fixtureV2})
+	remote := writeFixture(t, map[string]string{"atool": published})
 
-	out, errOut, err := runDiff(t, Options{JSON: true}, "ghcr.io/org/cat:v2", dir)
-	if err != nil {
-		t.Fatalf("diff: %v\nstderr: %s", err, errOut)
+	res := compare(t, local, remote)
+	if len(res.Changes) != 1 || res.Changes[0].Status != StatusUpdated {
+		t.Fatalf("changes = %+v, want one updated change (digest differs)", res.Changes)
 	}
-	rows := decodeRows(t, out)
-	if len(rows) != 2 {
-		t.Fatalf("rows = %d, want 2", len(rows))
-	}
-	z := rows[1]
-	if z.Name != "ztool" || z.Status != "removed" {
-		t.Fatalf("row = %+v, want ztool removed", z)
-	}
-	if z.Local != "" || z.Path != "" {
-		t.Fatalf("local/path = %q/%q, want empty for removed", z.Local, z.Path)
-	}
-	if z.Published != "1.1.0" {
-		t.Fatalf("published = %q, want 1.1.0", z.Published)
-	}
-	if !z.Source {
-		t.Fatal("source = false, want true (published manifest declares build)")
-	}
-	if len(z.VersionsRemoved) != 2 {
-		t.Fatalf("versionsRemoved = %v, want both published versions", z.VersionsRemoved)
-	}
-	if len(z.VersionsAdded) != 0 {
-		t.Fatalf("versionsAdded = %v, want []", z.VersionsAdded)
+	if d := res.Changes[0].Diff; len(d) != 1 || d[0] != "1.1.0" {
+		t.Fatalf("diff = %v, want only the latest fallback: 1.0.0 vs v1.0.0 is not an addition", d)
 	}
 }
 
-func TestDiffSingleFileSkipsRemovedSweep(t *testing.T) {
-	dir := writeFixture(t, map[string]string{"atool": fixtureV2})
-	store := newCatalogStore(t, []ocixtest.FakeEntry{
-		{Name: "atool", Description: "Test tool", Latest: "1.0.0", YAML: []byte(fixtureV1)},
-		{Name: "ztool", Description: "Other", Latest: "1.1.0", YAML: []byte(sourcePkgFixture)},
-	})
-	withFakeCatalog(t, store)
+func TestCompareRejectsSideWithoutPackages(t *testing.T) {
+	local := writeFixture(t, map[string]string{"atool": fixtureV1})
+	empty := t.TempDir()
 
-	out, errOut, err := runDiff(t, Options{JSON: true}, "ghcr.io/org/cat:v2",
-		filepath.Join(dir, "pkgs", "atool", "pkg.yaml"))
-	if err != nil {
-		t.Fatalf("diff: %v\nstderr: %s", err, errOut)
-	}
-	rows := decodeRows(t, out)
-	if len(rows) != 1 || rows[0].Name != "atool" || rows[0].Status != "updated" {
-		t.Fatalf("rows = %+v, want only atool updated (no removed sweep)", rows)
+	for _, args := range [][2]string{{empty, local}, {local, empty}} {
+		_, err := Compare(context.Background(), args[0], args[1], nil)
+		if err == nil || !strings.Contains(err.Error(), "no package manifests under "+empty) {
+			t.Fatalf("Compare(%q, %q): err = %v, want a no-manifests error", args[0], args[1], err)
+		}
 	}
 }
 
-func TestDiffHumanTableListsOnlyChanged(t *testing.T) {
-	dir := writeFixture(t, map[string]string{
+func TestCompareRejectsDeclaredNameMismatch(t *testing.T) {
+	local := writeFixture(t, map[string]string{"atool": renamed(fixtureV1, "btool")})
+	remote := writeFixture(t, map[string]string{"btool": renamed(fixtureV1, "btool")})
+
+	_, err := Compare(context.Background(), local, remote, nil)
+	if err == nil || !strings.Contains(err.Error(), "declares name \"btool\"") {
+		t.Fatalf("err = %v, want a declared-name mismatch error", err)
+	}
+}
+
+func TestCompareReportsRemovedPackages(t *testing.T) {
+	local := writeFixture(t, map[string]string{"atool": fixtureV1})
+	remote := writeFixture(t, map[string]string{
+		"atool": fixtureV1,
+		"ztool": sourcePkgFixture,
+	})
+
+	res := compare(t, local, remote)
+	if len(res.Changes) != 1 {
+		t.Fatalf("changes = %+v, want only the removed ztool c", res.Changes)
+	}
+	z := res.Changes[0]
+	if z.Name != "ztool" || z.Status != StatusRemoved {
+		t.Fatalf("c = %+v, want ztool removed", z)
+	}
+	if z.Base != "" || z.Target != "1.1.0" {
+		t.Fatalf("base/target = %q/%q, want empty/1.1.0", z.Base, z.Target)
+	}
+	if !z.Build {
+		t.Fatal("build = false, want true (target manifest declares build)")
+	}
+	if z.Diff == nil || len(z.Diff) != 0 {
+		t.Fatalf("diff = %v, want [] for a removed package", z.Diff)
+	}
+}
+
+func TestCompareSingleFileBaseNarrowsComparison(t *testing.T) {
+	local := writeFixture(t, map[string]string{"atool": fixtureV2})
+	remote := writeFixture(t, map[string]string{
+		"atool": fixtureV1,
+		"ztool": sourcePkgFixture,
+	})
+
+	res := compare(t, filepath.Join(local, "pkgs", "atool", "pkg.yaml"), remote)
+	if got := statuses(res.Changes); got != "atool=updated" || res.Unchanged != 0 {
+		t.Fatalf("changes = %q, unchanged = %d; want only atool updated (no removed sweep)", got, res.Unchanged)
+	}
+}
+
+func TestCompareDirAgainstDir(t *testing.T) {
+	local := writeFixture(t, map[string]string{
 		"atool": fixtureV2,
-		"btool": strings.Replace(fixtureV1, "name: atool", "name: btool", 1),
+		"btool": renamed(fixtureV1, "btool"),
+		"ctool": renamed(fixtureV1, "ctool"),
 	})
-	store := newCatalogStore(t, []ocixtest.FakeEntry{
-		{Name: "atool", Description: "Test tool", Latest: "1.0.0", YAML: []byte(fixtureV1)},
-		{Name: "btool", Description: "Test tool", Latest: "1.0.0",
-			YAML: []byte(strings.Replace(fixtureV1, "name: atool", "name: btool", 1))},
-		{Name: "ztool", Description: "Gone", Latest: "1.1.0", YAML: []byte(sourcePkgFixture)},
+	remote := writeFixture(t, map[string]string{
+		"atool": fixtureV1,
+		"btool": renamed(fixtureV1, "btool"),
+		"ztool": sourcePkgFixture,
 	})
-	withFakeCatalog(t, store)
 
-	out, errOut, err := runDiff(t, Options{}, "ghcr.io/org/cat:v2", dir)
-	if err != nil {
-		t.Fatalf("diff: %v\nstderr: %s", err, errOut)
+	res := compare(t, local, remote)
+	if got := statuses(res.Changes); got != "atool=updated ctool=new ztool=removed" {
+		t.Fatalf("changes = %q, want sorted union statuses", got)
 	}
-	if !strings.Contains(out, "atool") || !strings.Contains(out, "updated") {
-		t.Fatalf("stdout = %q, want the updated atool row", out)
-	}
-	if !strings.Contains(out, "ztool") || !strings.Contains(out, "removed") {
-		t.Fatalf("stdout = %q, want the removed ztool row", out)
-	}
-	if strings.Contains(out, "btool") {
-		t.Fatalf("stdout = %q, unchanged btool must not be listed", out)
-	}
-	if !strings.Contains(out, "-") {
-		t.Fatalf("stdout = %q, want '-' for the removed row's absent local side", out)
+	if res.Unchanged != 1 {
+		t.Fatalf("unchanged = %d, want 1", res.Unchanged)
 	}
 }
 
-func TestDiffFailsWholeCommandOnUnparseableManifest(t *testing.T) {
-	dir := writeFixture(t, map[string]string{
+func TestCompareKeepsSortedOrderAcrossManyPackages(t *testing.T) {
+	localPkgs := map[string]string{}
+	remotePkgs := map[string]string{}
+	var want []string
+	for i := range 24 {
+		name := fmt.Sprintf("tool%02d", i)
+		localPkgs[name] = renamed(fixtureV2, name)
+		remotePkgs[name] = renamed(fixtureV1, name)
+		want = append(want, name+"=updated")
+	}
+	local := writeFixture(t, localPkgs)
+	remote := writeFixture(t, remotePkgs)
+
+	res := compare(t, local, remote)
+	if got := statuses(res.Changes); got != strings.Join(want, " ") {
+		t.Fatalf("changes = %q, want every package updated in sorted order", got)
+	}
+}
+
+func TestComparePackageFilterSelectsNamedPackages(t *testing.T) {
+	local := writeFixture(t, map[string]string{
+		"atool": fixtureV2,
+		"btool": renamed(fixtureV2, "btool"),
+		"ctool": renamed(fixtureV1, "ctool"),
+	})
+	remote := writeFixture(t, map[string]string{
+		"atool": fixtureV1,
+		"btool": renamed(fixtureV1, "btool"),
+	})
+
+	res := compare(t, local, remote, "btool", "ctool", "btool")
+	if got := statuses(res.Changes); got != "btool=updated ctool=new" || res.Unchanged != 0 {
+		t.Fatalf("changes = %q, unchanged = %d; want btool updated and ctool new only", got, res.Unchanged)
+	}
+}
+
+func TestComparePackageFilterUnknownNameFails(t *testing.T) {
+	local := writeFixture(t, map[string]string{"atool": fixtureV2})
+	remote := writeFixture(t, map[string]string{"atool": fixtureV1})
+
+	_, err := Compare(context.Background(), local, remote, []string{"nope"})
+	var nf *catalog.PackageNotFoundError
+	if !errors.As(err, &nf) || nf.Name != "nope" {
+		t.Fatalf("err = %v, want PackageNotFoundError for nope", err)
+	}
+}
+
+func TestCompareFailsWholeCommandOnUnparseableManifest(t *testing.T) {
+	local := writeFixture(t, map[string]string{
 		"atool":   fixtureV1,
 		"badtool": "schema: [not valid yaml",
 	})
-	store := newCatalogStore(t, []ocixtest.FakeEntry{
-		{Name: "atool", Description: "Test tool", Latest: "1.0.0", YAML: []byte(fixtureV1)},
-	})
-	withFakeCatalog(t, store)
+	remote := writeFixture(t, map[string]string{"atool": fixtureV1})
 
-	out, _, err := runDiff(t, Options{JSON: true}, "ghcr.io/org/cat:v2", dir)
-	if err == nil {
-		t.Fatal("diff succeeded on an unparseable manifest, want whole-command failure")
-	}
-	if strings.Contains(out, "\"status\"") {
-		t.Fatalf("stdout = %q, want no JSON rows on failure", out)
+	if _, err := Compare(context.Background(), local, remote, nil); err == nil {
+		t.Fatal("Compare succeeded on an unparseable manifest, want failure")
 	}
 }

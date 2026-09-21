@@ -49,8 +49,12 @@ func completionSources() (*catalog.Set, bool) {
 }
 
 func firstArgOnly(fn func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective)) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+	return argsUpTo(1, fn)
+}
+
+func argsUpTo(n int, fn func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective)) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		if len(args) > 0 {
+		if len(args) >= n {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
 		return fn(cmd, args, toComplete)
@@ -189,7 +193,7 @@ func completeUseVersions(cmd *cobra.Command, toComplete string) ([]string, cobra
 
 func completeCatalogDirPackages(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	dir := "."
-	if len(args) == 1 {
+	if len(args) > 0 {
 		dir = args[0]
 	}
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
