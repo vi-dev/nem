@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -56,11 +58,23 @@ func newCatalogTestCmd() *cobra.Command {
 				console.Info("Nothing to test")
 				return nil
 			}
-			sources = sources.Append(target.Entry)
+			sources = sources.Prepend(target.Entry)
+			var tested, failed, skipped int
 			for _, sel := range sels {
-				if err := runPackageTest(cmd, sources, sel.Pkg, sel.Version); err != nil {
-					return err
+				ran, err := runPackageTest(cmd, sources, sel.Pkg, sel.Version)
+				switch {
+				case err != nil:
+					failed++
+					console.Warn("%s: %v", sel.Pkg.Name, err)
+				case ran:
+					tested++
+				default:
+					skipped++
 				}
+			}
+			console.Success("%s", testSummary(tested, failed, skipped))
+			if failed > 0 {
+				return &ExitError{Code: 1}
 			}
 			return nil
 		},
@@ -71,19 +85,32 @@ func newCatalogTestCmd() *cobra.Command {
 	return cmd
 }
 
-func runPackageTest(cmd *cobra.Command, sources *catalog.Set, pkg *spec.Package, version string) error {
-	if len(pkg.Test) == 0 {
-		console.Info("%s declares no tests", pkg.Name)
-		return nil
+func testSummary(tested, failed, skipped int) string {
+	var parts []string
+	if tested > 0 {
+		parts = append(parts, fmt.Sprintf("Tested %d packages", tested))
 	}
+	if failed > 0 {
+		parts = append(parts, fmt.Sprintf("%d failed", failed))
+	}
+	if skipped > 0 {
+		parts = append(parts, fmt.Sprintf("%d skipped", skipped))
+	}
+	if len(parts) == 0 {
+		return "Nothing to test"
+	}
+	return strings.Join(parts, ", ")
+}
+
+func runPackageTest(cmd *cobra.Command, sources *catalog.Set, pkg *spec.Package, version string) (bool, error) {
 	if plat := spec.Current(); !spec.PlatformsInclude(pkg.Platforms, plat) {
 		console.Info("%s does not support %s", pkg.Name, plat)
-		return nil
+		return false, nil
 	}
 	result, err := resolve.Resolve(cmd.Context(),
 		[]resolve.Tool{{Key: project.ToolKey{Name: pkg.Name}, Version: version}}, sources)
 	if err != nil {
-		return err
+		return false, err
 	}
 	jobs := install.Jobs(result, sources, nil)
 	var root *install.Job
@@ -95,7 +122,7 @@ func runPackageTest(cmd *cobra.Command, sources *catalog.Set, pkg *spec.Package,
 	}
 	if root == nil {
 		console.Info("%s installs nothing on %s; nothing to test", pkg.Name, spec.Current())
-		return nil
+		return false, nil
 	}
 	resolved := root.Version
 
@@ -108,7 +135,7 @@ func runPackageTest(cmd *cobra.Command, sources *catalog.Set, pkg *spec.Package,
 	}
 	deps, err := build.InstallResolvedDeps(cmd.Context(), nemHome, sources, depsResult, nil)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	task := console.Task("Downloading " + pkg.Name + " " + resolved)
@@ -116,11 +143,14 @@ func runPackageTest(cmd *cobra.Command, sources *catalog.Set, pkg *spec.Package,
 		root.Source, nemHome.Tmp(), task)
 	if err != nil {
 		task.Fail("Failed to download " + pkg.Name + " " + resolved)
-		return err
+		return false, err
 	}
 	task.Done("Downloaded " + pkg.Name + " " + resolved)
 	defer os.Remove(artifact)
 
-	return pkgtest.InstallAndRun(cmd.Context(), nemHome, deps, pkg, resolved,
-		root.Catalog, artifact)
+	if err := pkgtest.InstallAndRun(cmd.Context(), nemHome, deps, pkg, resolved,
+		root.Catalog, artifact); err != nil {
+		return false, err
+	}
+	return true, nil
 }

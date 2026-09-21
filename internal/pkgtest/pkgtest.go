@@ -24,20 +24,15 @@ func InstallAndRun(ctx context.Context, h home.Home, deps []build.ResolvedDep,
 	rep := report.FromContext(ctx)
 
 	plat := spec.Current()
+	if !spec.PlatformsInclude(pkg.Platforms, plat) {
+		return nil
+	}
 
 	var steps []spec.TestStep
-	if spec.PlatformsInclude(pkg.Platforms, plat) {
-		for _, s := range pkg.Test {
-			if spec.PlatformsInclude(s.Platforms, plat) {
-				steps = append(steps, s)
-			}
+	for _, s := range pkg.Test {
+		if spec.PlatformsInclude(s.Platforms, plat) {
+			steps = append(steps, s)
 		}
-	}
-	if len(steps) == 0 {
-		if len(pkg.Test) > 0 {
-			rep.Info("No test of %s applies to %s; nothing asserted", pkg.Name, plat)
-		}
-		return nil
 	}
 
 	if mkdirErr := os.MkdirAll(h.Packages(), 0o755); mkdirErr != nil {
@@ -65,6 +60,15 @@ func InstallAndRun(ctx context.Context, h home.Home, deps []build.ResolvedDep,
 		return fmt.Errorf("test-install %s@%s: %w", pkg.Name, version, installErr)
 	}
 	prefix := filepath.Join(aliasDir, version)
+	if len(steps) == 0 {
+		if len(pkg.Test) > 0 {
+			rep.Info("No test of %s applies to %s; nothing asserted", pkg.Name, plat)
+			rep.Success("Installed %s %s (no test for %s)", pkg.Name, version, plat)
+		} else {
+			rep.Success("Installed %s %s (declares no tests)", pkg.Name, version)
+		}
+		return nil
+	}
 
 	self := build.ResolvedDep{
 		Name: alias.Name, Version: version, Prefix: prefix,

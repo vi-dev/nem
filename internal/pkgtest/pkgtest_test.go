@@ -113,10 +113,25 @@ func aliasDirs(t *testing.T, h home.Home) []string {
 	return out
 }
 
-func TestInstallAndRunNoStepsSucceeds(t *testing.T) {
+func TestInstallAndRunInstallsAPackageWithoutSteps(t *testing.T) {
 	h, pkg, artifact := installable(t)
-	if err := runInstall(t, h, pkg, artifact); err != nil {
+	out, err := runInstallOut(t, h, pkg, artifact)
+	if err != nil {
 		t.Fatalf("InstallAndRun with no steps: %v", err)
+	}
+	if !strings.Contains(out, "Installed tool v1 (declares no tests)") {
+		t.Fatalf("want an installed-without-tests report, got:\n%s", out)
+	}
+	if got := aliasDirs(t, h); len(got) != 0 {
+		t.Fatalf("the test install must be removed afterwards, found %v", got)
+	}
+}
+
+func TestInstallAndRunWithoutStepsStillFailsOnABrokenInstall(t *testing.T) {
+	h, pkg, _ := installable(t)
+	err := runInstall(t, h, pkg, filepath.Join(t.TempDir(), "missing.tar.gz"))
+	if err == nil || !strings.Contains(err.Error(), "test-install tool@v1") {
+		t.Fatalf("a package without steps must still be installed, err = %v", err)
 	}
 }
 
@@ -278,6 +293,9 @@ func TestInstallAndRunDoesNotReportAPassWhenNothingApplied(t *testing.T) {
 	}
 	if !strings.Contains(out, "nothing asserted") {
 		t.Fatalf("want a notice that no test applied, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Installed tool v1") {
+		t.Fatalf("the package must still be install-verified, got:\n%s", out)
 	}
 }
 

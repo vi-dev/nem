@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,24 +16,24 @@ import (
 
 const toolTestStep = "test:\n  - run: 'test -f \"$NEM_PREFIX/bin/tool\"'\n"
 
-func TestCatalogTestNoTestSectionIsClean(t *testing.T) {
+func TestCatalogTestInstallsAPackageWithoutTests(t *testing.T) {
 	nemHome := t.TempDir()
-	root := t.TempDir()
-	dir := filepath.Join(root, "pkgs", "tool")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, filepath.Join(dir, "pkg.yaml"), "schema: 2\nname: tool\n"+
-		"artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n"+
-		"versions: [{version: \"1.0.0\"}]\n")
+	catalogRoot := downloadableDirCatalog(t, "")
 
-	out, errb, err := runNem(t, nemHome, "catalog", "test", root, "--package", "tool")
+	out, errb, err := runNem(t, nemHome, "catalog", "test", catalogRoot, "--package", "tool")
 	if err != nil {
-		t.Fatalf("catalog test: %v\n%s", err, errb)
+		t.Fatalf("catalog test: %v\nstdout: %s\nstderr: %s", err, out, errb)
 	}
-	if !strings.Contains(out+errb, "declares no tests") {
-		t.Fatalf("want a no-tests notice, got:\n%s\n%s", out, errb)
+	if !strings.Contains(errb, "Installed tool v1.0.0 (declares no tests)") {
+		t.Fatalf("want an installed-without-tests notice, got:\n%s\n%s", out, errb)
 	}
+	if !strings.Contains(errb, "Tested 1 packages") {
+		t.Fatalf("an install-only package counts as tested, got:\n%s", errb)
+	}
+	if _, err := os.Stat(filepath.Join(nemHome, "packages", "tool", "v1.0.0")); !os.IsNotExist(err) {
+		t.Fatalf("catalog test must not leave a real install behind, stat err = %v", err)
+	}
+	assertNoLeakedTestAlias(t, nemHome)
 }
 
 func TestCatalogTestInstallsAndRunsDeclaredTests(t *testing.T) {
@@ -50,7 +51,7 @@ func TestCatalogTestInstallsAndRunsDeclaredTests(t *testing.T) {
 	if !strings.Contains(errb, "Tested tool v1.0.0 (1 step)") {
 		t.Fatalf("want a tested-successfully notice, got:\n%s\n%s", out, errb)
 	}
-	if n := strings.Count(out+errb, "Tested"); n != 1 {
+	if n := strings.Count(out+errb, "Tested tool v1.0.0"); n != 1 {
 		t.Fatalf("want exactly one completion line, got %d:\n%s\n%s", n, out, errb)
 	}
 	if _, err := os.Stat(filepath.Join(nemHome, "packages", "tool", "v1.0.0")); !os.IsNotExist(err) {
@@ -204,16 +205,16 @@ func TestCatalogTestAcceptsRecipePathAsFileCatalog(t *testing.T) {
 	}
 }
 
-func TestCatalogTestWholeCatalogRunsEveryTestedPackage(t *testing.T) {
+func TestCatalogTestWholeCatalogRunsEveryPackage(t *testing.T) {
 	nemHome := t.TempDir()
 	catalogRoot := downloadableDirCatalog(t, toolTestStep)
-	nakedDir := filepath.Join(catalogRoot, "pkgs", "naked")
-	if err := os.MkdirAll(nakedDir, 0o755); err != nil {
+	toolYAML, err := os.ReadFile(filepath.Join(catalogRoot, "pkgs", "tool", "pkg.yaml"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(nakedDir, "pkg.yaml"), "schema: 2\nname: naked\n"+
-		"artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n"+
-		"versions: [{version: \"1.0.0\"}]\n")
+	nakedYAML := strings.Replace(string(toolYAML), "name: tool", "name: naked", 1)
+	nakedYAML = strings.Replace(nakedYAML, toolTestStep, "", 1)
+	writeFile(t, filepath.Join(catalogRoot, "pkgs", "naked", "pkg.yaml"), nakedYAML)
 
 	out, errb, err := runNem(t, nemHome, "catalog", "test", catalogRoot)
 	if err != nil {
@@ -222,8 +223,35 @@ func TestCatalogTestWholeCatalogRunsEveryTestedPackage(t *testing.T) {
 	if !strings.Contains(errb, "Tested tool v1.0.0 (1 step)") {
 		t.Fatalf("want the tested package's completion line, got:\n%s\n%s", out, errb)
 	}
-	if !strings.Contains(out+errb, "naked declares no tests") {
-		t.Fatalf("want a skip notice for the untested package, got:\n%s\n%s", out, errb)
+	if !strings.Contains(errb, "Installed naked v1.0.0 (declares no tests)") {
+		t.Fatalf("want the untested package install-verified, got:\n%s\n%s", out, errb)
+	}
+	if !strings.Contains(errb, "Tested 2 packages") {
+		t.Fatalf("want the run summary, got:\n%s", errb)
+	}
+}
+
+func TestCatalogTestContinuesPastFailuresAndExitsNonzero(t *testing.T) {
+	nemHome := t.TempDir()
+	catalogRoot := downloadableDirCatalog(t, toolTestStep)
+	toolYAML, err := os.ReadFile(filepath.Join(catalogRoot, "pkgs", "tool", "pkg.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	brokenYAML := strings.Replace(string(toolYAML), "name: tool", "name: broken", 1)
+	brokenYAML = strings.Replace(brokenYAML, toolTestStep, "test:\n  - run: 'false'\n", 1)
+	writeFile(t, filepath.Join(catalogRoot, "pkgs", "broken", "pkg.yaml"), brokenYAML)
+
+	out, errb, err := runNem(t, nemHome, "catalog", "test", catalogRoot)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 1 {
+		t.Fatalf("err = %v, want *ExitError{Code:1}\nstdout: %s\nstderr: %s", err, out, errb)
+	}
+	if !strings.Contains(errb, "Tested tool v1.0.0 (1 step)") {
+		t.Fatalf("the run must continue past the failing package, got:\n%s", errb)
+	}
+	if !strings.Contains(errb, "broken:") || !strings.Contains(errb, "Tested 1 packages, 1 failed") {
+		t.Fatalf("want the failure warning and summary, got:\n%s", errb)
 	}
 }
 
@@ -316,7 +344,24 @@ func TestCatalogTestDuplicateSelectorRunsOnce(t *testing.T) {
 	if !strings.Contains(errb, "Tested tool v1.0.0 (1 step)") {
 		t.Fatalf("want a tested-successfully notice, got:\n%s\n%s", out, errb)
 	}
-	if n := strings.Count(out+errb, "Tested"); n != 1 {
+	if n := strings.Count(out+errb, "Tested tool v1.0.0"); n != 1 {
 		t.Fatalf("duplicate --package selectors must run the test exactly once, got %d:\n%s\n%s", n, out, errb)
+	}
+}
+
+func TestCatalogTestPrefersTheTargetOverConfiguredCatalogs(t *testing.T) {
+	nemHome := t.TempDir()
+	published := downloadableDirCatalog(t, toolTestStep)
+	if _, errb, err := runNem(t, nemHome, "catalog", "add", "demo", published); err != nil {
+		t.Fatalf("catalog add: %v\n%s", err, errb)
+	}
+	checkout := twoVersionDirCatalog(t)
+
+	out, errb, err := runNem(t, nemHome, "catalog", "test", checkout, "--package", "tool")
+	if err != nil {
+		t.Fatalf("catalog test: %v\nstdout: %s\nstderr: %s", err, out, errb)
+	}
+	if !strings.Contains(errb, "Tested tool v1.1.0 (1 step)") {
+		t.Fatalf("want the checkout's unpublished version tested, got:\n%s\n%s", out, errb)
 	}
 }
