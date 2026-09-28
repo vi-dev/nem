@@ -27,7 +27,7 @@ func TestLinesAndStreams(t *testing.T) {
 		t.Fatalf("narration leaked to stdout: %q", out.String())
 	}
 	got := errb.String()
-	for _, want := range []string{"OK Installed go v1.26.5\n", "WARN Catalog dev is stale\n", "Resolving\n"} {
+	for _, want := range []string{"OK Installed go v1.26.5\n", "WARN Catalog dev is stale\n", "INFO Resolving\n"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("stderr missing %q in %q", want, got)
 		}
@@ -550,7 +550,7 @@ func TestPendingTaskAnnouncedOnceBeforeFirstGuardedWrite(t *testing.T) {
 	fmt.Fprint(w, "line1\n")
 	fmt.Fprint(w, "line2\n")
 	task.Done("Built jq 1.8.3")
-	if got, want := errb.String(), "Building jq 1.8.3\nOK Built jq 1.8.3\n"; got != want {
+	if got, want := errb.String(), "INFO Building jq 1.8.3\nOK Built jq 1.8.3\n"; got != want {
 		t.Errorf("stderr = %q, want %q", got, want)
 	}
 	if got, want := out.String(), "line1\nline2\n"; got != want {
@@ -565,7 +565,7 @@ func TestPendingTasksAnnouncedInStartOrder(t *testing.T) {
 	fmt.Fprint(c.ErrOut(), "compiler noise\n")
 	a.Done("Built a 1")
 	b.Done("Built b 2")
-	if got, want := errb.String(), "Building a 1\nBuilding b 2\ncompiler noise\nOK Built a 1\nOK Built b 2\n"; got != want {
+	if got, want := errb.String(), "INFO Building a 1\nINFO Building b 2\ncompiler noise\nOK Built a 1\nOK Built b 2\n"; got != want {
 		t.Errorf("stderr = %q, want %q", got, want)
 	}
 }
@@ -604,5 +604,18 @@ func TestLiveTaskIsNotAnnounced(t *testing.T) {
 	}
 	if got := strings.Count(errb.String(), "Building jq 1.8.3"); got == 0 {
 		t.Errorf("live block never rendered the label: %q", errb.String())
+	}
+}
+
+func TestInfoPrefixInBothModes(t *testing.T) {
+	c, _, errb := newTest(Options{Color: ColorNever})
+	c.Info("Would push %s", "jq:1.8.3")
+	if got, want := errb.String(), "INFO Would push jq:1.8.3\n"; got != want {
+		t.Errorf("plain = %q, want %q", got, want)
+	}
+	cc, _, errc := newTest(Options{Color: ColorAlways})
+	cc.Info("Would push %s", "jq:1.8.3")
+	if got, want := errc.String(), "\x1b[36m•\x1b[0m Would push jq:1.8.3\n"; got != want {
+		t.Errorf("colored = %q, want %q", got, want)
 	}
 }

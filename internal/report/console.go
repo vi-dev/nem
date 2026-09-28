@@ -74,6 +74,7 @@ const (
 	ansiGreen  = "\x1b[32m"
 	ansiYellow = "\x1b[33m"
 	ansiRed    = "\x1b[31m"
+	ansiCyan   = "\x1b[36m"
 	ansiDim    = "\x1b[2m"
 	ansiReset  = "\x1b[0m"
 )
@@ -82,7 +83,16 @@ func (c *Console) Info(format string, a ...any) {
 	if c.opts.Quiet {
 		return
 	}
-	c.narrate(func() { fmt.Fprintf(c.err, format+"\n", a...) })
+	msg := fmt.Sprintf(format, a...)
+	c.narrate(func() { c.infoLocked(msg) })
+}
+
+func (c *Console) infoLocked(msg string) {
+	if c.colored {
+		fmt.Fprintf(c.err, "%s•%s %s\n", ansiCyan, ansiReset, msg)
+	} else {
+		fmt.Fprintf(c.err, "INFO %s\n", msg)
+	}
 }
 
 func (c *Console) Debug(format string, a ...any) {
@@ -276,7 +286,7 @@ func (c *Console) registerPendingTask(t *task) {
 
 func (c *Console) announcePendingLocked() {
 	for _, t := range c.pending {
-		fmt.Fprintln(c.err, t.label)
+		c.infoLocked(t.label)
 	}
 	c.pending = nil
 }
