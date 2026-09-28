@@ -31,11 +31,13 @@ type Options struct {
 }
 
 type Row struct {
-	Name    string   `json:"name"`
-	Current string   `json:"current"`
-	Head    string   `json:"head,omitempty"`
-	Added   []string `json:"added,omitempty"`
-	Error   string   `json:"error,omitempty"`
+	Name        string   `json:"name"`
+	Current     string   `json:"current"`
+	Head        string   `json:"head,omitempty"`
+	Added       []string `json:"added,omitempty"`
+	Missing     []string `json:"missing,omitempty"`
+	Unpublished []string `json:"unpublished,omitempty"`
+	Error       string   `json:"error,omitempty"`
 }
 
 type Result struct {
@@ -145,16 +147,16 @@ func plan(opts Options) ([]job, error) {
 }
 
 func bumpOne(ctx context.Context, editor catalog.Editor, j job, opts Options, explicit bool) *Row {
-	r := report.FromContext(ctx)
+	rep := report.FromContext(ctx)
 	row := &Row{Name: j.name}
-	task := r.Task("Bumping " + j.name)
+	task := rep.Task("Bumping " + j.name)
 	fail := func(err error) *Row {
 		row.Error = err.Error()
 		if report.IsCancellation(err) || ctx.Err() != nil {
 			task.Fail("Cancelled " + row.Name)
 			return row
 		}
-		r.Warn("%s: %v", row.Name, err)
+		rep.Warn("%s: %v", row.Name, err)
 		task.Fail("Failed to bump " + row.Name)
 		return row
 	}
@@ -172,7 +174,7 @@ func bumpOne(ctx context.Context, editor catalog.Editor, j job, opts Options, ex
 	}
 	row.Name, row.Current = pkg.Name, current
 	if pkg.VersionDiscovery == nil && !explicit {
-		r.Debug("Skipping %s: no versionDiscovery", pkg.Name)
+		rep.Debug("Skipping %s: no versionDiscovery", pkg.Name)
 		task.Discard()
 		return nil
 	}
@@ -220,7 +222,7 @@ func bumpOne(ctx context.Context, editor catalog.Editor, j job, opts Options, ex
 		task.Done(resultLine("Would bump", "Would backfill", pkg.Name, current, row.Head, targets))
 		return row
 	}
-	added, head, err := apply(ctx, editor, pkg.Name, data, pkg, targets, metas, task)
+	added, head, err := apply(ctx, editor, pkg.Name, data, pkg, targets, metas, task, row)
 	if err != nil {
 		return fail(err)
 	}
@@ -246,20 +248,19 @@ func displayVersion(v string) string {
 	return v
 }
 
-func apply(ctx context.Context, editor catalog.Editor, name string, data []byte, pkg *spec.Package, targets []string, metas map[string]map[string]string, task report.Task) ([]string, string, error) {
-	console := report.FromContext(ctx)
+func apply(ctx context.Context, editor catalog.Editor, name string, data []byte, pkg *spec.Package, targets []string, metas map[string]map[string]string, task report.Task, row *Row) ([]string, string, error) {
+	rep := report.FromContext(ctx)
 	edited := data
 	var added []string
 	var lastErr error
-	notFound, sourceBackfill := false, false
 	for _, target := range targets {
 		entry, err := buildEntry(ctx, pkg, target, metas[target], task)
 		if err != nil {
 			lastErr = err
 			if _, ok := errors.AsType[*fetch.ArtifactNotFoundError](err); ok {
-				notFound = true
+				row.Missing = append(row.Missing, target)
 			}
-			console.Warn("%s %s: %v", pkg.Name, target, err)
+			rep.Warn("%s %s: %v", pkg.Name, target, err)
 			continue
 		}
 		pos, err := insertPos(edited, target)
@@ -271,15 +272,9 @@ func apply(ctx context.Context, editor catalog.Editor, name string, data []byte,
 		}
 		added = append(added, target)
 		if pkg.Build != nil && len(pkg.Versions) > 0 && spec.CompareVersions(target, pkg.Versions[0].Version) < 0 {
-			console.Warn("%s %s is source-built and its archive is not published yet", pkg.Name, target)
-			sourceBackfill = true
+			rep.Warn("%s %s: source-built, archive not published yet", pkg.Name, target)
+			row.Unpublished = append(row.Unpublished, target)
 		}
-	}
-	if notFound {
-		console.Hint("Upstream release assets may not be uploaded yet; retry later")
-	}
-	if sourceBackfill {
-		console.Hint("Backfilled source versions need `nem catalog build --package <name>@<version> --push` before installs work")
 	}
 	if len(added) == 0 {
 		return nil, "", fmt.Errorf("no versions could be added: %w", lastErr)

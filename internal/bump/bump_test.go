@@ -304,7 +304,7 @@ func TestBumpBackfillSourceBuiltWarns(t *testing.T) {
 	path := filepath.Join(dir, "pkgs", "openssl", "pkg.yaml")
 	stubList(t, "3.4.2", "3.4.1")
 
-	_, errOut, err := runBump(t, Options{Backfill: 2}, path)
+	res, errOut, err := runBump(t, Options{Backfill: 2}, path)
 	if err != nil {
 		t.Fatalf("bump: %v", err)
 	}
@@ -315,8 +315,14 @@ func TestBumpBackfillSourceBuiltWarns(t *testing.T) {
 	if len(pkg.Versions) != 2 || pkg.Versions[1].Version != "3.4.1" || pkg.Versions[1].SourceSha256 == "" {
 		t.Fatalf("versions = %+v, want backfilled 3.4.1 with sourceSha256", pkg.Versions)
 	}
-	if !strings.Contains(errOut, "source-built") || !strings.Contains(errOut, "build --package") {
-		t.Fatalf("stderr = %q, want source-built warning and build hint", errOut)
+	if !strings.Contains(errOut, "WARN openssl 3.4.1: source-built, archive not published yet") {
+		t.Fatalf("stderr = %q, want the source-built warning", errOut)
+	}
+	if strings.Contains(errOut, "hint:") {
+		t.Fatalf("stderr = %q, hints are rendered by the command, not the package", errOut)
+	}
+	if got := res.Rows[0].Unpublished; !slices.Equal(got, []string{"3.4.1"}) {
+		t.Fatalf("Unpublished = %v, want [3.4.1]", got)
 	}
 }
 
@@ -335,8 +341,8 @@ func TestBumpDeadSourceURLNamesItWithoutRetryHint(t *testing.T) {
 	if !strings.Contains(errOut, srv.URL) {
 		t.Fatalf("stderr = %q, want the failing source URL named", errOut)
 	}
-	if strings.Contains(errOut, "retry later") {
-		t.Fatalf("stderr = %q, must not suggest retrying a dead source URL", errOut)
+	if len(res.Rows[0].Missing) != 0 {
+		t.Fatalf("Missing = %v, a dead source URL is not a not-yet-uploaded artifact", res.Rows[0].Missing)
 	}
 	if string(mustRead(t, path)) != string(before) {
 		t.Fatal("failed bump must not modify the manifest")
@@ -598,8 +604,8 @@ func TestBumpFailureWritesNothing(t *testing.T) {
 				t.Fatal(err)
 			}
 			wantCounts(t, res, 0, 0, 1, 0)
-			if !strings.Contains(errOut, "retry later") {
-				t.Fatalf("stderr = %q, want not-uploaded-yet hint", errOut)
+			if got := res.Rows[0].Missing; !slices.Equal(got, []string{"1.8.3"}) {
+				t.Fatalf("Missing = %v, want [1.8.3] so the command can hint a retry\n%s", got, errOut)
 			}
 			assertUnchanged(t, path, before)
 		})

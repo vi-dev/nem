@@ -2,6 +2,7 @@ package discover
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 
@@ -20,7 +21,7 @@ func List(ctx context.Context, pkg *spec.Package) ([]Discovered, error) {
 	d := pkg.VersionDiscovery
 	switch {
 	case d == nil:
-		return nil, fmt.Errorf("%s has no versionDiscovery", pkg.Name)
+		return nil, errors.New("no versionDiscovery")
 	case d.GitHub != nil:
 		return githubVersions(ctx, netx.Client(), d.GitHub)
 	case d.GitLab != nil:
@@ -40,7 +41,7 @@ func List(ctx context.Context, pkg *spec.Package) ([]Discovered, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("%s has no versionDiscovery source", pkg.Name)
+	return nil, errors.New("no versionDiscovery source")
 }
 
 func Latest(ctx context.Context, pkg *spec.Package) (string, error) {

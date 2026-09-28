@@ -5,8 +5,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/vi-dev/nem/internal/bump"
 )
 
 const bareOCIBumpFixture = `schema: 2
@@ -67,7 +70,7 @@ func TestCatalogBumpFlagWiring(t *testing.T) {
 		if !errors.As(err, &exitErr) || exitErr.Code != 1 {
 			t.Fatalf("err = %v, want *ExitError{Code:1}", err)
 		}
-		if !strings.Contains(errOut, "no versionDiscovery") || !strings.Contains(errOut, "Failed to bump tool") || !strings.Contains(errOut, "1 failed") {
+		if !strings.Contains(errOut, "WARN tool: no versionDiscovery\n") || !strings.Contains(errOut, "Failed to bump tool") || !strings.Contains(errOut, "1 failed") {
 			t.Fatalf("stderr = %q, want the discovery failure and summary", errOut)
 		}
 	})
@@ -83,5 +86,21 @@ func TestCatalogBumpDefaultsToCurrentDir(t *testing.T) {
 	}
 	if !strings.Contains(errOut, "Nothing to bump (1 without discovery)") {
 		t.Fatalf("stderr = %q, want sweep summary for the current directory", errOut)
+	}
+}
+
+func TestBumpHintsNameTheExactCommand(t *testing.T) {
+	res := &bump.Result{Rows: []bump.Row{
+		{Name: "jq", Missing: []string{"1.8.3"}},
+		{Name: "openssl", Unpublished: []string{"3.4.1", "3.4.0"}},
+		{Name: "yq"},
+	}}
+	want := []string{
+		"Retry `nem catalog bump --package jq@1.8.3` once its upstream assets are uploaded",
+		"Run `nem catalog build --package openssl@3.4.1 --push` to publish the backfilled archive",
+		"Run `nem catalog build --package openssl@3.4.0 --push` to publish the backfilled archive",
+	}
+	if got := bumpHints(res); !slices.Equal(got, want) {
+		t.Fatalf("hints = %q, want %q", got, want)
 	}
 }

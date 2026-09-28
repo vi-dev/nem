@@ -41,6 +41,9 @@ func newCatalogBumpCmd() *cobra.Command {
 				}
 			}
 			console.Success("%s", bumpSummary(res, dryRun))
+			for _, h := range bumpHints(res) {
+				console.Hint(h)
+			}
 			if res.Failed() > 0 {
 				return &ExitError{Code: 1}
 			}
@@ -72,4 +75,17 @@ func bumpSummary(res *bump.Result, dryRun bool) string {
 		parts = append(parts, fmt.Sprintf("%d up to date", n))
 	}
 	return countSummary("Nothing to bump", parts, res.Skipped)
+}
+
+func bumpHints(res *bump.Result) []string {
+	var hints []string
+	for _, row := range res.Rows {
+		for _, v := range row.Missing {
+			hints = append(hints, fmt.Sprintf("Retry `nem catalog bump --package %s@%s` once its upstream assets are uploaded", row.Name, v))
+		}
+		for _, v := range row.Unpublished {
+			hints = append(hints, fmt.Sprintf("Run `nem catalog build --package %s@%s --push` to publish the backfilled archive", row.Name, v))
+		}
+	}
+	return hints
 }
