@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -956,4 +957,29 @@ func TestBumpDryRunDiscoversWithoutDownloading(t *testing.T) {
 		t.Fatalf("server got %d requests, want 0 (dry run must not download)", n)
 	}
 	assertUnchanged(t, path, before)
+}
+
+func TestBumpCancellationEndsTasksAsCancelled(t *testing.T) {
+	dir := writeFixture(t, map[string]string{"jq": bumpFixture("http://unused.invalid")})
+	ctx, cancel := context.WithCancel(context.Background())
+	stubListFunc(t, func(ctx context.Context, _ *spec.Package) ([]discover.Discovered, error) {
+		cancel()
+		return nil, ctx.Err()
+	})
+	ctx, rep := testx.ReporterContext(ctx)
+
+	_, err := Run(ctx, dir, Options{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run error = %v, want context.Canceled", err)
+	}
+	task := rep.TaskFor("Bumping jq")
+	if task == nil {
+		t.Fatal("no Bumping jq task recorded")
+	}
+	if _, failed, outcome := task.Snapshot(); !failed || outcome != "Cancelled jq" {
+		t.Fatalf("task failed=%v outcome=%q, want Cancelled jq", failed, outcome)
+	}
+	if warns := rep.Warns(); len(warns) != 0 {
+		t.Fatalf("cancellation must not warn, got %v", warns)
+	}
 }

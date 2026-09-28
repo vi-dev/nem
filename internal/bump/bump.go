@@ -120,6 +120,9 @@ func Run(ctx context.Context, cat string, opts Options) (*Result, error) {
 		}
 		res.Rows = append(res.Rows, *r)
 	}
+	if ctx.Err() != nil {
+		return res, ctx.Err()
+	}
 	return res, nil
 }
 
@@ -146,8 +149,12 @@ func bumpOne(ctx context.Context, editor catalog.Editor, j job, opts Options, ex
 	row := &Row{Name: j.name}
 	task := r.Task("Bumping " + j.name)
 	fail := func(err error) *Row {
-		r.Warn("%s: %v", row.Name, err)
 		row.Error = err.Error()
+		if report.IsCancellation(err) || ctx.Err() != nil {
+			task.Fail("Cancelled " + row.Name)
+			return row
+		}
+		r.Warn("%s: %v", row.Name, err)
 		task.Fail("Failed to bump " + row.Name)
 		return row
 	}
