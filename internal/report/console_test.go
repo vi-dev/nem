@@ -619,3 +619,30 @@ func TestInfoPrefixInBothModes(t *testing.T) {
 		t.Errorf("colored = %q, want %q", got, want)
 	}
 }
+
+func TestLiveRepaintsAdvanceASharedSpinnerFrame(t *testing.T) {
+	c, _, errb := newLiveTest(Options{IsTTY: true, Color: ColorNever})
+	a := c.Task("Installing go v1.26.5")
+	b := c.Task("Installing kubectl v1.34.1")
+	c.repaint()
+	c.repaint()
+	var frames []string
+	for line := range strings.SplitSeq(errb.String(), "\n") {
+		if i := strings.Index(line, "\x1b[2K"); i >= 0 {
+			frames = append(frames, string([]rune(stripANSI(line[i+4:]))[:1]))
+		}
+	}
+	if len(frames) < 6 {
+		t.Fatalf("expected at least three repaints of two lines, got frames %v in %q", frames, errb.String())
+	}
+	last := frames[len(frames)-2:]
+	prev := frames[len(frames)-4 : len(frames)-2]
+	if last[0] != last[1] || prev[0] != prev[1] {
+		t.Errorf("lines of one repaint must share a frame: prev=%v last=%v", prev, last)
+	}
+	if last[0] == prev[0] {
+		t.Errorf("consecutive repaints must advance the frame: prev=%v last=%v", prev, last)
+	}
+	a.Done("Installed go v1.26.5")
+	b.Done("Installed kubectl v1.34.1")
+}

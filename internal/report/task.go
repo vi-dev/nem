@@ -88,8 +88,8 @@ func (t *task) markCompleted() bool {
 
 const autoElapsedAfter = 10 * time.Second
 
-func (t *task) renderLine(now time.Time, width int, colored bool) string {
-	return formatTaskLine(t.label, t.trailingText(now), width, colored)
+func (t *task) renderLine(now time.Time, width int, colored bool, spinner string) string {
+	return formatTaskLine(spinner, t.label, t.trailingText(now), width, colored)
 }
 
 func (t *task) trailingText(now time.Time) string {
@@ -122,22 +122,36 @@ func progressText(done, total int64, unit Unit) string {
 	}
 }
 
-func formatTaskLine(label, trailing string, width int, colored bool) string {
-	plain := label
+var (
+	spinnerUnicode = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	spinnerASCII   = []string{"|", "/", "-", "\\"}
+)
+
+func spinnerFrame(i int, colored bool) string {
+	frames := spinnerASCII
+	if colored {
+		frames = spinnerUnicode
+	}
+	return frames[i%len(frames)]
+}
+
+func formatTaskLine(spinner, label, trailing string, width int, colored bool) string {
+	plain := spinner + " " + label
 	if trailing != "" {
 		plain += "  " + trailing
 	}
-	truncated := truncateToWidth(plain, width)
-	if !colored || trailing == "" {
-		return truncated
+	truncated := []rune(truncateToWidth(plain, width))
+	if !colored {
+		return string(truncated)
 	}
-	labelLen := len([]rune(label))
-	truncRunes := []rune(truncated)
-	prefixLen := labelLen + 2
-	if prefixLen >= len(truncRunes) {
-		return truncated
+	spinnerLen := min(len([]rune(spinner)), len(truncated))
+	head := ansiCyan + string(truncated[:spinnerLen]) + ansiReset
+	rest := truncated[spinnerLen:]
+	splitAt := len([]rune(label)) + 3
+	if trailing == "" || splitAt >= len(rest) {
+		return head + string(rest)
 	}
-	return string(truncRunes[:prefixLen]) + ansiDim + string(truncRunes[prefixLen:]) + ansiReset
+	return head + string(rest[:splitAt]) + ansiDim + string(rest[splitAt:]) + ansiReset
 }
 
 func truncateToWidth(s string, width int) string {

@@ -44,6 +44,7 @@ type Console struct {
 	liveTasks []*task
 	liveLines int
 	liveStop  chan struct{}
+	liveFrame int
 	pending   []*task
 }
 
@@ -354,8 +355,10 @@ func (c *Console) repaintLocked() {
 	}
 	now := c.now()
 	width := c.width()
+	spinner := spinnerFrame(c.liveFrame, c.colored)
+	c.liveFrame++
 	for _, t := range c.liveTasks {
-		fmt.Fprintf(c.err, "\x1b[2K%s\n", t.renderLine(now, width, c.colored))
+		fmt.Fprintf(c.err, "\x1b[2K%s\n", t.renderLine(now, width, c.colored, spinner))
 	}
 	c.liveLines = len(c.liveTasks)
 }

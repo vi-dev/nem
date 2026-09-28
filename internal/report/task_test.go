@@ -157,3 +157,36 @@ func TestRunTaskFailReturnsErrUnchanged(t *testing.T) {
 		t.Errorf("unexpected Done line on failure: %q", got)
 	}
 }
+
+func TestFormatTaskLinePlainSpinner(t *testing.T) {
+	got := formatTaskLine("|", "Installing go v1.26.5", "downloading 42%", 80, false)
+	if want := "| Installing go v1.26.5  downloading 42%"; got != want {
+		t.Errorf("plain = %q, want %q", got, want)
+	}
+	if got, want := formatTaskLine("/", "Reclaiming", "", 80, false), "/ Reclaiming"; got != want {
+		t.Errorf("plain without segment = %q, want %q", got, want)
+	}
+}
+
+func TestFormatTaskLineColoredSpinnerAndDimTrailing(t *testing.T) {
+	got := formatTaskLine("⠋", "Installing go v1.26.5", "downloading", 80, true)
+	want := "\x1b[36m⠋\x1b[0m Installing go v1.26.5  \x1b[2mdownloading\x1b[0m"
+	if got != want {
+		t.Errorf("colored = %q, want %q", got, want)
+	}
+	if got, want := formatTaskLine("⠋", "Reclaiming", "", 80, true), "\x1b[36m⠋\x1b[0m Reclaiming"; got != want {
+		t.Errorf("colored without segment = %q, want %q", got, want)
+	}
+}
+
+func TestSpinnerFrameSetsFollowColorMode(t *testing.T) {
+	if got := spinnerFrame(0, true); got != "⠋" {
+		t.Errorf("colored frame 0 = %q, want braille", got)
+	}
+	if got := spinnerFrame(0, false); got != "|" {
+		t.Errorf("plain frame 0 = %q, want ASCII", got)
+	}
+	if spinnerFrame(len(spinnerUnicode), true) != spinnerFrame(0, true) || spinnerFrame(len(spinnerASCII), false) != spinnerFrame(0, false) {
+		t.Error("frames must wrap around")
+	}
+}
