@@ -88,7 +88,7 @@ func TestHintSuppressedByQuiet(t *testing.T) {
 func TestPromptIgnoresQuiet(t *testing.T) {
 	c, out, errb := newTest(Options{Quiet: true, Color: ColorNever})
 	c.Prompt("Remove these? [y/N]: ")
-	if errb.String() != "Remove these? [y/N]: \n" {
+	if errb.String() != "? Remove these? [y/N]: " {
 		t.Errorf("quiet suppressed a question the command blocks on: %q", errb.String())
 	}
 	if out.Len() != 0 {
@@ -645,4 +645,40 @@ func TestLiveRepaintsAdvanceASharedSpinnerFrame(t *testing.T) {
 	}
 	a.Done("Installed go v1.26.5")
 	b.Done("Installed kubectl v1.34.1")
+}
+
+func TestPromptAndAnswerShareALine(t *testing.T) {
+	c, _, errb := newTest(Options{Color: ColorNever})
+	c.Prompt("Remove these? [y/N]: ")
+	c.Answer("y")
+	if got, want := errb.String(), "? Remove these? [y/N]: y\n"; got != want {
+		t.Errorf("plain = %q, want %q", got, want)
+	}
+	cc, _, errc := newTest(Options{Color: ColorAlways})
+	cc.Prompt("Remove these? [y/N]: ")
+	cc.Answer("y")
+	if got, want := errc.String(), "\x1b[36m?\x1b[0m Remove these? [y/N]: y\n"; got != want {
+		t.Errorf("colored = %q, want %q", got, want)
+	}
+}
+
+func TestAnswerIgnoresQuiet(t *testing.T) {
+	c, _, errb := newTest(Options{Quiet: true, Color: ColorNever})
+	c.Answer("")
+	if errb.String() != "\n" {
+		t.Errorf("quiet suppressed the answer line: %q", errb.String())
+	}
+}
+
+func TestDebugPrefixInBothModes(t *testing.T) {
+	c, _, errb := newTest(Options{Verbose: true, Color: ColorNever})
+	c.Debug("Skipping %s: no versionDiscovery", "jq")
+	if got, want := errb.String(), "DEBUG Skipping jq: no versionDiscovery\n"; got != want {
+		t.Errorf("plain = %q, want %q", got, want)
+	}
+	cc, _, errc := newTest(Options{Verbose: true, Color: ColorAlways})
+	cc.Debug("Skipping %s: no versionDiscovery", "jq")
+	if got, want := errc.String(), "\x1b[2m· Skipping jq: no versionDiscovery\x1b[0m\n"; got != want {
+		t.Errorf("colored = %q, want %q", got, want)
+	}
 }

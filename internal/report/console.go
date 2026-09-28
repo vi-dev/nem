@@ -100,7 +100,14 @@ func (c *Console) Debug(format string, a ...any) {
 	if !c.opts.Verbose {
 		return
 	}
-	c.dim(fmt.Sprintf(format, a...))
+	msg := fmt.Sprintf(format, a...)
+	c.narrate(func() {
+		if c.colored {
+			fmt.Fprintf(c.err, "%s· %s%s\n", ansiDim, msg, ansiReset)
+		} else {
+			fmt.Fprintf(c.err, "DEBUG %s\n", msg)
+		}
+	})
 }
 
 func (c *Console) Success(format string, a ...any) {
@@ -160,7 +167,18 @@ func (c *Console) hintLocked(msg string) {
 }
 
 func (c *Console) Prompt(format string, a ...any) {
-	c.narrate(func() { fmt.Fprintf(c.err, format+"\n", a...) })
+	msg := fmt.Sprintf(format, a...)
+	c.narrate(func() {
+		if c.colored {
+			fmt.Fprintf(c.err, "%s?%s %s", ansiCyan, ansiReset, msg)
+		} else {
+			fmt.Fprintf(c.err, "? %s", msg)
+		}
+	})
+}
+
+func (c *Console) Answer(text string) {
+	c.narrate(func() { fmt.Fprintln(c.err, text) })
 }
 
 func (c *Console) Out() io.Writer { return &guardedWriter{console: c, w: c.out} }
@@ -248,16 +266,6 @@ func (c *Console) Table(headers []string, rows [][]string) {
 	for _, r := range rows {
 		line(r, false)
 	}
-}
-
-func (c *Console) dim(msg string) {
-	c.narrate(func() {
-		if c.colored {
-			fmt.Fprintf(c.err, "%s%s%s\n", ansiDim, msg, ansiReset)
-		} else {
-			fmt.Fprintln(c.err, msg)
-		}
-	})
 }
 
 func capitalizeLead(s string) string {

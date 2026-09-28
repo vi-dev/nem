@@ -141,10 +141,11 @@ func confirm(cmd *cobra.Command, all bool) bool {
 	}
 
 	line, err := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+	answer := strings.ToLower(strings.TrimSpace(line))
+	console.Answer(answer)
 	if err != nil && line == "" {
 		return false
 	}
-	answer := strings.ToLower(strings.TrimSpace(line))
 	return answer == "y" || answer == "yes"
 }
 
@@ -164,7 +165,7 @@ func confirmRaw(fd int) bool {
 
 	key := buf[0]
 	if restoreErr == nil {
-		console.Prompt("%c", key)
+		console.Answer(string(key))
 	}
 	return key == 'y' || key == 'Y'
 }
