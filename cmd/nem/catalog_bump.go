@@ -11,7 +11,8 @@ import (
 func newCatalogBumpCmd() *cobra.Command {
 	var packages []string
 	var backfill int
-	var dryRun, jsonOut bool
+	var dryRun bool
+	var output string
 	cmd := &cobra.Command{
 		Use:               "bump [catalog]",
 		Short:             "Add newer upstream versions to package manifests",
@@ -22,6 +23,9 @@ func newCatalogBumpCmd() *cobra.Command {
 			if len(args) == 1 {
 				cat = args[0]
 			}
+			if err := validateOutput(output); err != nil {
+				return err
+			}
 			refs, err := parsePackageRefs(packages)
 			if err != nil {
 				return err
@@ -30,7 +34,7 @@ func newCatalogBumpCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if jsonOut {
+			if output == outputJSON {
 				if err := console.JSON(res.Rows); err != nil {
 					return err
 				}
@@ -47,7 +51,7 @@ func newCatalogBumpCmd() *cobra.Command {
 	_ = cmd.RegisterFlagCompletionFunc("package", completeCatalogDirPackages)
 	cmd.Flags().IntVar(&backfill, "backfill", 0, "also ensure the newest <n> discovered versions have entries")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report the versions that would be added without downloading or writing anything")
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit every attempted package as JSON")
+	addOutputFlag(cmd, &output)
 	return cmd
 }
 

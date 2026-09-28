@@ -96,7 +96,7 @@ func TestCatalogOutdatedJSON(t *testing.T) {
 		return "1.8.3", nil
 	})
 
-	out, _, err := runNem(t, nemHome, "catalog", "outdated", "--json", dir)
+	out, _, err := runNem(t, nemHome, "catalog", "outdated", "--output", "json", dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestCatalogOutdatedDiscoveryErrorWarnsButSucceeds(t *testing.T) {
 		return "", errors.New("upstream unreachable")
 	})
 
-	out, errOut, err := runNem(t, nemHome, "catalog", "outdated", "--json", dir)
+	out, errOut, err := runNem(t, nemHome, "catalog", "outdated", "--output", "json", dir)
 	if err != nil {
 		t.Fatalf("outdated must exit 0 on per-package errors, got %v", err)
 	}

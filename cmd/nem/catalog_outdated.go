@@ -26,7 +26,7 @@ type outdatedRow struct {
 
 func newCatalogOutdatedCmd() *cobra.Command {
 	var packages []string
-	var jsonOut bool
+	var output string
 	cmd := &cobra.Command{
 		Use:               "outdated [catalog]",
 		Aliases:           []string{"old"},
@@ -34,6 +34,9 @@ func newCatalogOutdatedCmd() *cobra.Command {
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: firstArgOnly(completeYAMLOrDir),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateOutput(output); err != nil {
+				return err
+			}
 			ctx := cmd.Context()
 			cat := "."
 			if len(args) == 1 {
@@ -105,7 +108,7 @@ func newCatalogOutdatedCmd() *cobra.Command {
 					tableRows = append(tableRows, []string{r.Name, r.Current, r.Latest})
 				}
 			}
-			if jsonOut {
+			if output == outputJSON {
 				if err := console.JSON(rows); err != nil {
 					return err
 				}
@@ -119,7 +122,7 @@ func newCatalogOutdatedCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&packages, "package", nil,
 		"check this package (repeatable; default: every package)")
 	_ = cmd.RegisterFlagCompletionFunc("package", completeCatalogDirPackages)
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit every checked package as JSON")
+	addOutputFlag(cmd, &output)
 	return cmd
 }
 

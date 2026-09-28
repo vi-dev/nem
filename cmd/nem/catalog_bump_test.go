@@ -23,7 +23,7 @@ func TestCatalogBumpFlagWiring(t *testing.T) {
 	t.Run("package version and json", func(t *testing.T) {
 		dir := writeLintFixture(t, map[string]string{"tool": bareOCIBumpFixture})
 
-		out, errOut, err := runNem(t, t.TempDir(), "catalog", "bump", "--json", "--package", "tool@v1.1.0", dir)
+		out, errOut, err := runNem(t, t.TempDir(), "catalog", "bump", "--output", "json", "--package", "tool@v1.1.0", dir)
 		if err != nil {
 			t.Fatalf("bump: %v", err)
 		}

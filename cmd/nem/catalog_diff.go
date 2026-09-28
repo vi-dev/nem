@@ -1,18 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/vi-dev/nem/internal/diff"
 	"github.com/vi-dev/nem/internal/publish"
-)
-
-const (
-	outputText = "text"
-	outputJSON = "json"
 )
 
 func newCatalogDiffCmd() *cobra.Command {
@@ -24,8 +18,8 @@ func newCatalogDiffCmd() *cobra.Command {
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: argsUpTo(2, completeYAMLOrDir),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if output != outputText && output != outputJSON {
-				return fmt.Errorf("unknown output format %q (want %s or %s)", output, outputText, outputJSON)
+			if err := validateOutput(output); err != nil {
+				return err
 			}
 			findings, err := publish.Lint(cmd.Context(), args[0], packages...)
 			if err != nil {
@@ -57,9 +51,7 @@ func newCatalogDiffCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&packages, "package", nil,
 		"compare this package (repeatable; default: every package)")
 	_ = cmd.RegisterFlagCompletionFunc("package", completeCatalogDirPackages)
-	cmd.Flags().StringVar(&output, "output", outputText, "output format: text or json")
-	_ = cmd.RegisterFlagCompletionFunc("output",
-		cobra.FixedCompletions([]string{outputText, outputJSON}, cobra.ShellCompDirectiveNoFileComp))
+	addOutputFlag(cmd, &output)
 	return cmd
 }
 
