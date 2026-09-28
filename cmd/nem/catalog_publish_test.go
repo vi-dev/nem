@@ -72,7 +72,7 @@ func TestCatalogPublishDryRunPrintsPlanToStdout(t *testing.T) {
 	if !strings.Contains(out, "PACKAGE") || !strings.Contains(out, "go") || !strings.Contains(out, "v1.26.5") {
 		t.Fatalf("stdout = %q, want the plan table", out)
 	}
-	if !strings.Contains(errb, "Dry run: would publish example.com/cat (1 packages)") {
+	if !strings.Contains(errb, "Would publish example.com/cat (1 package)") {
 		t.Fatalf("stderr = %q, want the dry-run summary", errb)
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/vi-dev/nem/internal/install"
 	"github.com/vi-dev/nem/internal/pkgtest"
 	"github.com/vi-dev/nem/internal/project"
+	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/resolve"
 	"github.com/vi-dev/nem/internal/spec"
 )
@@ -88,7 +89,7 @@ func newCatalogTestCmd() *cobra.Command {
 func testSummary(tested, failed, skipped int) string {
 	var parts []string
 	if tested > 0 {
-		parts = append(parts, fmt.Sprintf("Tested %d packages", tested))
+		parts = append(parts, "Tested "+report.Plural(tested, "package"))
 	}
 	if failed > 0 {
 		parts = append(parts, fmt.Sprintf("%d failed", failed))

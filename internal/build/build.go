@@ -253,7 +253,7 @@ func writeTempArchive(h home.Home, name string, data []byte) (string, error) {
 
 func conformanceError(vs []Violation) error {
 	var msg strings.Builder
-	fmt.Fprintf(&msg, "%d conformance violation(s):", len(vs))
+	fmt.Fprintf(&msg, "%s:", report.Plural(len(vs), "conformance violation"))
 	for _, v := range vs {
 		fmt.Fprintf(&msg, "\n  %s: %s (%s)", v.File, v.Ref, v.Reason)
 	}

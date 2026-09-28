@@ -210,7 +210,7 @@ func TestRunFailFastCancelsRestJobs(t *testing.T) {
 			t.Fatalf("%s: task not failed", name)
 		}
 		switch outcome {
-		case "Failed " + name + " v1.0.0":
+		case "Failed to install " + name + " v1.0.0":
 			sawBoom++
 		case "Cancelled " + name + " v1.0.0":
 
@@ -285,8 +285,8 @@ func TestRunConcurrentRealErrorsAreNotMisclassifiedAsCancelled(t *testing.T) {
 	}
 
 	for _, tc := range []struct{ name, want string }{
-		{"joba", "Failed joba v1.0.0"},
-		{"jobb", "Failed jobb v1.0.0"},
+		{"joba", "Failed to install joba v1.0.0"},
+		{"jobb", "Failed to install jobb v1.0.0"},
 	} {
 		task := rep.TaskFor("Installing " + tc.name + " v1.0.0")
 		if task == nil {
@@ -381,7 +381,7 @@ func TestRunInstallFailureRemovesArtifact(t *testing.T) {
 	if done || !failed {
 		t.Fatalf("task done=%v failed=%v, want failed only", done, failed)
 	}
-	if outcome != "Failed badinstall v1.0.0" {
+	if outcome != "Failed to install badinstall v1.0.0" {
 		t.Fatalf("outcome = %q, want short failure outcome", outcome)
 	}
 	if IsInstalled(h, "badinstall", "v1.0.0") {

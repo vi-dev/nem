@@ -21,7 +21,7 @@ import (
 func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledManifest, store *ocix.Store, archives archive.ReadWriteStore, agg *aggregator) {
 	rep := report.FromContext(ctx)
 	label := fmt.Sprintf("Filling %s", nm.Title)
-	failedOutcome := fmt.Sprintf("Failed %s", nm.Title)
+	failedOutcome := fmt.Sprintf("Failed to fill %s", nm.Title)
 
 	task := rep.Task(label)
 	task.Segment("probing")
@@ -138,7 +138,7 @@ func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledM
 		if opts.DryRun {
 			verb = "Would fill"
 		}
-		task.Done(fmt.Sprintf("%s %s (%d fill(s), %d heal(s))", verb, nm.Title, filled, healed))
+		task.Done(fmt.Sprintf("%s %s (%s, %s)", verb, nm.Title, report.Plural(filled, "fill"), report.Plural(healed, "heal")))
 	default:
 		task.Discard()
 	}

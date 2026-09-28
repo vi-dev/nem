@@ -9,6 +9,7 @@ import (
 	"github.com/vi-dev/nem/internal/envx"
 	"github.com/vi-dev/nem/internal/install"
 	"github.com/vi-dev/nem/internal/project"
+	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -66,7 +67,7 @@ func runStatus(global bool) error {
 		}
 		rows = append(rows, []string{tool.Key.Name, tool.Version, catalog, lockedCell, installedCell})
 	}
-	console.Table([]string{"package", "version", "catalog", "locked", "installed"}, rows)
+	console.Table([]string{"PACKAGE", "VERSION", "CATALOG", "LOCKED", "INSTALLED"}, rows)
 
 	var other *project.Manifest
 	var otherLock *project.Lockfile
@@ -101,7 +102,7 @@ func runStatus(global bool) error {
 		for _, v := range result.Vars {
 			envRows = append(envRows, []string{v.Name, v.Value, v.Source})
 		}
-		console.Table([]string{"variable", "value", "source"}, envRows)
+		console.Table([]string{"VARIABLE", "VALUE", "SOURCE"}, envRows)
 	}
 	return nil
 }
@@ -113,10 +114,10 @@ func warnMissingInstalls(projLock, globalLock *project.Lockfile) {
 	}
 	console.Info("")
 	if nProj > 0 {
-		console.Warn("%d project %s not installed — run `nem sync`", nProj, packagesWord(nProj))
+		console.Warn("%s not installed — run `nem sync`", report.Plural(nProj, "project package"))
 	}
 	if nGlobal > 0 {
-		console.Warn("%d global %s not installed — run `nem sync -g`", nGlobal, packagesWord(nGlobal))
+		console.Warn("%s not installed — run `nem sync -g`", report.Plural(nGlobal, "global package"))
 	}
 }
 
@@ -129,11 +130,4 @@ func countMissing(lock *project.Lockfile) int {
 		}
 	}
 	return n
-}
-
-func packagesWord(n int) string {
-	if n == 1 {
-		return "package"
-	}
-	return "packages"
 }

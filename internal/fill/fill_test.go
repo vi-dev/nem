@@ -208,7 +208,7 @@ func TestRunFillsMultiPlatformWithOneIndexCommit(t *testing.T) {
 	if task == nil {
 		t.Fatal("no task for go")
 	}
-	wantOutcome := fmt.Sprintf("Filled go (%d fill(s), 0 heal(s))", len(spec.SupportedPlatforms))
+	wantOutcome := fmt.Sprintf("Filled go (%d fills, 0 heals)", len(spec.SupportedPlatforms))
 	if done, failed, outcome := task.Snapshot(); !done || failed || outcome != wantOutcome {
 		t.Fatalf("go task done=%v failed=%v outcome=%q, want done %q", done, failed, outcome, wantOutcome)
 	}
@@ -277,8 +277,8 @@ func TestRunPartialBatchCommitsSuccessfulPlatforms(t *testing.T) {
 	if task == nil {
 		t.Fatal("no task for go")
 	}
-	if _, failed, outcome := task.Snapshot(); !failed || outcome != "Failed go" {
-		t.Fatalf("go task failed=%v outcome=%q, want failed \"Failed go\"", failed, outcome)
+	if _, failed, outcome := task.Snapshot(); !failed || outcome != "Failed to fill go" {
+		t.Fatalf("go task failed=%v outcome=%q, want failed \"Failed to fill go\"", failed, outcome)
 	}
 
 	plats, err := archive.ResolvePlatforms(context.Background(), counted, "1.0.0")
@@ -336,8 +336,8 @@ func TestRunBatchCommitFailureCountsAsFailedNotFilled(t *testing.T) {
 	if task == nil {
 		t.Fatal("no task for go")
 	}
-	if _, failed, outcome := task.Snapshot(); !failed || outcome != "Failed go" {
-		t.Fatalf("go task failed=%v outcome=%q, want failed \"Failed go\"", failed, outcome)
+	if _, failed, outcome := task.Snapshot(); !failed || outcome != "Failed to fill go" {
+		t.Fatalf("go task failed=%v outcome=%q, want failed \"Failed to fill go\"", failed, outcome)
 	}
 }
 
@@ -395,8 +395,8 @@ func TestRunUpstream404WarnsAndFailsNotAborts(t *testing.T) {
 	if task == nil {
 		t.Fatal("no task for go")
 	}
-	if _, failed, outcome := task.Snapshot(); !failed || outcome != "Failed go" {
-		t.Fatalf("go task failed=%v outcome=%q, want failed \"Failed go\"", failed, outcome)
+	if _, failed, outcome := task.Snapshot(); !failed || outcome != "Failed to fill go" {
+		t.Fatalf("go task failed=%v outcome=%q, want failed \"Failed to fill go\"", failed, outcome)
 	}
 	warns := rep.Warns()
 	if len(warns) == 0 {
@@ -444,7 +444,7 @@ func TestRunWarnAndContinueSiblingCompletes(t *testing.T) {
 	if brokenTask == nil {
 		t.Fatal("no task for broken")
 	}
-	if _, failed, outcome := brokenTask.Snapshot(); !failed || outcome != "Failed broken" {
+	if _, failed, outcome := brokenTask.Snapshot(); !failed || outcome != "Failed to fill broken" {
 		t.Fatalf("broken task failed=%v outcome=%q", failed, outcome)
 	}
 
@@ -452,7 +452,7 @@ func TestRunWarnAndContinueSiblingCompletes(t *testing.T) {
 	if healthyTask == nil {
 		t.Fatal("no task for healthy")
 	}
-	wantHealthyOutcome := fmt.Sprintf("Filled healthy (%d fill(s), 0 heal(s))", len(spec.SupportedPlatforms))
+	wantHealthyOutcome := fmt.Sprintf("Filled healthy (%d fills, 0 heals)", len(spec.SupportedPlatforms))
 	if done, failed, outcome := healthyTask.Snapshot(); !done || failed || outcome != wantHealthyOutcome {
 		t.Fatalf("healthy task done=%v failed=%v outcome=%q, want done %q", done, failed, outcome, wantHealthyOutcome)
 	}

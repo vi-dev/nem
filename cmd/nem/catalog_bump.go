@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/vi-dev/nem/internal/bump"
+	"github.com/vi-dev/nem/internal/report"
 )
 
 func newCatalogBumpCmd() *cobra.Command {
@@ -62,7 +63,7 @@ func bumpSummary(res *bump.Result, dryRun bool) string {
 		if dryRun {
 			verb = "Would bump"
 		}
-		parts = append(parts, fmt.Sprintf("%s %d packages", verb, n))
+		parts = append(parts, verb+" "+report.Plural(n, "package"))
 	}
 	if n := res.Failed(); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d failed", n))

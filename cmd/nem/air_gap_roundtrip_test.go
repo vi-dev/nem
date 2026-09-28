@@ -107,7 +107,7 @@ func TestAirGappedCatalogRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fill: %v\n%s", err, errb)
 	}
-	wantFillSummary := fmt.Sprintf("Filled 1 packages, %d fill(s), 0 heal(s), 0 present, 0 package(s) not fillable", len(spec.SupportedPlatforms))
+	wantFillSummary := fmt.Sprintf("Filled 1 package, %d fills, 0 heals, 0 present, 0 packages not fillable", len(spec.SupportedPlatforms))
 	if !strings.Contains(errb, wantFillSummary) {
 		t.Fatalf("fill summary = %q, want to contain %q", errb, wantFillSummary)
 	}
@@ -145,7 +145,7 @@ func TestAirGappedCatalogRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mirror: %v\n%s", err, errb)
 	}
-	if !strings.Contains(errb, "Mirrored 2 packages, 1 tag(s)") {
+	if !strings.Contains(errb, "Mirrored 2 packages, 1 tag") {
 		t.Fatalf("mirror summary:\n%s", errb)
 	}
 

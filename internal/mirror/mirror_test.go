@@ -234,8 +234,8 @@ func TestRunPrebuiltMissingTagWarnsAndFails(t *testing.T) {
 		t.Fatal("no task for kubectl")
 	}
 	_, failed, outcome := task.Snapshot()
-	if !failed || outcome != "Failed kubectl" {
-		t.Fatalf("kubectl task failed=%v outcome=%q, want failed \"Failed kubectl\"", failed, outcome)
+	if !failed || outcome != "Failed to mirror kubectl" {
+		t.Fatalf("kubectl task failed=%v outcome=%q, want failed \"Failed to mirror kubectl\"", failed, outcome)
 	}
 	warns := rep.Warns()
 	if len(warns) != 1 || warns[0] != "kubectl 1.28.0: archive missing from source" {
@@ -332,7 +332,7 @@ func TestRunWarnAndContinueSiblingCompletes(t *testing.T) {
 	if brokenTask == nil {
 		t.Fatal("no task for broken")
 	}
-	if _, failed, outcome := brokenTask.Snapshot(); !failed || outcome != "Failed broken" {
+	if _, failed, outcome := brokenTask.Snapshot(); !failed || outcome != "Failed to mirror broken" {
 		t.Fatalf("broken task failed=%v outcome=%q", failed, outcome)
 	}
 
@@ -340,7 +340,7 @@ func TestRunWarnAndContinueSiblingCompletes(t *testing.T) {
 	if healthyTask == nil {
 		t.Fatal("no task for healthy")
 	}
-	if done, failed, outcome := healthyTask.Snapshot(); !done || failed || outcome != "Mirrored healthy (1 tag(s))" {
+	if done, failed, outcome := healthyTask.Snapshot(); !done || failed || outcome != "Mirrored healthy (1 tag)" {
 		t.Fatalf("healthy task done=%v failed=%v outcome=%q, want done \"Mirrored healthy (1 tag(s))\"", done, failed, outcome)
 	}
 }

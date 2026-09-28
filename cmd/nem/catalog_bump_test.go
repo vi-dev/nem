@@ -37,7 +37,7 @@ func TestCatalogBumpFlagWiring(t *testing.T) {
 		if len(rows) != 1 || rows[0].Name != "tool" || rows[0].Head != "v1.1.0" {
 			t.Fatalf("rows = %+v, want one tool row with head v1.1.0", rows)
 		}
-		if !strings.Contains(errOut, "Bumped 1 packages") {
+		if !strings.Contains(errOut, "Bumped 1 package") {
 			t.Fatalf("stderr = %q, want the summary line", errOut)
 		}
 	})
@@ -51,7 +51,7 @@ func TestCatalogBumpFlagWiring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("bump --dry-run: %v", err)
 		}
-		if !strings.Contains(errOut, "Would bump tool v1.0.0 → v1.1.0") || !strings.Contains(errOut, "Would bump 1 packages") {
+		if !strings.Contains(errOut, "Would bump tool v1.0.0 → v1.1.0") || !strings.Contains(errOut, "Would bump 1 package") {
 			t.Fatalf("stderr = %q, want the dry-run plan and summary", errOut)
 		}
 		if after, _ := os.ReadFile(path); string(after) != string(before) {
@@ -67,7 +67,7 @@ func TestCatalogBumpFlagWiring(t *testing.T) {
 		if !errors.As(err, &exitErr) || exitErr.Code != 1 {
 			t.Fatalf("err = %v, want *ExitError{Code:1}", err)
 		}
-		if !strings.Contains(errOut, "no versionDiscovery") || !strings.Contains(errOut, "Failed tool") || !strings.Contains(errOut, "1 failed") {
+		if !strings.Contains(errOut, "no versionDiscovery") || !strings.Contains(errOut, "Failed to bump tool") || !strings.Contains(errOut, "1 failed") {
 			t.Fatalf("stderr = %q, want the discovery failure and summary", errOut)
 		}
 	})

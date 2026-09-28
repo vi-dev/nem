@@ -32,9 +32,9 @@ func TestTaskDoneAtOrOverOneSecondShowsSuffix(t *testing.T) {
 func TestTaskFailEmitsUnderQuiet(t *testing.T) {
 	c, _, errb := newTest(Options{Quiet: true, Color: ColorNever})
 	task := c.Task("Installing go v1.26.5")
-	task.Fail("Install go v1.26.5 failed")
+	task.Fail("Failed to install go v1.26.5")
 
-	if !strings.Contains(errb.String(), "ERROR Install go v1.26.5 failed\n") {
+	if !strings.Contains(errb.String(), "ERROR Failed to install go v1.26.5\n") {
 		t.Errorf("quiet suppressed a task failure: %q", errb.String())
 	}
 }
@@ -42,7 +42,7 @@ func TestTaskFailEmitsUnderQuiet(t *testing.T) {
 func TestTaskFailColoredShowsGlyph(t *testing.T) {
 	c, _, errb := newTest(Options{Color: ColorAlways})
 	task := c.Task("Installing go v1.26.5")
-	task.Fail("Install go v1.26.5 failed")
+	task.Fail("Failed to install go v1.26.5")
 
 	if !strings.Contains(errb.String(), "✗") {
 		t.Errorf("expected unicode glyph in colored fail, got %q", errb.String())
@@ -62,7 +62,7 @@ func TestTaskDoneSuppressedByQuiet(t *testing.T) {
 func TestTaskDoneAfterFailIsNoOp(t *testing.T) {
 	c, _, errb := newTest(Options{Color: ColorNever})
 	task := c.Task("Installing go v1.26.5")
-	task.Fail("Install go v1.26.5 failed")
+	task.Fail("Failed to install go v1.26.5")
 	errb.Reset()
 
 	task.Done("Installed go v1.26.5")
@@ -120,7 +120,7 @@ func TestTaskConcurrentUpdatesRaceClean(t *testing.T) {
 
 func TestRunTaskSetsStatusBeforeFnSoCountRenders(t *testing.T) {
 	c, _, errb := newLiveTest(Options{IsTTY: true, Color: ColorNever})
-	labels := TaskLabels{Run: "Pulling catalog", Segment: "copying", Done: "Pulled catalog", Fail: "Pull failed"}
+	labels := TaskLabels{Run: "Pulling catalog", Segment: "copying", Done: "Pulled catalog", Fail: "Failed to pull catalog"}
 
 	err := RunTask(NewContext(context.Background(), c), labels, func(count ProgressFunc) error {
 		count(3, 10, Items)
@@ -141,7 +141,7 @@ func TestRunTaskSetsStatusBeforeFnSoCountRenders(t *testing.T) {
 
 func TestRunTaskFailReturnsErrUnchanged(t *testing.T) {
 	c, _, errb := newTest(Options{Color: ColorNever})
-	labels := TaskLabels{Run: "Pushing catalog", Segment: "copying", Done: "Pushed catalog", Fail: "Push failed"}
+	labels := TaskLabels{Run: "Pushing catalog", Segment: "copying", Done: "Pushed catalog", Fail: "Failed to push catalog"}
 	sentinel := errors.New("boom")
 
 	err := RunTask(NewContext(context.Background(), c), labels, func(ProgressFunc) error { return sentinel })
@@ -150,7 +150,7 @@ func TestRunTaskFailReturnsErrUnchanged(t *testing.T) {
 	}
 
 	got := errb.String()
-	if !strings.Contains(got, "Push failed") {
+	if !strings.Contains(got, "Failed to push catalog") {
 		t.Errorf("missing Fail line: %q", got)
 	}
 	if strings.Contains(got, "Pushed catalog") {

@@ -123,7 +123,7 @@ func TestCatalogOutdatedDiscoveryErrorWarnsButSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("outdated must exit 0 on per-package errors, got %v", err)
 	}
-	if !strings.Contains(errOut, "jq: discovery failed: upstream unreachable") || !strings.Contains(errOut, "Failed jq") {
+	if !strings.Contains(errOut, "jq: discovery failed: upstream unreachable") || !strings.Contains(errOut, "Failed to check jq") {
 		t.Fatalf("stderr = %q, want the warning and the failed task", errOut)
 	}
 	if !strings.Contains(errOut, "1 failed") {

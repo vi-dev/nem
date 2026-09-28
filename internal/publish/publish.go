@@ -189,7 +189,7 @@ func pushOne(ctx context.Context, target oras.Target, e pkgEntry, force bool) (o
 			return ocix.CatalogIndexEntry{}, false, fmt.Errorf("check %s: %w", e.Name, err)
 		}
 		if exists {
-			r.Info("Skip %s %s (unchanged)", e.Name, e.Version)
+			r.Debug("Skipped %s %s (unchanged)", e.Name, e.Version)
 			return indexEntry(e, desc), false, nil
 		}
 	}
@@ -198,7 +198,7 @@ func pushOne(ctx context.Context, target oras.Target, e pkgEntry, force bool) (o
 	if err != nil {
 		return ocix.CatalogIndexEntry{}, false, fmt.Errorf("push %s: %w", e.Name, err)
 	}
-	r.Info("Push %s %s", e.Name, e.Version)
+	r.Success("Pushed %s %s", e.Name, e.Version)
 	return indexEntry(e, pushed), true, nil
 }
 

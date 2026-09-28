@@ -52,7 +52,7 @@ func runJob(gctx context.Context, h home.Home, job Job) error {
 	label := fmt.Sprintf("Installing %s %s", name, version)
 	cancelled := fmt.Sprintf("Cancelled %s %s", name, version)
 
-	failedOutcome := fmt.Sprintf("Failed %s %s", name, version)
+	failedOutcome := fmt.Sprintf("Failed to install %s %s", name, version)
 
 	task := rep.Task(label)
 	if isCancellation(gctx, nil) {

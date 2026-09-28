@@ -112,7 +112,7 @@ func runSelfUpdate(ctx context.Context, targetVersion string, check bool) error 
 	}
 	task := console.Task("Updating nem to " + target)
 	if err := updater.Update(ctx, target, exePath, task); err != nil {
-		task.Fail("Update failed")
+		task.Fail("Failed to update nem")
 		return err
 	}
 	task.Done("nem " + version + " → " + target)

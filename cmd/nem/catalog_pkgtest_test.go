@@ -27,7 +27,7 @@ func TestCatalogTestInstallsAPackageWithoutTests(t *testing.T) {
 	if !strings.Contains(errb, "Installed tool v1.0.0 (declares no tests)") {
 		t.Fatalf("want an installed-without-tests notice, got:\n%s\n%s", out, errb)
 	}
-	if !strings.Contains(errb, "Tested 1 packages") {
+	if !strings.Contains(errb, "Tested 1 package") {
 		t.Fatalf("an install-only package counts as tested, got:\n%s", errb)
 	}
 	if _, err := os.Stat(filepath.Join(nemHome, "packages", "tool", "v1.0.0")); !os.IsNotExist(err) {
@@ -250,7 +250,7 @@ func TestCatalogTestContinuesPastFailuresAndExitsNonzero(t *testing.T) {
 	if !strings.Contains(errb, "Tested tool v1.0.0 (1 step)") {
 		t.Fatalf("the run must continue past the failing package, got:\n%s", errb)
 	}
-	if !strings.Contains(errb, "broken:") || !strings.Contains(errb, "Tested 1 packages, 1 failed") {
+	if !strings.Contains(errb, "broken:") || !strings.Contains(errb, "Tested 1 package, 1 failed") {
 		t.Fatalf("want the failure warning and summary, got:\n%s", errb)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/vi-dev/nem/internal/mirror"
+	"github.com/vi-dev/nem/internal/report"
 )
 
 func newCatalogMirrorCmd() *cobra.Command {
@@ -23,11 +24,11 @@ func newCatalogMirrorCmd() *cobra.Command {
 				verb = "Would mirror"
 			}
 			if summary.Failed > 0 {
-				console.Success("%s %d packages, %d tag(s), %d tag(s) failed",
-					verb, summary.Packages, summary.Copied, summary.Failed)
+				console.Success("%s %s, %s, %s failed",
+					verb, report.Plural(summary.Packages, "package"), report.Plural(summary.Copied, "tag"), report.Plural(summary.Failed, "tag"))
 				return &ExitError{Code: 1}
 			}
-			console.Success("%s %d packages, %d tag(s)", verb, summary.Packages, summary.Copied)
+			console.Success("%s %s, %s", verb, report.Plural(summary.Packages, "package"), report.Plural(summary.Copied, "tag"))
 			return nil
 		},
 	}

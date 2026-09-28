@@ -110,11 +110,7 @@ func InstallAndRun(ctx context.Context, h home.Home, deps []build.ResolvedDep,
 			return fmt.Errorf("test step %d (%q): %w", i+1, s.Run, runErr)
 		}
 	}
-	noun := "steps"
-	if len(steps) == 1 {
-		noun = "step"
-	}
-	rep.Success("Tested %s %s (%d %s)", pkg.Name, version, len(steps), noun)
+	rep.Success("Tested %s %s (%s)", pkg.Name, version, report.Plural(len(steps), "step"))
 	return nil
 }
 

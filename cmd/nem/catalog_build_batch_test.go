@@ -93,7 +93,7 @@ func TestCatalogBuildBatchDryRunRendersWavePlan(t *testing.T) {
 	if app[len(app)-2] != "blib" {
 		t.Fatalf("bapp NEEDS must name blib, got %v", app)
 	}
-	if !strings.Contains(errb, "would push") {
+	if !strings.Contains(errb, "Would push") {
 		t.Fatalf("--push --dry-run must narrate the pushes it would make:\n%s", errb)
 	}
 }
@@ -201,7 +201,7 @@ func TestCatalogBuildWithDepsComposesWithMissing(t *testing.T) {
 	if tableRow(out, 1, "bsolo") != nil {
 		t.Fatalf("--missing must scan only the selected roots, not unrelated packages:\n%s", out)
 	}
-	if !strings.Contains(errb, "Checked 1 oci packages:") {
+	if !strings.Contains(errb, "Checked 1 oci package:") {
 		t.Fatalf("the missing scan must narrate what it checked:\n%s", errb)
 	}
 }

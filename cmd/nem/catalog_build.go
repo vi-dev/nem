@@ -16,6 +16,7 @@ import (
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/config"
 	"github.com/vi-dev/nem/internal/pkgtest"
+	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -98,8 +99,8 @@ func runCatalogBuild(cmd *cobra.Command, cat string, in buildInput) error {
 		if err != nil {
 			return err
 		}
-		console.Info("Checked %d oci packages: %d incomplete versions, %d prebuilt skipped",
-			stats.Checked, len(missing), stats.Skipped)
+		console.Info("Checked %s: %s, %d prebuilt skipped",
+			report.Plural(stats.Checked, "oci package"), report.Plural(len(missing), "incomplete version"), stats.Skipped)
 		sels = missing
 	case len(roots) > 0:
 		sels = roots
@@ -190,7 +191,7 @@ func narrateDryRunPushes(plan build.Plan, t *build.Target, push bool) error {
 		if err != nil {
 			return err
 		}
-		console.Info("Dry-run: would push %s:%s (%s)", ref, e.Version, plat)
+		console.Info("Would push %s:%s (%s)", ref, e.Version, plat)
 	}
 	return nil
 }

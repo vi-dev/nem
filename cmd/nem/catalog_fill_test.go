@@ -54,7 +54,7 @@ func TestCatalogFillCmd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fill: %v\n%s", err, errb)
 	}
-	if !strings.Contains(errb, "Filled 1 packages") {
+	if !strings.Contains(errb, "Filled 1 package") {
 		t.Fatalf("stderr missing summary line:\n%s", errb)
 	}
 
@@ -85,11 +85,11 @@ func TestCatalogFillCmdDryRunWritesNothing(t *testing.T) {
 		t.Fatalf("fill --dry-run: %v\n%s", err, errb)
 	}
 
-	wantOutcome := fmt.Sprintf("Would fill go (%d fill(s), 0 heal(s))", len(spec.SupportedPlatforms))
+	wantOutcome := fmt.Sprintf("Would fill go (%d fills, 0 heals)", len(spec.SupportedPlatforms))
 	if !strings.Contains(errb, wantOutcome) {
 		t.Fatalf("stderr missing package completion line %q:\n%s", wantOutcome, errb)
 	}
-	if !strings.Contains(errb, "Would fill 1 packages") {
+	if !strings.Contains(errb, "Would fill 1 package") {
 		t.Fatalf("stderr missing dry-run summary line:\n%s", errb)
 	}
 	if strings.Contains(errb, "would fill") {

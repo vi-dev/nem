@@ -13,6 +13,7 @@ import (
 	"github.com/vi-dev/nem/internal/install"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/project"
+	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/resolve"
 	"github.com/vi-dev/nem/internal/spec"
 )
@@ -192,11 +193,7 @@ func warnStaleCatalogs(cfg *config.Config, result *resolve.Result) {
 }
 
 func syncAgePhrase(age time.Duration) string {
-	days := int(age.Hours() / 24)
-	if days <= 1 {
-		return "1 day"
-	}
-	return fmt.Sprintf("%d days", days)
+	return report.Plural(max(int(age.Hours()/24), 1), "day")
 }
 
 func reportUpdatePlan(rows [][]string) {
@@ -204,5 +201,5 @@ func reportUpdatePlan(rows [][]string) {
 		console.Info("All tools up to date")
 		return
 	}
-	console.Table([]string{"tool", "current", "latest"}, rows)
+	console.Table([]string{"TOOL", "CURRENT", "LATEST"}, rows)
 }

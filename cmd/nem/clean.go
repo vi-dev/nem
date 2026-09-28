@@ -105,12 +105,12 @@ func runClean(cmd *cobra.Command, opts clean.Options, dryRun, yes bool) error {
 			task.Progress(freedSoFar, -1, report.Bytes)
 		},
 		Skipped: func(e clean.Entry, reason string) {
-			console.Warn("skipped %s: %s", entryLabel(e), reason)
+			console.Warn("Skipped %s: %s", entryLabel(e), reason)
 		},
 	}
 	freed, err := clean.Execute(nemHome, plan, obs)
 	if err != nil {
-		task.Fail("Reclaim failed")
+		task.Fail("Failed to reclaim")
 		if freed > 0 {
 			console.Info("Reclaimed %s before the error below", report.FormatBytes(freed))
 		}

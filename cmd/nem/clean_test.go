@@ -129,7 +129,7 @@ func TestCleanReportsASkippedRevivedVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("clean: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "skipped go/1.26.5: used since planning") {
+	if !strings.Contains(out, "Skipped go/1.26.5: used since planning") {
 		t.Errorf("missing skip line for a revived version, got:\n%s", out)
 	}
 }

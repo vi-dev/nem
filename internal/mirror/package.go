@@ -17,7 +17,7 @@ import (
 func mirrorPackage(ctx context.Context, opts Options, manifest ocix.TitledManifest, store *ocix.Store, srcArchives archive.Store, dstArchives archive.ReadWriteStore, agg *aggregator) {
 	rep := report.FromContext(ctx)
 	label := fmt.Sprintf("Mirroring %s", manifest.Title)
-	failedOutcome := fmt.Sprintf("Failed %s", manifest.Title)
+	failedOutcome := fmt.Sprintf("Failed to mirror %s", manifest.Title)
 
 	task := rep.Task(label)
 	task.Segment("probing")
@@ -88,7 +88,7 @@ func mirrorPackage(ctx context.Context, opts Options, manifest ocix.TitledManife
 		if opts.DryRun {
 			verb = "Would mirror"
 		}
-		task.Done(fmt.Sprintf("%s %s (%d tag(s))", verb, manifest.Title, copied))
+		task.Done(fmt.Sprintf("%s %s (%s)", verb, manifest.Title, report.Plural(copied, "tag")))
 	default:
 		task.Discard()
 	}

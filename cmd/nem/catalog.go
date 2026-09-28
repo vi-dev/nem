@@ -132,7 +132,7 @@ func newCatalogListCmd() *cobra.Command {
 				}
 				rows = append(rows, []string{e.Name, e.Type, source, status})
 			}
-			console.Table([]string{"name", "type", "source", "status"}, rows)
+			console.Table([]string{"NAME", "TYPE", "SOURCE", "STATUS"}, rows)
 			return nil
 		},
 	}
@@ -236,7 +236,7 @@ func syncOne(ctx context.Context, e config.CatalogEntry) error {
 		Run:     "Syncing catalog " + e.Name,
 		Segment: "copying",
 		Done:    "Synced catalog " + e.Name,
-		Fail:    "Sync failed",
+		Fail:    "Failed to sync catalog " + e.Name,
 	}
 	return report.RunTask(ctx, labels, func(count report.ProgressFunc) error {
 		_, err := syncCatalog(ctx, e.Ref, store, count)

@@ -76,7 +76,7 @@ func runSearch(cmd *cobra.Command, query string) error {
 	for i, h := range hits {
 		rows[i] = []string{h.Name, h.Latest, h.Catalog, h.Description}
 	}
-	console.Table([]string{"name", "version", "catalog", "description"}, rows)
+	console.Table([]string{"NAME", "VERSION", "CATALOG", "DESCRIPTION"}, rows)
 	return nil
 }
 

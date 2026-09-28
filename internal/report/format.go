@@ -28,3 +28,10 @@ func FormatBytes(n int64) string {
 	}
 	return fmt.Sprintf("%.0f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }
+
+func Plural(n int, noun string) string {
+	if n == 1 {
+		return fmt.Sprintf("1 %s", noun)
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}

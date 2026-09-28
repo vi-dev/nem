@@ -148,7 +148,7 @@ func bumpOne(ctx context.Context, editor catalog.Editor, j job, opts Options, ex
 	fail := func(err error) *Row {
 		r.Warn("%s: %v", row.Name, err)
 		row.Error = err.Error()
-		task.Fail("Failed " + row.Name)
+		task.Fail("Failed to bump " + row.Name)
 		return row
 	}
 	data, err := editor.ReadManifest(ctx, j.name)
@@ -305,13 +305,9 @@ func apply(ctx context.Context, editor catalog.Editor, name string, data []byte,
 func resultLine(bumped, backfilled, name, current, head string, added []string) string {
 	switch {
 	case head == current:
-		word := "versions"
-		if len(added) == 1 {
-			word = "version"
-		}
-		return fmt.Sprintf("%s %s (%d %s)", backfilled, name, len(added), word)
+		return fmt.Sprintf("%s %s (%s)", backfilled, name, report.Plural(len(added), "version"))
 	case len(added) > 1:
-		return fmt.Sprintf("%s %s %s → %s (%d versions)", bumped, name, displayVersion(current), head, len(added))
+		return fmt.Sprintf("%s %s %s → %s (%s)", bumped, name, displayVersion(current), head, report.Plural(len(added), "version"))
 	default:
 		return fmt.Sprintf("%s %s %s → %s", bumped, name, displayVersion(current), head)
 	}

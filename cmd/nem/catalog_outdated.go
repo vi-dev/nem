@@ -137,7 +137,7 @@ func checkOutdated(ctx context.Context, pkg *spec.Package, explicit bool) outdat
 	if err != nil {
 		row.Error = err.Error()
 		console.Warn("%s: discovery failed: %v", pkg.Name, err)
-		task.Fail("Failed " + pkg.Name)
+		task.Fail("Failed to check " + pkg.Name)
 		return row
 	}
 	row.Latest = latest

@@ -83,7 +83,7 @@ func TestCatalogBuildPushFlagDryRunNamesTheTarget(t *testing.T) {
 		if err != nil {
 			t.Fatalf("catalog build --push --dry-run: %v\n%s", err, errb)
 		}
-		if !strings.Contains(errb, "Dry-run") || !strings.Contains(errb, specs) {
+		if !strings.Contains(errb, "Would push") || !strings.Contains(errb, specs) {
 			t.Fatalf("dry-run must name where the archive would land:\n%s", errb)
 		}
 	})

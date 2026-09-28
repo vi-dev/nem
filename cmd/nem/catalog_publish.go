@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/vi-dev/nem/internal/publish"
+	"github.com/vi-dev/nem/internal/report"
 )
 
 func newCatalogPublishCmd() *cobra.Command {
@@ -44,8 +45,8 @@ func newCatalogPublishCmd() *cobra.Command {
 			}
 			if dryRun {
 				renderPublishPlan(res)
-				console.Success("Dry run: would publish %s (%d packages), tags %s",
-					ref, len(res.Packages), strings.Join(res.Tags, ", "))
+				console.Success("Would publish %s (%s), tags %s",
+					ref, report.Plural(len(res.Packages), "package"), strings.Join(res.Tags, ", "))
 				return nil
 			}
 			console.Success("Published %s: %d pushed, %d unchanged, tags %s",

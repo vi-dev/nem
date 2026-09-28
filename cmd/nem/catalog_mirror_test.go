@@ -60,7 +60,7 @@ func TestCatalogMirrorCmd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mirror: %v\n%s", err, errb)
 	}
-	if !strings.Contains(errb, "Mirrored 1 packages, 1 tag(s)") {
+	if !strings.Contains(errb, "Mirrored 1 package, 1 tag") {
 		t.Fatalf("stderr missing summary line:\n%s", errb)
 	}
 
@@ -108,10 +108,10 @@ func TestCatalogMirrorCmdDryRunWritesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mirror --dry-run: %v\n%s", err, errb)
 	}
-	if !strings.Contains(errb, "Would mirror go (1 tag(s))") {
+	if !strings.Contains(errb, "Would mirror go (1 tag)") {
 		t.Fatalf("stderr missing package completion line:\n%s", errb)
 	}
-	if !strings.Contains(errb, "Would mirror 1 packages") {
+	if !strings.Contains(errb, "Would mirror 1 package") {
 		t.Fatalf("stderr missing dry-run summary line:\n%s", errb)
 	}
 	if strings.Contains(errb, "would copy") {
@@ -142,7 +142,7 @@ func TestCatalogMirrorCmdExitsNonzeroOnItemFailure(t *testing.T) {
 	if !strings.Contains(errb, "archive missing from source") {
 		t.Fatalf("stderr missing the anomaly warning:\n%s", errb)
 	}
-	if !strings.Contains(errb, "1 tag(s) failed") {
+	if !strings.Contains(errb, "1 tag failed") {
 		t.Fatalf("stderr missing the failed count in the summary:\n%s", errb)
 	}
 }
