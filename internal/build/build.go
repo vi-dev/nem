@@ -47,6 +47,32 @@ func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package
 		version = pkg.Versions[0].Version
 	}
 
+	task := rep.Task(fmt.Sprintf("Building %s %s", pkg.Name, version))
+	err := buildPackage(ctx, h, set, pkg, version, opts, task)
+	switch {
+	case err == nil:
+		task.Done(fmt.Sprintf("Built %s %s", pkg.Name, version))
+	case report.IsCancellation(err) || ctx.Err() != nil:
+		task.Fail(fmt.Sprintf("Cancelled %s %s", pkg.Name, version))
+	default:
+		task.Fail(fmt.Sprintf("Failed to build %s %s", pkg.Name, version))
+	}
+	return err
+}
+
+func buildPackage(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package,
+	version string, opts Options, task report.Task) error {
+	rep := report.FromContext(ctx)
+	var steps []spec.BuildStep
+	for _, step := range pkg.Build.Steps {
+		if spec.PlatformsInclude(step.Platforms, spec.Current()) {
+			steps = append(steps, step)
+		}
+	}
+	if len(steps) == 0 {
+		return fmt.Errorf("no build step applies to %s", spec.Current())
+	}
+
 	if err := os.MkdirAll(h.Tmp(), 0o755); err != nil {
 		return fmt.Errorf("create tmp dir: %w", err)
 	}
@@ -55,7 +81,7 @@ func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package
 		return fmt.Errorf("create staging dir: %w", err)
 	}
 
-	path, sha, verified, err := fetchBuildSource(ctx, pkg, version, staging)
+	path, sha, verified, err := fetchBuildSource(ctx, pkg, version, staging, task)
 	if err != nil {
 		return err
 	}
@@ -67,11 +93,15 @@ func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package
 	if err := os.MkdirAll(srcDir, 0o755); err != nil {
 		return fmt.Errorf("create source dir: %w", err)
 	}
+	task.Segment("unpacking")
 	srcRoot, err := unpackSource(path, srcDir, sourceSingleName(pkg, version))
 	if err != nil {
 		return err
 	}
 
+	if len(pkg.Build.Deps) > 0 {
+		task.Segment("installing deps")
+	}
 	deps, err := ResolveDeps(ctx, h, set, pkg, pkg.Build.Deps, opts.LocalStore)
 	if err != nil {
 		return err
@@ -88,11 +118,8 @@ func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package
 
 	env = ScrubEnv(env, []string{"PWD"}, "PWD="+srcRoot)
 
-	ran := 0
-	for i, step := range pkg.Build.Steps {
-		if !spec.PlatformsInclude(step.Platforms, spec.Current()) {
-			continue
-		}
+	for i, step := range steps {
+		task.Segment(fmt.Sprintf("step %d/%d", i+1, len(steps)))
 		c := exec.CommandContext(ctx, "sh", "-c", step.Run)
 		c.Dir = srcRoot
 		c.Env = env
@@ -101,19 +128,16 @@ func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package
 		if err := c.Run(); err != nil {
 			return fmt.Errorf("build step %d (%q): %w", i+1, step.Run, err)
 		}
-		ran++
-	}
-
-	if ran == 0 {
-		return fmt.Errorf("no build step applies to %s", spec.Current())
 	}
 
 	if n := pkg.Build.Normalize; n == nil || *n {
+		task.Segment("normalizing")
 		if err := normalizeOutput(outputDir); err != nil {
 			return fmt.Errorf("normalize output: %w", err)
 		}
 	}
 
+	task.Segment("verifying")
 	packagesRoot := h.Packages()
 	vs, err := VerifyConformance(outputDir, []string{staging, packagesRoot})
 	if err != nil {
@@ -143,12 +167,14 @@ func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package
 		}
 
 		defer os.Remove(tmpArchive)
+		task.Segment("testing")
 		if err := opts.Test(ctx, pkg, version, tmpArchive); err != nil {
 			return err
 		}
 	}
 
 	if opts.LocalStore != nil {
+		task.Segment("staging archive")
 		target, err := opts.LocalStore.OpenRW(ctx, pkg.Name)
 		if err != nil {
 			return fmt.Errorf("stage archive locally: %w", err)
@@ -166,8 +192,7 @@ func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package
 	return nil
 }
 
-func fetchBuildSource(ctx context.Context, pkg *spec.Package, version, staging string) (path, sha string, verified bool, err error) {
-	rep := report.FromContext(ctx)
+func fetchBuildSource(ctx context.Context, pkg *spec.Package, version, staging string, task report.Task) (path, sha string, verified bool, err error) {
 	var want string
 	for _, v := range pkg.Versions {
 		if v.Version == version {
@@ -180,19 +205,9 @@ func fetchBuildSource(ctx context.Context, pkg *spec.Package, version, staging s
 		return "", "", false, err
 	}
 
-	label := fmt.Sprintf("Downloading source for %s %s", pkg.Name, version)
-	failedOutcome := fmt.Sprintf("Failed to download source for %s %s", pkg.Name, version)
-	task := rep.Task(label)
-	task.Segment("downloading")
-
-	path, sha, verified, err = fetchSource(ctx, netx.Client(), url, want, staging,
+	task.Segment("downloading source")
+	return fetchSource(ctx, netx.Client(), url, want, staging,
 		fetch.Meta{Name: pkg.Name, Version: version, Platform: spec.Current()}, task)
-	if err != nil {
-		task.Fail(failedOutcome)
-		return "", "", false, err
-	}
-	task.Done(fmt.Sprintf("Downloaded source for %s %s", pkg.Name, version))
-	return path, sha, verified, nil
 }
 
 func ResolveDeps(ctx context.Context, h home.Home, set *catalog.Set,

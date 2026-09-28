@@ -50,7 +50,7 @@ func RunBatch(ctx context.Context, h home.Home, set *catalog.Set,
 	}
 
 	rows := make([]SummaryRow, 0, len(entries))
-	for i, e := range entries {
+	for _, e := range entries {
 		name := e.Pkg.Name
 		if dep, ok := firstExhaustedNeed(e.Needs, live); ok {
 			rep.Warn("Skipping %s@%s: dependency %s failed (all versions)", name, e.Version, dep)
@@ -59,8 +59,6 @@ func RunBatch(ctx context.Context, h home.Home, set *catalog.Set,
 			live[name]--
 			continue
 		}
-
-		rep.Info("[%d/%d] wave %d: building %s@%s", i+1, len(entries), e.Wave, name, e.Version)
 
 		bopts := Options{Version: e.Version, LocalStore: store}
 		if opts.TestFor != nil {

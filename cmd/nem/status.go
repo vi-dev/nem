@@ -112,7 +112,7 @@ func warnMissingInstalls(projLock, globalLock *project.Lockfile) {
 	if nProj == 0 && nGlobal == 0 {
 		return
 	}
-	console.Info("")
+	console.BlankErr()
 	if nProj > 0 {
 		console.Warn("%s not installed — run `nem sync`", report.Plural(nProj, "project package"))
 	}

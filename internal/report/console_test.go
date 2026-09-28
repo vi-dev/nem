@@ -529,3 +529,80 @@ func TestLiveBlockAbsentWhenQuiet(t *testing.T) {
 	}
 	tk.Done("Installed go v1.26.5")
 }
+
+func TestBlankErrGoesToStderrAndRespectsQuiet(t *testing.T) {
+	c, out, errb := newTest(Options{Color: ColorNever})
+	c.BlankErr()
+	if errb.String() != "\n" || out.String() != "" {
+		t.Errorf("BlankErr wrote stderr=%q stdout=%q, want a single newline on stderr", errb.String(), out.String())
+	}
+	cq, _, errq := newTest(Options{Quiet: true, Color: ColorNever})
+	cq.BlankErr()
+	if errq.String() != "" {
+		t.Errorf("quiet did not suppress BlankErr: %q", errq.String())
+	}
+}
+
+func TestPendingTaskAnnouncedOnceBeforeFirstGuardedWrite(t *testing.T) {
+	c, out, errb := newTest(Options{Color: ColorNever})
+	task := c.Task("Building jq 1.8.3")
+	w := c.Out()
+	fmt.Fprint(w, "line1\n")
+	fmt.Fprint(w, "line2\n")
+	task.Done("Built jq 1.8.3")
+	if got, want := errb.String(), "Building jq 1.8.3\nOK Built jq 1.8.3\n"; got != want {
+		t.Errorf("stderr = %q, want %q", got, want)
+	}
+	if got, want := out.String(), "line1\nline2\n"; got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+}
+
+func TestPendingTasksAnnouncedInStartOrder(t *testing.T) {
+	c, _, errb := newTest(Options{Color: ColorNever})
+	a := c.Task("Building a 1")
+	b := c.Task("Building b 2")
+	fmt.Fprint(c.ErrOut(), "compiler noise\n")
+	a.Done("Built a 1")
+	b.Done("Built b 2")
+	if got, want := errb.String(), "Building a 1\nBuilding b 2\ncompiler noise\nOK Built a 1\nOK Built b 2\n"; got != want {
+		t.Errorf("stderr = %q, want %q", got, want)
+	}
+}
+
+func TestPendingTaskWithoutOutputIsNeverAnnounced(t *testing.T) {
+	c, _, errb := newTest(Options{Color: ColorNever})
+	c.Task("Checking jq").Discard()
+	c.Task("Installing jq 1.8.3").Done("Installed jq 1.8.3")
+	fmt.Fprint(c.Out(), "later\n")
+	if got, want := errb.String(), "OK Installed jq 1.8.3\n"; got != want {
+		t.Errorf("stderr = %q, want %q", got, want)
+	}
+}
+
+func TestPendingAnnouncementSuppressedByQuiet(t *testing.T) {
+	c, out, errb := newTest(Options{Quiet: true, Color: ColorNever})
+	task := c.Task("Building jq 1.8.3")
+	fmt.Fprint(c.Out(), "payload\n")
+	task.Done("Built jq 1.8.3")
+	if errb.String() != "" {
+		t.Errorf("quiet stderr = %q, want empty", errb.String())
+	}
+	if out.String() != "payload\n" {
+		t.Errorf("stdout = %q, want the payload", out.String())
+	}
+}
+
+func TestLiveTaskIsNotAnnounced(t *testing.T) {
+	c, _, errb := newTest(Options{Color: ColorNever, IsTTY: true})
+	c.tick = time.Hour
+	task := c.Task("Building jq 1.8.3")
+	fmt.Fprint(c.Out(), "payload\n")
+	task.Done("Built jq 1.8.3")
+	if strings.Contains(errb.String(), "Building jq 1.8.3\n") && !strings.Contains(errb.String(), "\x1b[2K") {
+		t.Errorf("live task printed a plain start line: %q", errb.String())
+	}
+	if got := strings.Count(errb.String(), "Building jq 1.8.3"); got == 0 {
+		t.Errorf("live block never rendered the label: %q", errb.String())
+	}
+}

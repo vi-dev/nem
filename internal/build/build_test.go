@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -176,21 +177,57 @@ func TestBuildFailsOnStepError(t *testing.T) {
 	}
 }
 
-func TestBuildNarratesSourceDownload(t *testing.T) {
+func TestBuildNarratesOneTaskPerPackage(t *testing.T) {
 	h, pkg := buildFixture(t, map[string]string{"src/README": "hi"}, "v1.0.0",
 		spec.BuildStep{Run: `mkdir -p "$NEM_OUTPUT"`})
 
-	out, err := runBuild(t, h, pkg, Options{Version: "v1.0.0"})
+	ctx, rep := testx.ReporterContext(context.Background())
+	tested := false
+	err := Build(ctx, h, nil, pkg, Options{Version: "v1.0.0",
+		Test: func(context.Context, *spec.Package, string, string) error { tested = true; return nil }})
 	if err != nil {
-		t.Fatalf("Build: %v\n%s", err, out)
+		t.Fatalf("Build: %v", err)
 	}
-	want := fmt.Sprintf("Downloaded source for %s %s", pkg.Name, "v1.0.0")
-	if !strings.Contains(out, want) {
-		t.Fatalf("narration missing source download done line %q, got %q", want, out)
+	if !tested {
+		t.Fatal("test hook did not run")
+	}
+	if n := len(rep.Tasks()); n != 1 {
+		t.Fatalf("tasks = %d, want exactly one (no separate source download task): %+v", n, rep.Tasks())
+	}
+	task := rep.TaskFor("Building " + pkg.Name + " v1.0.0")
+	if task == nil {
+		t.Fatalf("no task labelled Building %s v1.0.0", pkg.Name)
+	}
+	want := []string{"downloading source", "unpacking", "step 1/1", "normalizing", "verifying", "testing"}
+	if got := task.Statuses(); !slices.Equal(got, want) {
+		t.Fatalf("segments = %v, want %v", got, want)
+	}
+	done, failed, outcome := task.Snapshot()
+	if !done || failed || outcome != "Built "+pkg.Name+" v1.0.0" {
+		t.Fatalf("task done=%v failed=%v outcome=%q, want Built %s v1.0.0", done, failed, outcome, pkg.Name)
 	}
 }
 
-func TestBuildQuietSuppressesSourceDownloadDone(t *testing.T) {
+func TestBuildFailedStepFailsTheTaskOnThatStep(t *testing.T) {
+	h, pkg := buildFixture(t, map[string]string{"src/x": "y"}, "v1",
+		spec.BuildStep{Run: `mkdir -p "$NEM_OUTPUT"`}, spec.BuildStep{Run: "exit 3"})
+	ctx, rep := testx.ReporterContext(context.Background())
+	if err := Build(ctx, h, nil, pkg, Options{Version: "v1"}); err == nil {
+		t.Fatal("want error when a build step exits non-zero")
+	}
+	task := rep.TaskFor("Building " + pkg.Name + " v1")
+	if task == nil {
+		t.Fatal("no build task recorded")
+	}
+	if st := task.Statuses(); len(st) == 0 || st[len(st)-1] != "step 2/2" {
+		t.Fatalf("segments = %v, want to end on step 2/2", st)
+	}
+	if _, failed, outcome := task.Snapshot(); !failed || outcome != "Failed to build "+pkg.Name+" v1" {
+		t.Fatalf("task failed=%v outcome=%q, want Failed to build %s v1", failed, outcome, pkg.Name)
+	}
+}
+
+func TestBuildQuietSuppressesBuiltLine(t *testing.T) {
 	h, pkg := buildFixture(t, map[string]string{"src/README": "hi"}, "v1.0.0",
 		spec.BuildStep{Run: `mkdir -p "$NEM_OUTPUT"`})
 
@@ -200,8 +237,8 @@ func TestBuildQuietSuppressesSourceDownloadDone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build: %v\n%s", err, b.String())
 	}
-	if strings.Contains(b.String(), "Downloaded source for") {
-		t.Fatalf("quiet did not suppress source download done line: %q", b.String())
+	if strings.Contains(b.String(), "Built ") || strings.Contains(b.String(), "Building ") {
+		t.Fatalf("quiet did not suppress the build task lines: %q", b.String())
 	}
 }
 
@@ -240,7 +277,7 @@ func TestBuildSourceDownloadReportsLiveByteProgress(t *testing.T) {
 		t.Fatalf("Build: %v\n%s", err, b.String())
 	}
 
-	if !regexp.MustCompile(`downloading \d+%`).MatchString(b.String()) {
+	if !regexp.MustCompile(`downloading source \d+%`).MatchString(b.String()) {
 		t.Fatalf("no live byte-progress line seen during source download: %q", b.String())
 	}
 }

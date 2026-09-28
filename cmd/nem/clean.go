@@ -89,7 +89,7 @@ func runClean(cmd *cobra.Command, opts clean.Options, dryRun, yes bool) error {
 		return nil
 	}
 	if plan.Confirm && !yes {
-		console.Blank()
+		console.BlankErr()
 		if !confirm(cmd, opts.All) {
 			console.Info("Nothing removed")
 			return nil

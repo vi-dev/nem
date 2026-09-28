@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -43,6 +44,7 @@ type Console struct {
 	liveTasks []*task
 	liveLines int
 	liveStop  chan struct{}
+	pending   []*task
 }
 
 func New(stdout, stderr io.Writer, opts Options) *Console {
@@ -164,7 +166,10 @@ func (g *guardedWriter) Write(p []byte) (int, error) {
 		n   int
 		err error
 	)
-	g.console.narrate(func() { n, err = g.w.Write(p) })
+	g.console.narrate(func() {
+		g.console.announcePendingLocked()
+		n, err = g.w.Write(p)
+	})
 	return n, err
 }
 
@@ -180,6 +185,13 @@ func (c *Console) JSON(v any) error {
 
 func (c *Console) Blank() {
 	fmt.Fprintln(c.out)
+}
+
+func (c *Console) BlankErr() {
+	if c.opts.Quiet {
+		return
+	}
+	c.narrate(func() { fmt.Fprintln(c.err) })
 }
 
 func (c *Console) Table(headers []string, rows [][]string) {
@@ -256,6 +268,19 @@ func (c *Console) liveActive() bool {
 	return c.opts.IsTTY && !c.opts.Quiet
 }
 
+func (c *Console) registerPendingTask(t *task) {
+	c.liveMu.Lock()
+	defer c.liveMu.Unlock()
+	c.pending = append(c.pending, t)
+}
+
+func (c *Console) announcePendingLocked() {
+	for _, t := range c.pending {
+		fmt.Fprintln(c.err, t.label)
+	}
+	c.pending = nil
+}
+
 func (c *Console) registerLiveTask(t *task) {
 	c.liveMu.Lock()
 	defer c.liveMu.Unlock()
@@ -269,6 +294,10 @@ func (c *Console) registerLiveTask(t *task) {
 func (c *Console) completeTask(t *task, printCompletion func()) {
 	c.liveMu.Lock()
 	defer c.liveMu.Unlock()
+
+	if i := slices.Index(c.pending, t); i >= 0 {
+		c.pending = slices.Delete(c.pending, i, i+1)
+	}
 
 	idx := -1
 	for i, lt := range c.liveTasks {

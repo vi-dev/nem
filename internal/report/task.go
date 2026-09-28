@@ -23,8 +23,11 @@ type task struct {
 
 func (c *Console) Task(label string) Task {
 	t := &task{console: c, label: label, start: c.now()}
-	if c.liveActive() {
+	switch {
+	case c.liveActive():
 		c.registerLiveTask(t)
+	case !c.opts.Quiet:
+		c.registerPendingTask(t)
 	}
 	return t
 }

@@ -266,7 +266,8 @@ func TestRunBatchSkipsDependentsOfAFailedBuild(t *testing.T) {
 	if !strings.Contains(out, "Skipping app@2.0.0") {
 		t.Fatalf("skip was not narrated:\n%s", out)
 	}
-	if strings.Contains(out, "building app@") || strings.Contains(out, "building web@") {
+	if strings.Contains(out, "Building app ") || strings.Contains(out, "Building web ") ||
+		strings.Contains(out, "Built app ") || strings.Contains(out, "Built web ") {
 		t.Fatalf("skipped entries must not be built:\n%s", out)
 	}
 }
@@ -284,13 +285,9 @@ func TestRunBatchBuildsAllVersionsOfAPackage(t *testing.T) {
 	rows, out := runBatch(t, h, sources, batchPlan(t, pkgs, newer, older), BatchOptions{})
 
 	assertRows(t, rows, []string{"dual@2.0.0 built -", "dual@1.0.0 built -"}, out)
-	for i, want := range []string{
-		"[1/2] wave 1: building dual@2.0.0",
-		"[2/2] wave 1: building dual@1.0.0",
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("narration %d: want %q newest-first in:\n%s", i, want, out)
-		}
+	newer2, older1 := strings.Index(out, "OK Built dual 2.0.0"), strings.Index(out, "OK Built dual 1.0.0")
+	if newer2 < 0 || older1 < 0 || newer2 > older1 {
+		t.Fatalf("narration must report dual 2.0.0 built before 1.0.0:\n%s", out)
 	}
 }
 
