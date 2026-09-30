@@ -33,7 +33,7 @@ func TestRootHelpGroups(t *testing.T) {
 func TestEveryRootCommandGrouped(t *testing.T) {
 	root := newRoot()
 	for _, c := range root.Commands() {
-		if c.Name() == "version" {
+		if c.Hidden || c.Name() == "version" {
 			continue
 		}
 		if c.GroupID == "" {

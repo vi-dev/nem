@@ -16,6 +16,10 @@ test:
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/nem ./cmd/nem
 
+.PHONY: docs
+docs:
+	env -u GOROOT go run ./cmd/nem gendocs website/content/docs/reference/cli
+
 .PHONY: install
 install:
 	go build -ldflags "$(LDFLAGS)" -o $(HOME)/.local/bin/nem ./cmd/nem
