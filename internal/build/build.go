@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -146,6 +147,7 @@ func buildPackage(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.
 	if len(vs) > 0 {
 		return conformanceError(vs)
 	}
+	warnUnlinkedDepRpaths(ctx, pkg, version, deps)
 
 	var data []byte
 	if opts.Test != nil || opts.LocalStore != nil {
@@ -264,6 +266,32 @@ func writeTempArchive(h home.Home, name string, data []byte) (string, error) {
 		return "", fmt.Errorf("write archive temp file: %w", err)
 	}
 	return f.Name(), nil
+}
+
+func warnUnlinkedDepRpaths(ctx context.Context, pkg *spec.Package, version string, deps []ResolvedDep) {
+	plat := spec.Current()
+	linked := make(map[string]bool, len(pkg.Deps))
+	for _, d := range pkg.Deps {
+		if d.Kind == spec.DepKindLink && spec.PlatformsInclude(d.Platforms, plat) {
+			linked[d.Name] = true
+		}
+	}
+	loaderPath := make(map[string]bool, len(deps))
+	for _, d := range deps {
+		if d.OnLoaderPath {
+			loaderPath[d.Name] = true
+		}
+	}
+	unlinked := map[string]bool{}
+	for _, d := range pkg.Build.Deps {
+		if d.Kind == spec.DepKindLink && spec.PlatformsInclude(d.Platforms, plat) && !linked[d.Name] && loaderPath[d.Name] {
+			unlinked[d.Name] = true
+		}
+	}
+	rep := report.FromContext(ctx)
+	for _, name := range slices.Sorted(maps.Keys(unlinked)) {
+		rep.Warn("%s %s: rpath links %s without a runtime link dependency", pkg.Name, version, name)
+	}
 }
 
 func conformanceError(vs []Violation) error {

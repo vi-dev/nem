@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vi-dev/nem/internal/install"
 	"github.com/vi-dev/nem/internal/project"
 	"github.com/vi-dev/nem/internal/spec"
 )
@@ -274,5 +275,34 @@ func TestStatusNoManifestFails(t *testing.T) {
 	chdir(t, dir)
 	if _, _, err := runNem(t, filepath.Join(dir, "nemhome"), "status"); err == nil {
 		t.Fatal("want error when no nem.toml anywhere")
+	}
+}
+
+func TestStatusWarnsWhenLinksDisagreeWithLock(t *testing.T) {
+	nemHomeDir := t.TempDir()
+	projDir := t.TempDir()
+	writeFile(t, filepath.Join(projDir, "nem.toml"), "[tools]\napp = \"1.0.0\"\n")
+	platforms := []string{spec.Current().String()}
+	writeLockFile(t, filepath.Join(projDir, "nem.lock"),
+		project.LockEntry{Name: "app", Version: "1.0.0", Catalog: "official", Direct: true, OnPath: true, Platforms: platforms},
+		project.LockEntry{Name: "zlib", Version: "1.3.2", Catalog: "official", OnLoaderPath: true, Platforms: platforms})
+	h := testNemHome(nemHomeDir)
+	appDir, _ := h.PackageDir("app", "1.0.0")
+	if err := os.MkdirAll(filepath.Join(appDir, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(appDir, ".nem-meta.yaml"), "package: app\nversion: 1.0.0\ncatalog: official\nbins:\n- bin\nlayout: 2\n")
+	if _, err := install.WriteLinks(appDir, map[string]string{"zlib": "1.3.1"}); err != nil {
+		t.Fatal(err)
+	}
+	chdir(t, projDir)
+
+	_, errb, err := runNem(t, nemHomeDir, "status")
+	if err != nil {
+		t.Fatalf("status: %v\n%s", err, errb)
+	}
+	want := "WARN app 1.0.0: linked to zlib 1.3.1, this scope locks 1.3.2 — run `nem sync`\n"
+	if !strings.Contains(errb, want) {
+		t.Fatalf("stderr = %q, want %q", errb, want)
 	}
 }

@@ -6,12 +6,14 @@ import (
 	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/fetch"
+	"github.com/vi-dev/nem/internal/project"
 	"github.com/vi-dev/nem/internal/resolve"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
 func Jobs(result *resolve.Result, set *catalog.Set, local *archive.Dir) []Job {
 	current := spec.Current().String()
+	versions := project.Versions(result.Entries)
 	var jobs []Job
 	for _, entry := range result.Entries {
 		if !slices.Contains(entry.Platforms, current) {
@@ -21,11 +23,13 @@ func Jobs(result *resolve.Result, set *catalog.Set, local *archive.Dir) []Job {
 		if e, ok := set.Find(entry.Catalog); ok && e.Archives != nil {
 			stores = append(stores, e.Archives)
 		}
+		pkg := result.Pkgs[entry.Name]
 		job := Job{
-			Pkg:     result.Pkgs[entry.Name],
+			Pkg:     pkg,
 			Version: entry.Version,
 			Catalog: entry.Catalog,
 			Source:  fetch.Source{Archives: stores},
+			Links:   Links(pkg, versions),
 		}
 		if local != nil && local.HasVersion(entry.Name, entry.Version) {
 			job.Source.Archives = append([]archive.Store{local}, job.Source.Archives...)

@@ -20,6 +20,7 @@ nothing anywhere needs root.
 ├── tmp/                     # download staging
 ├── packages/
 │   └── <name>/<version>/    # one immutable tree per installed version
+│       └── .nem-link-dependencies/  # links to the locked versions of link deps
 └── catalogs/
     └── <name>/store/        # local mirror of an oci catalog
 ```
@@ -33,7 +34,12 @@ nothing anywhere needs root.
   consulted by `clean --unused` to decide what's eligible for eviction.
 - **`tmp/`** — in-flight downloads, cleaned opportunistically.
 - **`packages/<name>/<version>/`** — one installed version, addressed by
-  name and exact version.
+  name and exact version. `.nem-link-dependencies/<dep>` inside it is a relative symlink
+  to the dependency version the lock resolved; binaries built by nem reach
+  their link dependencies through it, and `nem sync`, `use`, `update`, and
+  `lock` refresh it. Directories inside the package that hold binaries carry
+  a relative `.nem-link-dependencies` symlink to that directory, written at
+  build time and shipped in the archive.
 - **`catalogs/<name>/store/`** — the local mirror of an `oci` catalog's
   index; `dir` catalogs have nothing here, since they're read straight
   from their configured path.

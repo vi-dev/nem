@@ -361,7 +361,7 @@ func TestBuildRestampsAlreadyInstalledBuildDep(t *testing.T) {
 	if err := os.WriteFile(artifactPath, depArchive, 0o644); err != nil {
 		t.Fatalf("write dep artifact: %v", err)
 	}
-	if err := install.Install(context.Background(), h, depPkg, "9.9.9", "cat", artifactPath, false); err != nil {
+	if err := install.Install(context.Background(), h, depPkg, "9.9.9", "cat", artifactPath, false, nil); err != nil {
 		t.Fatalf("pre-install dep: %v", err)
 	}
 
@@ -570,5 +570,55 @@ func TestBuildContinuesWhenStagingSweepFails(t *testing.T) {
 	}
 	if !store.Has(pkg.Name) {
 		t.Fatal("built archive was not staged in the local store despite the sweep failure")
+	}
+}
+
+func TestWarnUnlinkedDepRpathsNamesEveryMissingLinkDep(t *testing.T) {
+	pkg := &spec.Package{Name: "skopeo",
+		Deps: []spec.Dep{
+			{Name: "gpgme", Kind: spec.DepKindLink},
+			{Name: "pinentry", Kind: spec.DepKindRun},
+		},
+		Build: &spec.Build{Deps: []spec.Dep{
+			{Name: "gpgme", Kind: spec.DepKindLink},
+			{Name: "libgpg-error", Kind: spec.DepKindLink},
+			{Name: "libassuan", Kind: spec.DepKindLink},
+		}},
+	}
+	deps := []ResolvedDep{
+		{Name: "gpgme", OnLoaderPath: true},
+		{Name: "libgpg-error", OnLoaderPath: true},
+		{Name: "libassuan", OnLoaderPath: true},
+		{Name: "pinentry", OnPath: true},
+	}
+	ctx, rep := testx.ReporterContext(context.Background())
+	warnUnlinkedDepRpaths(ctx, pkg, "1.20.0", deps)
+	want := []string{
+		"skopeo 1.20.0: rpath links libassuan without a runtime link dependency",
+		"skopeo 1.20.0: rpath links libgpg-error without a runtime link dependency",
+	}
+	if got := rep.Warns(); !slices.Equal(got, want) {
+		t.Fatalf("warns = %q, want %q", got, want)
+	}
+}
+
+func TestWarnUnlinkedDepRpathsIgnoresTransitiveDeps(t *testing.T) {
+	pkg := &spec.Package{Name: "git",
+		Deps: []spec.Dep{{Name: "libcurl", Kind: spec.DepKindLink}},
+		Build: &spec.Build{Deps: []spec.Dep{
+			{Name: "libcurl", Kind: spec.DepKindLink},
+			{Name: "pkg-config", Kind: spec.DepKindRun},
+		}},
+	}
+	deps := []ResolvedDep{
+		{Name: "libcurl", OnLoaderPath: true},
+		{Name: "brotli", OnLoaderPath: true},
+		{Name: "libidn2", OnLoaderPath: true},
+		{Name: "pkg-config", OnPath: true},
+	}
+	ctx, rep := testx.ReporterContext(context.Background())
+	warnUnlinkedDepRpaths(ctx, pkg, "2.52.0", deps)
+	if got := rep.Warns(); len(got) != 0 {
+		t.Fatalf("warns = %q, want none: brotli and libidn2 are libcurl's, not git's", got)
 	}
 }

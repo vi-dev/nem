@@ -194,16 +194,8 @@ func resolveManifest(cmd *cobra.Command, manifest *project.Manifest, cfg *config
 	return resolve.Resolve(cmd.Context(), manifestTools(manifest), set)
 }
 
-func resolvedVersions(result *resolve.Result) map[string]string {
-	m := make(map[string]string, len(result.Entries))
-	for _, e := range result.Entries {
-		m[e.Name] = e.Version
-	}
-	return m
-}
-
 func pinResolved(manifest *project.Manifest, result *resolve.Result, keys []project.ToolKey) error {
-	resolved := resolvedVersions(result)
+	resolved := project.Versions(result.Entries)
 	for _, k := range keys {
 		if v, ok := resolved[k.Name]; ok {
 			project.AddTool(manifest, k, v)

@@ -7,14 +7,47 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
+
+	"github.com/vi-dev/nem/internal/install"
 )
 
 type Violation struct{ File, Ref, Reason string }
 
 func VerifyConformance(outputDir string, forbidden []string) ([]Violation, error) {
 	var out []Violation
-	err := filepath.WalkDir(outputDir, func(path string, d os.DirEntry, err error) error {
+	err := walkBinaryRefs(outputDir, func(path string, refs []string) error {
+		depth, err := binaryDepth(outputDir, path)
+		if err != nil {
+			return err
+		}
+		for _, ref := range refs {
+			if reason := depsRpathViolation(ref, depth); reason != "" {
+				out = append(out, Violation{File: path, Ref: ref, Reason: reason})
+			}
+		}
+		if slices.ContainsFunc(refs, isDepsRpath) {
+			if reason := missingDepLink(outputDir, path); reason != "" {
+				out = append(out, Violation{File: path, Reason: reason})
+			}
+		}
+		for _, ref := range refs {
+			for _, bad := range forbidden {
+				if ref == bad || strings.HasPrefix(ref, bad+string(filepath.Separator)) {
+					out = append(out, Violation{File: path, Ref: ref,
+						Reason: "absolute reference into the build tree; link via $LDFLAGS so refs are @rpath/soname"})
+					break
+				}
+			}
+		}
+		return nil
+	})
+	return out, err
+}
+
+func walkBinaryRefs(outDir string, fn func(path string, refs []string) error) error {
+	return filepath.WalkDir(outDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -32,18 +65,60 @@ func VerifyConformance(outputDir string, forbidden []string) ([]Violation, error
 		if err != nil {
 			return err
 		}
-		for _, ref := range refs {
-			for _, bad := range forbidden {
-				if ref == bad || strings.HasPrefix(ref, bad+string(filepath.Separator)) {
-					out = append(out, Violation{File: path, Ref: ref,
-						Reason: "absolute reference into the build tree; link via $LDFLAGS so refs are @rpath/soname"})
-					break
-				}
-			}
-		}
-		return nil
+		return fn(path, refs)
 	})
-	return out, err
+}
+
+func loaderAnchor() string {
+	if runtime.GOOS == "linux" {
+		return "$ORIGIN"
+	}
+	return "@loader_path"
+}
+
+func cutLoaderAnchor(ref string) (rest string, ups int, ok bool) {
+	rest, ok = strings.CutPrefix(ref, loaderAnchor()+"/")
+	if !ok {
+		return "", 0, false
+	}
+	for strings.HasPrefix(rest, "../") {
+		rest = rest[3:]
+		ups++
+	}
+	return rest, ups, true
+}
+
+func depsRpathViolation(ref string, depth int) string {
+	rest, ups, ok := cutLoaderAnchor(ref)
+	if !ok {
+		return ""
+	}
+	if strings.HasPrefix(rest, install.DepsDir+"/") {
+		if ups != 0 {
+			return "rpath must be " + depsRpath(loaderAnchor()) + "<dep>/<lib>; link via $LDFLAGS"
+		}
+		return ""
+	}
+	if ups > depth {
+		return "rpath escapes the package root; link via $LDFLAGS so rpaths go through " + install.DepsDir
+	}
+	return ""
+}
+
+func missingDepLink(outDir, path string) string {
+	dir := filepath.Dir(path)
+	if dir == outDir {
+		return ""
+	}
+	link := filepath.Join(dir, install.DepsDir)
+	target, err := os.Readlink(link)
+	if err != nil {
+		return "binary directory has no " + install.DepsDir + " link; normalize did not plant it"
+	}
+	if filepath.Join(dir, target) != filepath.Join(outDir, install.DepsDir) {
+		return "binary directory's " + install.DepsDir + " link does not point at the package root"
+	}
+	return ""
 }
 
 type binKind int

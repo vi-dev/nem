@@ -53,7 +53,7 @@ func TestInstallFullRoundTrip(t *testing.T) {
 	artifact := fixtureArtifact(t, t.TempDir())
 
 	start := time.Now()
-	if err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", artifact, false); err != nil {
+	if err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", artifact, false, nil); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
 	end := time.Now()
@@ -98,11 +98,11 @@ func TestInstallSecondSameVersionAlreadyExistsFastPath(t *testing.T) {
 	pkg := fixturePkg(t)
 	tmp := t.TempDir()
 
-	if err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", fixtureArtifact(t, tmp), false); err != nil {
+	if err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", fixtureArtifact(t, tmp), false, nil); err != nil {
 		t.Fatalf("first Install: %v", err)
 	}
 
-	err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", fixtureArtifact(t, tmp), false)
+	err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", fixtureArtifact(t, tmp), false, nil)
 	want := "commit tool@v1.0.0: install dir already exists"
 	if err == nil || err.Error() != want {
 		t.Fatalf("second Install error = %v, want %q", err, want)
@@ -122,7 +122,7 @@ func TestInstallActionsFailureLeavesNoInstallDirNoStrayStaging(t *testing.T) {
 	tmp := t.TempDir()
 	badArtifact := writeArtifact(t, tmp, []byte("not an archive at all"))
 
-	err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", badArtifact, false)
+	err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", badArtifact, false, nil)
 	if err == nil || !strings.Contains(err.Error(), "unrecognized archive format") {
 		t.Fatalf("Install error = %v, want unrecognized-format error", err)
 	}
@@ -154,7 +154,7 @@ func TestInstallRecordsLibsInMeta(t *testing.T) {
 	pkg := fixturePkg(t)
 	pkg.Libs = []string{"lib"}
 
-	if err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", fixtureArtifact(t, t.TempDir()), false); err != nil {
+	if err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", fixtureArtifact(t, t.TempDir()), false, nil); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
 
@@ -187,7 +187,7 @@ func TestInstallConcurrentLostRaceCommitError(t *testing.T) {
 		artifact := fixtureArtifact(t, filepath.Join(tmp, fmt.Sprint(i)))
 		go func(i int, artifact string) {
 			defer wg.Done()
-			errs[i] = install.Install(context.Background(), h, pkg, "v1.0.0", "official", artifact, false)
+			errs[i] = install.Install(context.Background(), h, pkg, "v1.0.0", "official", artifact, false, nil)
 		}(i, artifact)
 	}
 	wg.Wait()
@@ -210,4 +210,23 @@ func TestInstallConcurrentLostRaceCommitError(t *testing.T) {
 
 	installDir, _ := h.PackageDir(pkg.Name, "v1.0.0")
 	assertNoStrayStaging(t, installDir)
+}
+
+func TestInstallWritesLinksAndLayout(t *testing.T) {
+	h := testx.Home(t)
+	pkg := fixturePkg(t)
+	artifact := fixtureArtifact(t, t.TempDir())
+	links := map[string]string{"zlib": "1.3.2"}
+	if err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", artifact, false, links); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	dir, _ := h.PackageDir("tool", "v1.0.0")
+	got, err := install.ReadLinks(dir)
+	if err != nil || got["zlib"] != "1.3.2" {
+		t.Fatalf("links = %v, %v", got, err)
+	}
+	meta, err := install.ReadMeta(h, "tool", "v1.0.0")
+	if err != nil || meta.Layout != install.LayoutVersion {
+		t.Fatalf("meta = %+v, %v; want layout %d", meta, err, install.LayoutVersion)
+	}
 }

@@ -123,3 +123,32 @@ func TestJobsPrependsLocalStoreBeforeCatalogArchives(t *testing.T) {
 		t.Fatalf("local hit must force reinstall: %+v", jobs[0])
 	}
 }
+
+func TestJobsFillsLinksFromResolvedVersions(t *testing.T) {
+	current := spec.Current().String()
+	app := &spec.Package{Name: "app", Deps: []spec.Dep{
+		{Name: "zlib", Kind: spec.DepKindLink, Compat: "1"},
+		{Name: "helper", Kind: spec.DepKindRun},
+	}}
+	result := &resolve.Result{
+		Entries: []project.LockEntry{
+			{Name: "app", Version: "1.0.0", Catalog: "cat", Platforms: []string{current}},
+			{Name: "zlib", Version: "1.3.2", Catalog: "cat", Platforms: []string{current}},
+			{Name: "helper", Version: "2.0.0", Catalog: "cat", Platforms: []string{current}},
+		},
+		Pkgs: map[string]*spec.Package{"app": app, "zlib": {Name: "zlib"}, "helper": {Name: "helper"}},
+	}
+	jobs := Jobs(result, catalog.NewSet(), nil)
+	var appJob *Job
+	for i := range jobs {
+		if jobs[i].Pkg.Name == "app" {
+			appJob = &jobs[i]
+		}
+	}
+	if appJob == nil {
+		t.Fatal("no app job")
+	}
+	if len(appJob.Links) != 1 || appJob.Links["zlib"] != "1.3.2" {
+		t.Fatalf("app links = %v, want zlib 1.3.2 only", appJob.Links)
+	}
+}

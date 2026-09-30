@@ -109,7 +109,7 @@ func TestRunSkipsAlreadyInstalledAcquireNotCalled(t *testing.T) {
 	if err := os.WriteFile(preArtifact, []byte("pre-existing"), 0o644); err != nil {
 		t.Fatalf("write pre-artifact: %v", err)
 	}
-	if err := Install(context.Background(), h, installedPkg, "v1.0.0", "official", preArtifact, false); err != nil {
+	if err := Install(context.Background(), h, installedPkg, "v1.0.0", "official", preArtifact, false, nil); err != nil {
 		t.Fatalf("pre-install: %v", err)
 	}
 
@@ -464,5 +464,111 @@ func TestRunReinstallReplacesExistingVersion(t *testing.T) {
 	}
 	if atomic.LoadInt32(&acquireCalls) != 2 {
 		t.Fatalf("acquireCalls = %d, want still 2 (acquire must not be called on skip)", acquireCalls)
+	}
+}
+
+func TestRunReinstallsInstalledVersionWithOldLayout(t *testing.T) {
+	h := testx.Home(t)
+	pkg := copyToolPkg("tool")
+	pkg.Deps = []spec.Dep{{Name: "zlib", Kind: spec.DepKindLink}}
+	installDir, err := h.PackageDir("tool", "v1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(installDir, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installDir, "bin", "tool"), []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installDir, metaFileName), []byte("package: tool\nversion: v1.0.0\ncatalog: official\nbins:\n- bin\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var acquireCalls int32
+	withAcquire(t, func(_ context.Context, p *spec.Package, _ string, _ spec.Platform, _ fetch.Source, dir string, _ report.Task) (string, error) {
+		atomic.AddInt32(&acquireCalls, 1)
+		f, err := os.CreateTemp(dir, p.Name+"-*.artifact")
+		if err != nil {
+			return "", err
+		}
+		f.WriteString("new")
+		return f.Name(), f.Close()
+	})
+
+	job := Job{Pkg: pkg, Version: "v1.0.0", Catalog: "official", Links: map[string]string{"zlib": "1.3.2"}}
+	if err := Run(context.Background(), h, []Job{job}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if atomic.LoadInt32(&acquireCalls) != 1 {
+		t.Fatalf("acquire calls = %d, want 1 (old layout must reinstall)", acquireCalls)
+	}
+	if got, _ := os.ReadFile(filepath.Join(installDir, "bin", "tool")); string(got) != "new" {
+		t.Fatalf("bin/tool = %q, want the reinstalled binary", got)
+	}
+	links, err := ReadLinks(installDir)
+	if err != nil || links["zlib"] != "1.3.2" {
+		t.Fatalf("links after reinstall = %v, %v", links, err)
+	}
+	meta, err := ReadMeta(h, "tool", "v1.0.0")
+	if err != nil || meta.Layout != LayoutVersion {
+		t.Fatalf("meta layout = %+v, %v; want %d", meta, err, LayoutVersion)
+	}
+
+	if err := Run(context.Background(), h, []Job{job}); err != nil {
+		t.Fatalf("second Run: %v", err)
+	}
+	if atomic.LoadInt32(&acquireCalls) != 1 {
+		t.Fatalf("acquire calls = %d, want still 1 (current layout must not reinstall)", acquireCalls)
+	}
+}
+
+func TestRunLeavesOldLayoutAloneWithoutLinkDeps(t *testing.T) {
+	h := testx.Home(t)
+	pkg := copyToolPkg("plain")
+	installDir, _ := h.PackageDir("plain", "v1.0.0")
+	if err := os.MkdirAll(installDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installDir, metaFileName), []byte("package: plain\nversion: v1.0.0\ncatalog: official\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withAcquire(t, func(context.Context, *spec.Package, string, spec.Platform, fetch.Source, string, report.Task) (string, error) {
+		t.Fatal("acquire must not be called for an installed package without link deps")
+		return "", nil
+	})
+	if err := Run(context.Background(), h, []Job{{Pkg: pkg, Version: "v1.0.0", Catalog: "official"}}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
+func TestRunRelinksInstalledDependents(t *testing.T) {
+	h := testx.Home(t)
+	app := copyToolPkg("app")
+	app.Deps = []spec.Dep{{Name: "zlib", Kind: spec.DepKindLink}}
+	artifact := filepath.Join(t.TempDir(), "artifact")
+	if err := os.WriteFile(artifact, []byte("bytes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Install(context.Background(), h, app, "1.0.0", "official", artifact, false, map[string]string{"zlib": "1.3.1"}); err != nil {
+		t.Fatalf("pre-install: %v", err)
+	}
+	withAcquire(t, func(context.Context, *spec.Package, string, spec.Platform, fetch.Source, string, report.Task) (string, error) {
+		t.Fatal("acquire must not be called to relink an installed package")
+		return "", nil
+	})
+
+	ctx, rep := testx.ReporterContext(context.Background())
+	job := Job{Pkg: app, Version: "1.0.0", Catalog: "official", Links: map[string]string{"zlib": "1.3.2"}}
+	if err := Run(ctx, h, []Job{job}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	appDir, _ := h.PackageDir("app", "1.0.0")
+	links, err := ReadLinks(appDir)
+	if err != nil || links["zlib"] != "1.3.2" {
+		t.Fatalf("app links = %v, %v; want zlib 1.3.2", links, err)
+	}
+	if n := len(rep.Tasks()); n != 0 {
+		t.Fatalf("task count = %d, want none for a relink", n)
 	}
 }

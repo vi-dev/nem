@@ -1,6 +1,7 @@
 package build
 
 import (
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -50,10 +51,10 @@ func TestComposeEnv(t *testing.T) {
 	if !strings.Contains(m["LDFLAGS"], "-L/nh/packages/openssl/v3.4.0/lib") {
 		t.Fatalf("LDFLAGS -L: %q", m["LDFLAGS"])
 	}
-	wantRpath := "-Wl,-rpath,@loader_path/../../../openssl/v3.4.0/lib"
+	wantRpath := "-Wl,-rpath," + depsRpath("@loader_path") + "openssl/lib"
 	if runtime.GOOS == "linux" {
 
-		wantRpath = "-Wl,-rpath,'$$ORIGIN/../../../openssl/v3.4.0/lib'"
+		wantRpath = "-Wl,-rpath,'" + depsRpath("$$ORIGIN") + "openssl/lib'"
 	}
 	if !strings.Contains(m["LDFLAGS"], wantRpath) {
 		t.Fatalf("LDFLAGS rpath = %q, want %s", m["LDFLAGS"], wantRpath)
@@ -68,9 +69,9 @@ func TestComposeEnv(t *testing.T) {
 	if !strings.Contains(m["CGO_CFLAGS"], "-I/nh/packages/openssl/v3.4.0/include") {
 		t.Fatalf("CGO_CFLAGS: %q", m["CGO_CFLAGS"])
 	}
-	wantCgoRpath := "-Wl,-rpath,@loader_path/../../../openssl/v3.4.0/lib"
+	wantCgoRpath := "-Wl,-rpath," + depsRpath("@loader_path") + "openssl/lib"
 	if runtime.GOOS == "linux" {
-		wantCgoRpath = "-Wl,-rpath,$ORIGIN/../../../openssl/v3.4.0/lib"
+		wantCgoRpath = "-Wl,-rpath," + depsRpath("$ORIGIN") + "openssl/lib"
 	}
 
 	switch {
@@ -182,6 +183,33 @@ func TestComposeEnvNeverSetsLoaderPath(t *testing.T) {
 	for _, k := range []string{"LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"} {
 		if v, ok := withAmbient[k]; !ok || v != "sentinel" {
 			t.Fatalf("%s must pass through unchanged, got %q, present=%v", k, v, ok)
+		}
+	}
+}
+
+func TestDepsRpathHelpers(t *testing.T) {
+	a := loaderAnchor()
+	cases := map[string]bool{
+		a + "/.nem-link-dependencies/zlib/lib":    true,
+		a + "/../.nem-link-dependencies/zlib/lib": false,
+		a + "/../lib":           false,
+		"/usr/lib/libz.1.dylib": false,
+		"libz.so.1":             false,
+	}
+	for ref, want := range cases {
+		if got := isDepsRpath(ref); got != want {
+			t.Errorf("isDepsRpath(%q) = %v, want %v", ref, got, want)
+		}
+	}
+	out := t.TempDir()
+	for path, want := range map[string]int{
+		filepath.Join(out, "tool"):                       0,
+		filepath.Join(out, "bin", "tool"):                1,
+		filepath.Join(out, "libexec", "git-core", "git"): 2,
+	} {
+		got, err := binaryDepth(out, path)
+		if err != nil || got != want {
+			t.Fatalf("binaryDepth(%s) = %d, %v; want %d", path, got, err, want)
 		}
 	}
 }

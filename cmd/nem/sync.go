@@ -50,26 +50,28 @@ func runSync(cmd *cobra.Command, global bool) error {
 	}
 
 	current := spec.Current().String()
+	versions := project.Versions(lock.Packages)
 	var jobs []install.Job
 	for _, entry := range lock.Packages {
 		if !slices.Contains(entry.Platforms, current) {
 			continue
 		}
-		if install.IsInstalled(nemHome, entry.Name, entry.Version) {
-			continue
-		}
-
+		installed := install.IsInstalled(nemHome, entry.Name, entry.Version)
 		hit, err := set.Lookup(cmd.Context(), project.ToolKey{Catalog: entry.Catalog, Name: entry.Name})
 		if err != nil {
+			if installed {
+				continue
+			}
 			return err
 		}
-		if entry.Digest != "" && hit.Digest != entry.Digest {
+		links := install.Links(hit.Pkg, versions)
+		fetches := !installed || install.NeedsRelayout(nemHome, entry.Name, entry.Version, links)
+		if fetches && entry.Digest != "" && hit.Digest != entry.Digest {
 			return &catalog.DigestMismatchError{
 				Name: entry.Name, Version: entry.Version,
 				Locked: entry.Digest, Current: hit.Digest,
 			}
 		}
-
 		src := fetch.Source{}
 		if hit.Entry.Archives != nil {
 			src.Archives = []archive.Store{hit.Entry.Archives}
@@ -79,12 +81,10 @@ func runSync(cmd *cobra.Command, global bool) error {
 			Version: entry.Version,
 			Catalog: entry.Catalog,
 			Source:  src,
+			Links:   links,
 		})
 	}
 
-	if len(jobs) == 0 {
-		return nil
-	}
 	return install.Run(cmd.Context(), nemHome, jobs)
 }
 

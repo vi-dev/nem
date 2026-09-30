@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -16,7 +17,10 @@ import (
 	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/home"
+	"github.com/vi-dev/nem/internal/install"
+	"github.com/vi-dev/nem/internal/project"
 	"github.com/vi-dev/nem/internal/report"
+	"github.com/vi-dev/nem/internal/resolve"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
 )
@@ -26,6 +30,7 @@ type batchSpec struct {
 	version string
 	step    string
 	deps    []string
+	links   []string
 	plats   []spec.Platform
 }
 
@@ -60,17 +65,32 @@ func batchFixture(t *testing.T, specs ...batchSpec) (*catalog.Set, map[string]*s
 		}
 		var b strings.Builder
 		fmt.Fprintf(&b, "schema: 2\nname: %s\n", name)
+		b.WriteString("libs: [lib]\n")
 		b.WriteString("artifact:\n  oci: \":{{.Version}}\"\n")
 		b.WriteString("install:\n  - extract: {}\n")
 		b.WriteString("versions:\n")
 		for _, s := range group {
 			fmt.Fprintf(&b, "  - version: %q\n", s.version)
 		}
+		if len(group[0].links) > 0 {
+			b.WriteString("deps:\n")
+			for _, d := range group[0].links {
+				fmt.Fprintf(&b, "  - name: %s\n    kind: link\n    version: %q\n", d, versions[d])
+			}
+		}
 		fmt.Fprintf(&b, "build:\n  source:\n    url: %q\n  output: out\n", srv.URL)
 		if len(group[0].deps) > 0 {
 			b.WriteString("  deps:\n")
 			for _, d := range group[0].deps {
 				fmt.Fprintf(&b, "    - name: %s\n      version: %q\n", d, versions[d])
+			}
+		}
+		if len(group[0].links) > 0 {
+			if len(group[0].deps) == 0 {
+				b.WriteString("  deps:\n")
+			}
+			for _, d := range group[0].links {
+				fmt.Fprintf(&b, "    - name: %s\n      kind: link\n      version: %q\n", d, versions[d])
 			}
 		}
 		b.WriteString("  steps:\n    - run: |\n")
@@ -555,6 +575,58 @@ func TestRunBatchNoPushStillUsesTmpStore(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(target.Dir, "archives")); !os.IsNotExist(err) {
 		t.Fatalf("stat %s/archives = %v, want it never created", target.Dir, err)
+	}
+}
+
+func TestRunBatchDependentLoadsLibraryThroughDepsLinks(t *testing.T) {
+	requireCC(t)
+	if _, err := exec.LookPath("make"); err != nil {
+		t.Skip("make not available")
+	}
+	h := testx.HomeAt(t.TempDir())
+	libStep := `mkdir -p "$NEM_OUTPUT/lib"
+printf 'int demo(void){return 42;}\n' > demo.c
+case "$NEM_OS" in
+darwin) cc -dynamiclib -install_name @rpath/libdemo.dylib -o "$NEM_OUTPUT/lib/libdemo.dylib" demo.c ;;
+*) cc -shared -fPIC -Wl,-soname,libdemo.so -o "$NEM_OUTPUT/lib/libdemo.so" demo.c ;;
+esac`
+	appStep := `mkdir -p "$NEM_OUTPUT/bin" "$NEM_OUTPUT/libexec/app"
+printf 'int demo(void); int main(void){return demo();}\n' > main.c
+printf 'all:\n\tcc -o "$(NEM_OUTPUT)/bin/app" main.c $(LDFLAGS) -ldemo\n' > Makefile
+make all
+cp "$NEM_OUTPUT/bin/app" "$NEM_OUTPUT/libexec/app/app"
+mkdir -p "$NEM_OUTPUT/libexec/a/b/c/d"
+cp "$NEM_OUTPUT/bin/app" "$NEM_OUTPUT/libexec/a/b/c/d/app"`
+	lib := batchSpec{name: "demo", version: "1.0.0", step: libStep}
+	app := batchSpec{name: "app", version: "2.0.0", step: appStep, links: []string{"demo"}}
+	sources, pkgs := batchFixture(t, lib, app)
+	plan := batchPlan(t, pkgs, lib, app)
+
+	store := archive.NewDir(t.TempDir())
+	rows, out := runBatch(t, h, sources, plan, BatchOptions{Target: &Target{Dir: "x", Overlay: store, Store: store}, Push: true})
+	assertRows(t, rows, []string{"demo@1.0.0 pushed -", "app@2.0.0 pushed -"}, out)
+
+	ctx, _ := testx.ReporterContext(context.Background())
+	result, err := resolve.Resolve(ctx, []resolve.Tool{{Key: project.ToolKey{Name: "app"}}}, sources)
+	if err != nil {
+		t.Fatalf("resolve app: %v", err)
+	}
+	if err := install.Run(ctx, h, install.Jobs(result, sources, store)); err != nil {
+		t.Fatalf("install app: %v\n%s", err, out)
+	}
+	appDir, _ := h.PackageDir("app", "2.0.0")
+	links, err := install.ReadLinks(appDir)
+	if err != nil || links["demo"] != "1.0.0" {
+		t.Fatalf("app links = %v, %v; want demo 1.0.0", links, err)
+	}
+	for _, bin := range []string{
+		filepath.Join(appDir, "bin", "app"),
+		filepath.Join(appDir, "libexec", "app", "app"),
+		filepath.Join(appDir, "libexec", "a", "b", "c", "d", "app"),
+	} {
+		if !exits42(t, bin) {
+			t.Fatalf("%s did not load libdemo through .nem-link-dependencies\n%s", bin, out)
+		}
 	}
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"maps"
 	"os"
 	"slices"
 
@@ -43,10 +44,7 @@ func runStatus(global bool) error {
 		return err
 	}
 
-	lockedVersion := map[string]string{}
-	for _, e := range lock.Packages {
-		lockedVersion[e.Name] = e.Version
-	}
+	lockedVersion := project.Versions(lock.Packages)
 
 	var rows [][]string
 	for _, tool := range m.Tools {
@@ -91,6 +89,7 @@ func runStatus(global bool) error {
 		projLock, globalLock = otherLock, lock
 	}
 	warnMissingInstalls(projLock, globalLock)
+	warnLinkDrift(lock, lockedVersion)
 
 	result := envx.ComposeScope(m, other, lock, otherLock, nemHome, installMetaLookup, os.LookupEnv)
 	for _, w := range result.Warnings {
@@ -130,4 +129,22 @@ func countMissing(lock *project.Lockfile) int {
 		}
 	}
 	return n
+}
+
+func warnLinkDrift(lock *project.Lockfile, locked map[string]string) {
+	for _, e := range lock.Packages {
+		dir, err := nemHome.PackageDir(e.Name, e.Version)
+		if err != nil {
+			continue
+		}
+		have, err := install.ReadLinks(dir)
+		if err != nil {
+			continue
+		}
+		for _, dep := range slices.Sorted(maps.Keys(have)) {
+			if want := locked[dep]; want != "" && want != have[dep] {
+				console.Warn("%s %s: linked to %s %s, this scope locks %s — run `nem sync`", e.Name, e.Version, dep, have[dep], want)
+			}
+		}
+	}
 }

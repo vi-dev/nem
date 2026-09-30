@@ -30,6 +30,14 @@ type Lockfile struct {
 	Packages []LockEntry
 }
 
+func Versions(entries []LockEntry) map[string]string {
+	m := make(map[string]string, len(entries))
+	for _, e := range entries {
+		m[e.Name] = e.Version
+	}
+	return m
+}
+
 type rawLock struct {
 	Version  int         `toml:"version"`
 	Packages []LockEntry `toml:"package"`

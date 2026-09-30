@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"runtime"
+	"slices"
 
 	"golang.org/x/sync/errgroup"
 
 	"github.com/vi-dev/nem/internal/fetch"
+	"github.com/vi-dev/nem/internal/fsx"
 	"github.com/vi-dev/nem/internal/home"
 	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
@@ -21,6 +24,7 @@ type Job struct {
 	Catalog   string
 	Source    fetch.Source
 	Reinstall bool
+	Links     map[string]string
 }
 
 var acquire = fetch.Acquire
@@ -46,7 +50,10 @@ func runJob(gctx context.Context, h home.Home, job Job) error {
 	rep := report.FromContext(gctx)
 	name, version := job.Pkg.Name, job.Version
 	if !job.Reinstall && IsInstalled(h, name, version) {
-		return nil
+		if !NeedsRelayout(h, name, version, job.Links) {
+			return relink(gctx, h, job)
+		}
+		job.Reinstall = true
 	}
 
 	label := fmt.Sprintf("Installing %s %s", name, version)
@@ -74,7 +81,7 @@ func runJob(gctx context.Context, h home.Home, job Job) error {
 	defer os.Remove(artifact)
 
 	task.Segment("extracting")
-	if err := Install(gctx, h, job.Pkg, version, job.Catalog, artifact, job.Reinstall); err != nil {
+	if err := Install(gctx, h, job.Pkg, version, job.Catalog, artifact, job.Reinstall, job.Links); err != nil {
 		if isCancellation(gctx, err) {
 			task.Fail(cancelled)
 			return nil
@@ -85,6 +92,36 @@ func runJob(gctx context.Context, h home.Home, job Job) error {
 
 	task.Done(fmt.Sprintf("Installed %s %s", name, version))
 	return nil
+}
+
+func relink(ctx context.Context, h home.Home, job Job) error {
+	name, version := job.Pkg.Name, job.Version
+	dir, err := h.PackageDir(name, version)
+	if err != nil {
+		return fmt.Errorf("relink %s@%s: %w", name, version, err)
+	}
+	release, err := fsx.Lock(h.LockFile())
+	if err != nil {
+		return err
+	}
+	defer release()
+	retargeted, err := WriteLinks(dir, job.Links)
+	if err != nil {
+		return fmt.Errorf("relink %s@%s: %w", name, version, err)
+	}
+	rep := report.FromContext(ctx)
+	for _, dep := range slices.Sorted(maps.Keys(retargeted)) {
+		rep.Debug("Relinked %s %s: %s %s → %s", name, version, dep, retargeted[dep], job.Links[dep])
+	}
+	return nil
+}
+
+func NeedsRelayout(h home.Home, name, version string, links map[string]string) bool {
+	if len(links) == 0 {
+		return false
+	}
+	meta, err := ReadMeta(h, name, version)
+	return err != nil || meta.Layout < LayoutVersion
 }
 
 func isCancellation(gctx context.Context, err error) bool {

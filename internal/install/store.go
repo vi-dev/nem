@@ -15,7 +15,10 @@ import (
 	"github.com/vi-dev/nem/internal/usage"
 )
 
-const metaFileName = ".nem-meta.yaml"
+const (
+	metaFileName  = ".nem-meta.yaml"
+	LayoutVersion = 2
+)
 
 type Meta struct {
 	Package     string           `yaml:"package"`
@@ -24,10 +27,11 @@ type Meta struct {
 	Bins        []string         `yaml:"bins"`
 	Libs        []string         `yaml:"libs,omitempty"`
 	Env         []spec.EnvExport `yaml:"env,omitempty"`
+	Layout      int              `yaml:"layout,omitempty"`
 	InstalledAt time.Time        `yaml:"installed_at"`
 }
 
-func Install(ctx context.Context, h home.Home, pkg *spec.Package, version, catalog, artifactPath string, reinstall bool) error {
+func Install(ctx context.Context, h home.Home, pkg *spec.Package, version, catalog, artifactPath string, reinstall bool, links map[string]string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -66,6 +70,9 @@ func Install(ctx context.Context, h home.Home, pkg *spec.Package, version, catal
 	if err := writeMeta(staging, pkg, version, catalog); err != nil {
 		return fmt.Errorf("install %s@%s: %w", pkg.Name, version, err)
 	}
+	if _, err := WriteLinks(staging, links); err != nil {
+		return fmt.Errorf("install %s@%s: %w", pkg.Name, version, err)
+	}
 
 	if reinstall {
 		if err := os.RemoveAll(installDir); err != nil {
@@ -96,6 +103,7 @@ func writeMeta(staging string, pkg *spec.Package, version, catalog string) error
 		Bins:        pkg.Bins,
 		Libs:        pkg.Libs,
 		Env:         pkg.Env,
+		Layout:      LayoutVersion,
 		InstalledAt: time.Now().UTC(),
 	}
 	data, err := yaml.Marshal(meta)

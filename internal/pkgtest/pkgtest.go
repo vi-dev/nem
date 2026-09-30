@@ -54,9 +54,13 @@ func InstallAndRun(ctx context.Context, h home.Home, deps []build.ResolvedDep,
 		}
 	}()
 
+	versions := make(map[string]string, len(deps))
+	for _, d := range deps {
+		versions[d.Name] = d.Version
+	}
 	alias := *pkg
 	alias.Name = aliasName
-	if installErr := install.Install(ctx, h, &alias, version, catalogName, artifactPath, false); installErr != nil {
+	if installErr := install.Install(ctx, h, &alias, version, catalogName, artifactPath, false, install.Links(pkg, versions)); installErr != nil {
 		return fmt.Errorf("test-install %s@%s: %w", pkg.Name, version, installErr)
 	}
 	prefix := filepath.Join(aliasDir, version)

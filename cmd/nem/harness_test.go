@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/vi-dev/nem/internal/home"
+	"github.com/vi-dev/nem/internal/project"
 	"github.com/vi-dev/nem/internal/testx"
 )
 
@@ -65,4 +66,11 @@ func chdir(t *testing.T, dir string) {
 
 func testNemHome(nemHomeDir string) home.Home {
 	return testx.HomeAt(nemHomeDir)
+}
+
+func writeLockFile(t *testing.T, path string, pkgs ...project.LockEntry) {
+	t.Helper()
+	if err := project.WriteLock(&project.Lockfile{Path: path, Packages: pkgs}); err != nil {
+		t.Fatalf("WriteLock: %v", err)
+	}
 }

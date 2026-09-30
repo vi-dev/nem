@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,12 +13,14 @@ import (
 
 	"oras.land/oras-go/v2/content/oci"
 
+	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/home"
 	"github.com/vi-dev/nem/internal/install"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/ocix/ocixtest"
 	"github.com/vi-dev/nem/internal/project"
 	"github.com/vi-dev/nem/internal/spec"
+	"github.com/vi-dev/nem/internal/testx"
 )
 
 const syncToolYAML = `
@@ -293,5 +298,181 @@ func TestSyncDigestMismatchErrors(t *testing.T) {
 	}
 	if !strings.Contains(errb, "Re-lock") {
 		t.Fatalf("stderr should carry the digest-mismatch hint: %q", errb)
+	}
+}
+
+func TestSyncSkipsInstalledEntryWithUnavailableCatalog(t *testing.T) {
+	nemHomeDir := t.TempDir()
+	h := testNemHome(nemHomeDir)
+	projDir := t.TempDir()
+	chdir(t, projDir)
+
+	installDir, err := h.PackageDir("tool", "v1.0.0")
+	if err != nil {
+		t.Fatalf("PackageDir: %v", err)
+	}
+	writeMetaFile(t, installDir, "package: tool\nversion: v1.0.0\ncatalog: missing\nlayout: 2\n")
+
+	writeFile(t, filepath.Join(projDir, "nem.toml"), "[tools]\n")
+	writeLockFile(t, filepath.Join(projDir, "nem.lock"),
+		project.LockEntry{Name: "tool", Version: "v1.0.0", Catalog: "missing", Direct: true, Platforms: []string{spec.Current().String()}})
+
+	out, errb, err := runNem(t, nemHomeDir, "sync")
+	if err != nil {
+		t.Fatalf("sync: %v\nstdout: %s\nstderr: %s", err, out, errb)
+	}
+	if out != "" || errb != "" {
+		t.Fatalf("sync on an installed entry whose catalog is gone must be silent: stdout=%q stderr=%q", out, errb)
+	}
+}
+
+func TestSyncRelinksInstalledDependents(t *testing.T) {
+	nemHomeDir := t.TempDir()
+	h := testNemHome(nemHomeDir)
+	projDir := t.TempDir()
+	chdir(t, projDir)
+
+	catalogRoot := t.TempDir()
+	zlibYAML := "schema: 2\nname: zlib\nlibs: [lib]\n" +
+		"artifact:\n  oci: \":{{.Version}}\"\ninstall:\n  - extract: {}\n" +
+		"versions:\n  - version: \"1.0.0\"\n  - version: \"1.1.0\"\n"
+	writeFile(t, filepath.Join(catalogRoot, "pkgs", "zlib", "pkg.yaml"), zlibYAML)
+	appYAML := "schema: 2\nname: app\ndeps:\n  - name: zlib\n    kind: link\n    compat: \"1\"\n" +
+		"artifact:\n  oci: \":{{.Version}}\"\ninstall:\n  - extract: {}\n" +
+		"versions:\n  - version: \"1.0.0\"\n"
+	writeFile(t, filepath.Join(catalogRoot, "pkgs", "app", "pkg.yaml"), appYAML)
+
+	if _, errb, err := runNem(t, nemHomeDir, "catalog", "add", "demo", catalogRoot); err != nil {
+		t.Fatalf("catalog add: %v\n%s", err, errb)
+	}
+
+	appDir := dependentHome(t, h, projDir, install.LayoutVersion, "")
+	if _, err := install.WriteLinks(appDir, map[string]string{"zlib": "1.0.0"}); err != nil {
+		t.Fatalf("WriteLinks: %v", err)
+	}
+
+	out, errb, err := runNem(t, nemHomeDir, "sync")
+	if err != nil {
+		t.Fatalf("sync: %v\nstdout: %s\nstderr: %s", err, out, errb)
+	}
+	if strings.Contains(errb, "Installed") {
+		t.Fatalf("both entries were already installed at the current layout; nothing should be downloaded:\n%s", errb)
+	}
+
+	links, err := install.ReadLinks(appDir)
+	if err != nil || links["zlib"] != "1.1.0" {
+		t.Fatalf("app links = %v, %v; want zlib relinked to 1.1.0", links, err)
+	}
+}
+
+func downloadableLinkingDirCatalog(t *testing.T) string {
+	t.Helper()
+	archive := makeTarGz(t, map[string]string{"bin/app": "reinstalled app"})
+	sha := testx.Sha256Hex(archive)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(archive)
+	}))
+	t.Cleanup(srv.Close)
+
+	root := t.TempDir()
+	zlibYAML := "schema: 2\nname: zlib\nlibs: [lib]\n" +
+		"artifact:\n  oci: \":{{.Version}}\"\ninstall:\n  - extract: {}\n" +
+		"versions:\n  - version: \"1.1.0\"\n"
+	writeFile(t, filepath.Join(root, "pkgs", "zlib", "pkg.yaml"), zlibYAML)
+	appYAML := "schema: 2\nname: app\ndeps:\n  - name: zlib\n    kind: link\n    compat: \"1\"\n" +
+		"artifact:\n  url: \"" + srv.URL + "\"\ninstall:\n  - extract: {}\n" +
+		"versions:\n  - version: \"1.0.0\"\n    sha256:\n" +
+		"      darwin/arm64: \"" + sha + "\"\n      darwin/amd64: \"" + sha + "\"\n" +
+		"      linux/arm64: \"" + sha + "\"\n      linux/amd64: \"" + sha + "\"\n"
+	writeFile(t, filepath.Join(root, "pkgs", "app", "pkg.yaml"), appYAML)
+	return root
+}
+
+func dependentHome(t *testing.T, h home.Home, projDir string, appLayout int, digest string) string {
+	t.Helper()
+	appDir, err := h.PackageDir("app", "1.0.0")
+	if err != nil {
+		t.Fatalf("PackageDir app: %v", err)
+	}
+	writeFile(t, filepath.Join(appDir, "bin", "app"), "installed app")
+	meta := "package: app\nversion: 1.0.0\ncatalog: demo\nbins: [bin]\n"
+	if appLayout > 0 {
+		meta += fmt.Sprintf("layout: %d\n", appLayout)
+	}
+	writeMetaFile(t, appDir, meta)
+
+	zlibDir, err := h.PackageDir("zlib", "1.1.0")
+	if err != nil {
+		t.Fatalf("PackageDir zlib: %v", err)
+	}
+	writeMetaFile(t, zlibDir, "package: zlib\nversion: 1.1.0\ncatalog: demo\nlayout: 2\nlibs: [lib]\n")
+
+	writeFile(t, filepath.Join(projDir, "nem.toml"), "[tools]\n")
+	platforms := []string{spec.Current().String()}
+	writeLockFile(t, filepath.Join(projDir, "nem.lock"),
+		project.LockEntry{Name: "app", Version: "1.0.0", Catalog: "demo", Direct: true, Platforms: platforms, Digest: digest},
+		project.LockEntry{Name: "zlib", Version: "1.1.0", Catalog: "demo", OnLoaderPath: true, Platforms: platforms})
+	return appDir
+}
+
+func TestSyncChecksDigestBeforeLayoutReinstall(t *testing.T) {
+	nemHomeDir := t.TempDir()
+	h := testNemHome(nemHomeDir)
+	projDir := t.TempDir()
+	chdir(t, projDir)
+
+	catalogRoot := downloadableLinkingDirCatalog(t)
+	if _, errb, err := runNem(t, nemHomeDir, "catalog", "add", "demo", catalogRoot); err != nil {
+		t.Fatalf("catalog add: %v\n%s", err, errb)
+	}
+	appDir := dependentHome(t, h, projDir, 0, "sha256:bogus")
+
+	_, errb, err := runNem(t, nemHomeDir, "sync")
+	var mismatch *catalog.DigestMismatchError
+	if !errors.As(err, &mismatch) {
+		t.Fatalf("sync error = %v, want *catalog.DigestMismatchError\nstderr: %s", err, errb)
+	}
+	if mismatch.Name != "app" || mismatch.Locked != "sha256:bogus" {
+		t.Fatalf("mismatch = %+v, want app locked at sha256:bogus", mismatch)
+	}
+	meta, err := os.ReadFile(filepath.Join(appDir, ".nem-meta.yaml"))
+	if err != nil || strings.Contains(string(meta), "layout") {
+		t.Fatalf("meta = %q, %v; the layout reinstall must not have run", meta, err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(appDir, "bin", "app")); string(got) != "installed app" {
+		t.Fatalf("bin/app = %q, want the untouched install", got)
+	}
+}
+
+func TestSyncReinstallsOldLayoutWhenDigestMatches(t *testing.T) {
+	nemHomeDir := t.TempDir()
+	h := testNemHome(nemHomeDir)
+	projDir := t.TempDir()
+	chdir(t, projDir)
+
+	catalogRoot := downloadableLinkingDirCatalog(t)
+	if _, errb, err := runNem(t, nemHomeDir, "catalog", "add", "demo", catalogRoot); err != nil {
+		t.Fatalf("catalog add: %v\n%s", err, errb)
+	}
+	appDir := dependentHome(t, h, projDir, 0, "")
+
+	out, errb, err := runNem(t, nemHomeDir, "sync")
+	if err != nil {
+		t.Fatalf("sync: %v\nstdout: %s\nstderr: %s", err, out, errb)
+	}
+	if !strings.Contains(errb, "Installed app 1.0.0") {
+		t.Fatalf("narration missing the layout reinstall: %q", errb)
+	}
+	if got, _ := os.ReadFile(filepath.Join(appDir, "bin", "app")); string(got) != "reinstalled app" {
+		t.Fatalf("bin/app = %q, want the reinstalled payload", got)
+	}
+	meta, err := install.ReadMeta(h, "app", "1.0.0")
+	if err != nil || meta.Layout != install.LayoutVersion {
+		t.Fatalf("meta = %+v, %v; want layout %d", meta, err, install.LayoutVersion)
+	}
+	links, err := install.ReadLinks(appDir)
+	if err != nil || links["zlib"] != "1.1.0" {
+		t.Fatalf("app links = %v, %v; want zlib 1.1.0", links, err)
 	}
 }

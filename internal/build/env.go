@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/vi-dev/nem/internal/install"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -62,8 +63,8 @@ func ComposeEnv(base []string, deps []ResolvedDep, ectx EnvContext) []string {
 				ldflags = append(ldflags, "-Wl,-rpath,"+dir)
 				cgoLdflags = append(cgoLdflags, "-Wl,-rpath,"+dir)
 			} else {
-				ldflags = append(ldflags, rpathFlag(d.Name, d.Version, lib))
-				cgoLdflags = append(cgoLdflags, cgoRpathFlag(d.Name, d.Version, lib))
+				ldflags = append(ldflags, rpathFlag(d.Name, lib))
+				cgoLdflags = append(cgoLdflags, cgoRpathFlag(d.Name, lib))
 			}
 		}
 	}
@@ -99,24 +100,39 @@ func ComposeEnv(base []string, deps []ResolvedDep, ectx EnvContext) []string {
 	return mapToEnv(vars)
 }
 
-func rpathFlag(dep, version, lib string) string {
-	rel := rpathRel(dep, version, lib)
-	if runtime.GOOS == "linux" {
-		return "-Wl,-rpath,'$$ORIGIN" + rel + "'"
-	}
-	return "-Wl,-rpath,@loader_path" + rel
+func depsRpath(anchor string) string {
+	return anchor + "/" + install.DepsDir + "/"
 }
 
-func cgoRpathFlag(dep, version, lib string) string {
-	rel := rpathRel(dep, version, lib)
-	if runtime.GOOS == "linux" {
-		return "-Wl,-rpath,$ORIGIN" + rel
-	}
-	return "-Wl,-rpath,@loader_path" + rel
+func isDepsRpath(ref string) bool {
+	rest, ups, ok := cutLoaderAnchor(ref)
+	return ok && ups == 0 && strings.HasPrefix(rest, install.DepsDir+"/")
 }
 
-func rpathRel(dep, version, lib string) string {
-	return "/../../../" + dep + "/" + version + "/" + lib
+func binaryDepth(outDir, path string) (int, error) {
+	rel, err := filepath.Rel(outDir, filepath.Dir(path))
+	if err != nil {
+		return 0, err
+	}
+	if rel == "." {
+		return 0, nil
+	}
+	return strings.Count(rel, string(filepath.Separator)) + 1, nil
+}
+
+func depRpath(dep, lib string) string {
+	return depsRpath(loaderAnchor()) + dep + "/" + lib
+}
+
+func rpathFlag(dep, lib string) string {
+	if runtime.GOOS == "linux" {
+		return "-Wl,-rpath,'$" + depRpath(dep, lib) + "'"
+	}
+	return "-Wl,-rpath," + depRpath(dep, lib)
+}
+
+func cgoRpathFlag(dep, lib string) string {
+	return "-Wl,-rpath," + depRpath(dep, lib)
 }
 
 func depPrefixVar(name string) string {

@@ -105,7 +105,7 @@ func planUpdate(cmd *cobra.Command, args []string, global, dryRun bool) (*catalo
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	resolved := resolvedVersions(result)
+	resolved := project.Versions(result.Entries)
 	warnStaleCatalogs(cfg, result)
 
 	for _, t := range targets {
@@ -148,7 +148,6 @@ func runUpdate(cmd *cobra.Command, args []string, global, dryRun bool) error {
 	if err := install.Run(cmd.Context(), nemHome, install.Jobs(result, sources, nil)); err != nil {
 		return err
 	}
-
 	if len(rows) == 0 {
 		console.Info("All tools up to date")
 	}

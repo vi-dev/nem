@@ -20,14 +20,20 @@ func normalizeOutput(outDir string) error {
 	if err := relocatePkgconfig(outDir); err != nil {
 		return err
 	}
-	if runtime.GOOS != "darwin" {
-		return nil
+	if runtime.GOOS == "darwin" {
+		fixes, err := planMachoFixes(outDir)
+		if err != nil {
+			return err
+		}
+		if err := applyMachoFixes(fixes); err != nil {
+			return err
+		}
 	}
-	fixes, err := planMachoFixes(outDir)
+	links, err := planDepLinks(outDir)
 	if err != nil {
 		return err
 	}
-	return applyMachoFixes(fixes)
+	return applyDepLinks(links)
 }
 
 func dropLibtoolArchives(outDir string) error {
