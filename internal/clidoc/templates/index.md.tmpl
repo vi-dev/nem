@@ -1,0 +1,10 @@
+{{ define "index" -}}
+---
+title: Commands
+weight: 1
+---
+
+Every `{{ .Name }}` command, grouped as in `{{ .Name }} --help`.{{ if .GlobalFlags }} Every command also accepts {{ list .GlobalFlags }}; see [{{ .Root.Text }}]({{ .Root.Href }}).{{ end }}
+
+{{ range .Tables }}{{ template "table" . }}{{ end }}
+{{- end }}

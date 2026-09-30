@@ -1,0 +1,9 @@
+{{ define "table" -}}
+{{ if .Heading }}{{ .Heading }}
+
+{{ end -}}
+| {{ .First }} | Description |
+|{{ dashes .First }}|-------------|
+{{ range .Rows }}| {{ index . 0 }} | {{ index . 1 }} |
+{{ end }}
+{{ end }}

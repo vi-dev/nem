@@ -1,0 +1,51 @@
+{{ define "command" -}}
+---
+title: {{ .Title }}
+weight: {{ .Weight }}
+---
+
+{{ .Short }}
+
+{{ if .Long -}}
+{{ .Long }}
+
+{{ end -}}
+## Usage
+
+```shell
+{{ .Usage }}
+```
+
+{{ if .Aliases -}}
+Aliases: {{ list .Aliases }}
+
+{{ end -}}
+{{ if .Example -}}
+## Examples
+
+```shell
+{{ .Example }}
+```
+
+{{ end -}}
+{{ if .Flags.Rows -}}
+{{ template "table" .Flags }}
+{{- end -}}
+{{ if .Commands -}}
+## Commands
+
+{{ range .Commands }}{{ template "table" . }}{{ end }}
+{{- end -}}
+{{ if .GlobalFlags -}}
+## Global flags
+
+{{ list .GlobalFlags }} {{ applies .GlobalFlags }} to every command; see [{{ .Root.Text }}]({{ .Root.Href }}).
+
+{{ end -}}
+{{ if .Parent -}}
+## See also
+
+- [{{ .Parent.Text }}]({{ .Parent.Href }})
+{{ if .Guide }}- Guide: [{{ .Guide.Text }}]({{ .Guide.Href }})
+{{ end }}{{ end -}}
+{{ end }}
