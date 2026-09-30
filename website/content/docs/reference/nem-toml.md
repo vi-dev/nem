@@ -1,6 +1,6 @@
 ---
 title: nem.toml
-weight: 1
+weight: 2
 ---
 
 The manifest declaring a directory's tools and environment variables. Meant

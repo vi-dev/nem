@@ -1,6 +1,6 @@
 ---
 title: NEM_HOME
-weight: 4
+weight: 5
 ---
 
 All of nem's on-disk state lives under one per-user directory: `$NEM_HOME`,

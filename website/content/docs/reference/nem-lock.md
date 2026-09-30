@@ -1,6 +1,6 @@
 ---
 title: nem.lock
-weight: 2
+weight: 3
 ---
 
 The machine-written lockfile recording the fully resolved package closure.

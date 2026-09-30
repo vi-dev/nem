@@ -1,6 +1,6 @@
 ---
 title: config.yaml
-weight: 3
+weight: 4
 ---
 
 `nem`'s global configuration, at `~/.nem/config.yaml` (`$NEM_HOME/config.yaml`).

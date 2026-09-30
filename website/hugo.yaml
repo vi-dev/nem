@@ -9,6 +9,9 @@ markup:
   highlight:
     noClasses: false
   goldmark:
+    extensions:
+      typographer:
+        disable: true
     renderer:
       unsafe: true
     parser:
