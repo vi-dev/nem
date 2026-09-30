@@ -33,9 +33,15 @@ func newCatalogBuildCmd() *cobra.Command {
 	var in buildInput
 	cmd := &cobra.Command{
 		Use:   "build [catalog]",
-		Short: "Build a catalog's compile-from-source packages on the host platform",
-		Long: "Build and (optionally) push compile-from-source packages on the host platform.\n" +
-			"The catalog supplies the package manifests and, with --push, receives the archives.",
+		Short: "Build a catalog's build-from-source packages on the host platform",
+		Long: "Build a catalog's build-from-source packages on this machine's platform and stage " +
+			"the resulting archives; with --push, publish them into the catalog. Without " +
+			"--package, every buildable package is built at its latest version. --missing " +
+			"narrows the selection to versions and platforms whose archive is absent, which " +
+			"keeps re-runs cheap.",
+		Example: "  nem catalog build . --package openssl@3.6.1    # one version\n" +
+			"  nem catalog build . --missing --push            # fill gaps in the published archives\n" +
+			"  nem catalog build . --dry-run                   # show the plan and its waves",
 		Args: cobra.MaximumNArgs(1),
 		ValidArgsFunction: firstArgOnly(func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 			return nil, cobra.ShellCompDirectiveFilterDirs

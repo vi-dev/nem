@@ -28,8 +28,15 @@ func newRoot() *cobra.Command {
 	console = nil
 	nemHome = home.Home{}
 	root := &cobra.Command{
-		Use:           "nem",
-		Short:         "Reproducible dev environments. For you, your teams, and your agents.",
+		Use:   "nem",
+		Short: "Reproducible dev environments. For you, your teams, and your agents.",
+		Long: "nem gives each project its own packages and environment variables, " +
+			"declared in nem.toml and pinned with digests in nem.lock. Packages install " +
+			"under NEM_HOME and join PATH only while the shell is inside the project, " +
+			"so teammates, CI, and agents reproduce the same environment from the two files.",
+		Example: "  nem activate                 # hook nem into the current shell\n" +
+			"  nem use kubectl go@1.27.0    # declare packages in this project\n" +
+			"  nem sync                     # install what nem.lock pins",
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,

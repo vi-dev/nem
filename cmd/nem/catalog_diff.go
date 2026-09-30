@@ -13,8 +13,16 @@ func newCatalogDiffCmd() *cobra.Command {
 	var packages []string
 	var output string
 	cmd := &cobra.Command{
-		Use:               "diff <base> <target>",
-		Short:             "Compare a base catalog's package manifests against a target catalog",
+		Use:   "diff <base> <target>",
+		Short: "Compare a base catalog's package manifests against a target catalog",
+		Long: "Lint <base>, then compare its package manifests against <target> and print one " +
+			"row per package with its status relative to target: new, updated, or removed, " +
+			"plus a count of unchanged packages. Base is the catalog being worked on and " +
+			"target the reference, typically the published one. --output json emits only " +
+			"the changed rows together with the versions base adds.",
+		Example: "  nem catalog diff . ghcr.io/vi-dev/nem-catalog:v2                 # a checkout against the published catalog\n" +
+			"  nem catalog diff . ghcr.io/vi-dev/nem-catalog:v2 --output json   # for CI\n" +
+			"  nem catalog diff . ghcr.io/vi-dev/nem-catalog:v2 --package jq    # one package",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: argsUpTo(2, completeYAMLOrDir),
 		RunE: func(cmd *cobra.Command, args []string) error {

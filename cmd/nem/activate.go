@@ -18,8 +18,16 @@ var stdoutIsTTY = func() bool {
 func newActivateCmd() *cobra.Command {
 	var printOnly bool
 	cmd := &cobra.Command{
-		Use:       "activate [zsh|bash]",
-		Short:     "Activate nem for the current shell",
+		Use:   "activate [zsh|bash]",
+		Short: "Activate nem for the current shell",
+		Long: "Install nem's hook block into the shell's startup file, .zshrc or .bashrc, between " +
+			"# >>> nem >>> and # <<< nem <<< markers. The hook re-applies the composed environment " +
+			"on every directory change and right after nem use, unuse, lock, and sync, and " +
+			"sources nem's completions. Without a shell name, $SHELL decides. Restart the " +
+			"shell afterwards.",
+		Example: "  nem activate                 # the current $SHELL\n" +
+			"  nem activate zsh             # a specific shell\n" +
+			"  nem activate --print         # print the block instead of installing it",
 		Args:      cobra.MaximumNArgs(1),
 		ValidArgs: []string{"bash", "zsh"},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -32,8 +40,12 @@ func newActivateCmd() *cobra.Command {
 
 func newDeactivateCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:       "deactivate [zsh|bash]",
-		Short:     "Deactivate nem for the current shell",
+		Use:   "deactivate [zsh|bash]",
+		Short: "Deactivate nem for the current shell",
+		Long: "Remove the hook block that nem activate installed from the shell's startup file. " +
+			"The current shell keeps its environment until it restarts.",
+		Example: "  nem deactivate               # the current $SHELL\n" +
+			"  nem deactivate bash          # a specific shell",
 		Args:      cobra.MaximumNArgs(1),
 		ValidArgs: []string{"bash", "zsh"},
 		RunE: func(cmd *cobra.Command, args []string) error {

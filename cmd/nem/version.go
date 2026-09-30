@@ -19,7 +19,11 @@ func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print the version of nem",
-		Args:  cobra.NoArgs,
+		Long: "Print the version of this nem binary together with its release channel, build " +
+			"time, commit, Go version, and platform.",
+		Example: "  nem version                  # full build information\n" +
+			"  nem --version                # the version string alone",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			console.Data("%s", versionInfo())
 			return nil

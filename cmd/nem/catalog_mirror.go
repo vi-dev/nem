@@ -10,8 +10,14 @@ import (
 func newCatalogMirrorCmd() *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
-		Use:               "mirror <src> <dst>",
-		Short:             "Replicate a catalog and its archives to another registry",
+		Use:   "mirror <src> <dst>",
+		Short: "Replicate a catalog and its archives to another registry",
+		Long: "Copy a catalog's index and every archive it references from <src> to <dst>, " +
+			"byte for byte, so that <dst> can be consumed as a catalog on its own. Re-running " +
+			"skips what is already present. Archives the source never published are not " +
+			"created; nem catalog fill adds them.",
+		Example: "  nem catalog mirror ghcr.io/vi-dev/nem-catalog:v2 registry.corp.example/nem/catalog:v2             # copy\n" +
+			"  nem catalog mirror ghcr.io/vi-dev/nem-catalog:v2 registry.corp.example/nem/catalog:v2 --dry-run   # the plan only",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {

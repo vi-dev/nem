@@ -32,8 +32,17 @@ var syncCatalogStore = func(ctx context.Context, ref, storePath string, progress
 func newUseCmd() *cobra.Command {
 	var global bool
 	cmd := &cobra.Command{
-		Use:               "use [<catalog>:]<pkg>[@<version>]...",
-		Short:             "Declare and install tools",
+		Use:   "use [<catalog>:]<pkg>[@<version>]...",
+		Short: "Declare and install packages",
+		Long: "Resolve each package against the configured catalogs, install it, and record " +
+			"the result: the version in nem.toml and the exact resolved closure, with digests " +
+			"and dependencies, in nem.lock. Without @<version>, nem picks the newest version " +
+			"compatible with the other declared packages. Without <catalog>:, catalogs are " +
+			"searched in configured order and the first match wins.",
+		Example: "  nem use kubectl              # newest version from the first catalog that has it\n" +
+			"  nem use go@1.27.0            # an exact version\n" +
+			"  nem use corp:terraform       # from one specific catalog\n" +
+			"  nem use -g jq                # in the global manifest instead of the project",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: completeUseArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -48,8 +57,12 @@ func newUnuseCmd() *cobra.Command {
 	var global bool
 	cmd := &cobra.Command{
 		Use:   "unuse <pkg>...",
-		Short: "Remove declared tools",
-		Args:  cobra.MinimumNArgs(1),
+		Short: "Remove declared packages",
+		Long: "Remove packages from nem.toml and re-resolve nem.lock. Installed files stay " +
+			"under NEM_HOME because other projects may use them; nem clean reclaims them.",
+		Example: "  nem unuse kubectl            # drop it from this project\n" +
+			"  nem unuse -g jq              # drop it from the global manifest",
+		Args: cobra.MinimumNArgs(1),
 		ValidArgsFunction: func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return completeDeclaredPackages(global, args, toComplete)
 		},

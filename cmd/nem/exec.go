@@ -26,7 +26,12 @@ func newExecCmd() *cobra.Command {
 		Use:     "exec [-- <cmd> [args...]]",
 		Aliases: []string{"x"},
 		Short:   "Run a command in the composed environment",
-		Args:    cobra.MinimumNArgs(1),
+		Long: "Run one command as a child process with the composed PATH and environment " +
+			"variables, and exit with its exact status. Nothing is installed; run nem sync " +
+			"first. Put -- before the command so its own flags are not parsed by nem.",
+		Example: "  nem exec -- kubectl version --client   # one command\n" +
+			"  nem exec -- go test ./...              # a CI step",
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runExec(cmd, args)
 		},

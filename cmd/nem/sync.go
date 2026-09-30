@@ -18,8 +18,14 @@ func newSyncCmd() *cobra.Command {
 	var global bool
 	cmd := &cobra.Command{
 		Use:   "sync",
-		Short: "Install locked tools missing on this machine",
-		Args:  cobra.NoArgs,
+		Short: "Install locked packages missing on this machine",
+		Long: "Install exactly what nem.lock pins and nothing else, verifying every download " +
+			"against its digest. It never resolves versions or rewrites files, which makes it " +
+			"the command for teammates, CI, and agents. A nem.toml declaration the lockfile " +
+			"does not cover earns a warning to run nem lock.",
+		Example: "  nem sync                     # in a checked-out project\n" +
+			"  nem sync -g                  # the global scope",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSync(cmd, global)
 		},

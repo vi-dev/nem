@@ -35,10 +35,10 @@ func hintFor(err error) string {
 		return "Pin exact versions in nem.toml or run `nem use <pkg>@<version>`"
 	}
 	if pce, ok := errors.AsType[*resolve.PinConflictError](err); ok {
-		return fmt.Sprintf("Re-pin with `nem use %s@%s` or unuse the tool requiring it", pce.Name, pce.Required)
+		return fmt.Sprintf("Re-pin with `nem use %s@%s` or unuse the package requiring it", pce.Name, pce.Required)
 	}
 	if sce, ok := errors.AsType[*resolve.CompatConflictError](err); ok {
-		return fmt.Sprintf("Unuse one of the conflicting tools, or re-pin %s to a version they all accept", sce.Name)
+		return fmt.Sprintf("Unuse one of the conflicting packages, or re-pin %s to a version they all accept", sce.Name)
 	}
 	if _, ok := errors.AsType[*build.CycleError](err); ok {
 		return "Break the dependency cycle or build the packages separately"

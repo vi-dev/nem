@@ -28,9 +28,14 @@ func newCatalogOutdatedCmd() *cobra.Command {
 	var packages []string
 	var output string
 	cmd := &cobra.Command{
-		Use:               "outdated [catalog]",
-		Aliases:           []string{"old"},
-		Short:             "Report packages whose upstream has a newer version",
+		Use:     "outdated [catalog]",
+		Aliases: []string{"old"},
+		Short:   "Report packages whose upstream has a newer version",
+		Long: "Compare each package's newest manifest version with the newest version its " +
+			"upstream offers and list the packages that lag behind. It never writes; " +
+			"nem catalog bump adds the versions.",
+		Example: "  nem catalog outdated                     # every package\n" +
+			"  nem catalog outdated . --output json     # for scripts",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: firstArgOnly(completeYAMLOrDir),
 		RunE: func(cmd *cobra.Command, args []string) error {

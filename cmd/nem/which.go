@@ -6,9 +6,13 @@ import (
 
 func newWhichCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "which <tool>...",
-		Short: "Show where a tool resolves in the composed environment",
-		Args:  cobra.MinimumNArgs(1),
+		Use:   "which <command>...",
+		Short: "Show where a command resolves in the composed environment",
+		Long: "Look each name up on the composed PATH and print the path it resolves to, one " +
+			"per line. A name that does not resolve is reported and the exit status is 1.",
+		Example: "  nem which kubectl            # the path nem's PATH picks\n" +
+			"  nem which go gofmt           # several at once",
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runWhich(args)
 		},

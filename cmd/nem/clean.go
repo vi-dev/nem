@@ -27,13 +27,16 @@ func newCleanCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "clean",
 		Short: "Reclaim disk space in NEM_HOME",
+		Example: "  nem clean                    # provable garbage only, no prompt\n" +
+			"  nem clean --unused 30d       # also versions not resolved in 30 days\n" +
+			"  nem clean --all --dry-run    # show what removing every version would free",
 		Long: "Remove leaked build staging, leaked downloads, and partial " +
 			"installs. Bare nem clean touches only this provable garbage and " +
 			"never prompts, so it is safe to run unattended.\n\n" +
 			"With --unused or --all, also remove installed package versions; " +
-			"nem sync restores a project's tools. --unused measures the last " +
+			"nem sync restores a project's packages. --unused measures the last " +
 			"time nem itself resolved a version — nem env on a directory " +
-			"change, nem exec, nem install, or nem catalog build — not the " +
+			"change, nem exec, nem sync, or nem catalog build — not the " +
 			"last time a shell actually used it, so a shell that has not " +
 			"changed directories in a while can still have a version on its " +
 			"PATH that --unused would evict.",

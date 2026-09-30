@@ -16,7 +16,14 @@ func newCatalogPublishCmd() *cobra.Command {
 		Use:     "publish <ref> [catalog]",
 		Aliases: []string{"pub"},
 		Short:   "Publish a catalog to an OCI registry",
-		Args:    cobra.RangeArgs(1, 2),
+		Long: "Lint the catalog, then push its package manifests to <ref> as an OCI index and " +
+			"move the given tags to it. Manifests whose content is unchanged are not pushed " +
+			"again unless --force. Archives built with nem catalog build --push and nem " +
+			"catalog fill live beside the index and are not touched.",
+		Example: "  nem catalog publish registry.example/nem/catalog .                        # publish a checkout under tag v2\n" +
+			"  nem catalog publish registry.example/nem/catalog --tag v2 --tag 2026.09   # several tags\n" +
+			"  nem catalog publish registry.example/nem/catalog --dry-run                # the plan only",
+		Args: cobra.RangeArgs(1, 2),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			if len(args) == 1 {
 				return completeYAMLOrDir(cmd, args, toComplete)

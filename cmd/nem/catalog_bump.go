@@ -15,8 +15,17 @@ func newCatalogBumpCmd() *cobra.Command {
 	var dryRun bool
 	var output string
 	cmd := &cobra.Command{
-		Use:               "bump [catalog]",
-		Short:             "Add newer upstream versions to package manifests",
+		Use:   "bump [catalog]",
+		Short: "Add newer upstream versions to package manifests",
+		Long: "Discover newer upstream versions for the selected packages, download each new " +
+			"artifact to compute its checksums, and add the resulting entries to the package " +
+			"manifests. With --backfill <n>, the newest n discovered versions are given " +
+			"entries even when they are older than the current latest. --dry-run only " +
+			"discovers and reports.",
+		Example: "  nem catalog bump                         # every package\n" +
+			"  nem catalog bump . --package kubectl     # one package\n" +
+			"  nem catalog bump . --backfill 3          # ensure the newest three versions exist\n" +
+			"  nem catalog bump . --dry-run             # report without writing",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: firstArgOnly(completeYAMLOrDir),
 		RunE: func(cmd *cobra.Command, args []string) error {

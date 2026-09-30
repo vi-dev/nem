@@ -11,8 +11,16 @@ func newCatalogFillCmd() *cobra.Command {
 	var packages []string
 	var dryRun bool
 	cmd := &cobra.Command{
-		Use:               "fill <ref>",
-		Short:             "Download a catalog's upstream artifacts and publish them as archives",
+		Use:   "fill <ref>",
+		Short: "Download a catalog's upstream artifacts and publish them as archives",
+		Long: "For each package version the catalog's manifests pin by checksum, download the " +
+			"upstream artifact, verify it, and publish it as an archive beside the index at " +
+			"<ref>, so that consumers no longer reach upstream. It needs push access to <ref>; " +
+			"run it against your own mirror. Re-running heals missing or stale archives and " +
+			"skips the rest.",
+		Example: "  nem catalog fill registry.corp.example/nem/catalog:v2                     # every package\n" +
+			"  nem catalog fill registry.corp.example/nem/catalog:v2 --package kubectl   # one package\n" +
+			"  nem catalog fill registry.corp.example/nem/catalog:v2 --dry-run           # the plan only",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {

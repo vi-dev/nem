@@ -19,8 +19,14 @@ func newStatusCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "status",
 		Aliases: []string{"st"},
-		Short:   "Show declared tools and composed environment variables",
-		Args:    cobra.NoArgs,
+		Short:   "Show declared packages and composed environment variables",
+		Long: "Print the packages the current scope declares with their declared version, " +
+			"catalog, and whether each is locked and installed, then the environment " +
+			"variables nem composes for it with the package or manifest each one comes from. " +
+			"Inside a project the result is the project layered over the global scope.",
+		Example: "  nem status                   # this project, layered over the global scope\n" +
+			"  nem status -g                # the global scope alone",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runStatus(global)
 		},

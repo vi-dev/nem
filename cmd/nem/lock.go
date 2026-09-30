@@ -16,7 +16,13 @@ func newLockCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "lock",
 		Short: "Regenerate the lockfile from nem.toml and install",
-		Args:  cobra.NoArgs,
+		Long: "Resolve every package nem.toml declares, rewrite nem.lock with the exact " +
+			"closure, and install what is missing. Run it after editing nem.toml by hand. " +
+			"Every declared version must exist in a catalog exactly as written; there are " +
+			"no ranges and no latest keyword.",
+		Example: "  nem lock                     # after editing nem.toml\n" +
+			"  nem lock -g                  # the global manifest",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLock(cmd, global)
 		},
@@ -31,7 +37,7 @@ type UnpinnedToolsError struct {
 }
 
 func (e *UnpinnedToolsError) Error() string {
-	return fmt.Sprintf("%s declares tools without a pinned version: %s", e.Path, strings.Join(e.Names, ", "))
+	return fmt.Sprintf("%s declares packages without a pinned version: %s", e.Path, strings.Join(e.Names, ", "))
 }
 
 func runLock(cmd *cobra.Command, global bool) error {

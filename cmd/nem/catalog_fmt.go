@@ -14,8 +14,13 @@ import (
 func newCatalogFmtCmd() *cobra.Command {
 	var packages []string
 	cmd := &cobra.Command{
-		Use:               "fmt [catalog]",
-		Short:             "Rewrite package manifests to canonical form",
+		Use:   "fmt [catalog]",
+		Short: "Rewrite package manifests to canonical form",
+		Long: "Rewrite package manifests in canonical form: the field order, quoting, and " +
+			"layout nem catalog bump itself writes. Only a local directory or a single " +
+			"pkg.yaml can be formatted.",
+		Example: "  nem catalog fmt                        # every manifest in the current directory\n" +
+			"  nem catalog fmt . --package kubectl    # one package",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: firstArgOnly(completeYAMLOrDir),
 		RunE: func(cmd *cobra.Command, args []string) error {

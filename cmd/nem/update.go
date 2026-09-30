@@ -23,8 +23,16 @@ func newUpdateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "update [<pkg>...]",
 		Aliases: []string{"up"},
-		Short:   "Update declared tools to their latest versions",
-		Args:    cobra.ArbitraryArgs,
+		Short:   "Update declared packages to their latest versions",
+		Long: "Re-resolve declared packages to the newest version their catalog offers, as if " +
+			"nem use had been run again for each, then install and rewrite nem.toml and " +
+			"nem.lock. Without names, every declared package is updated. A pick below a " +
+			"declared version aborts the whole update, and a catalog that has not been " +
+			"synced earns a warning to run nem catalog update first.",
+		Example: "  nem update                   # every declared package\n" +
+			"  nem update kubectl           # one package\n" +
+			"  nem update --dry-run         # show the plan without writing anything",
+		Args: cobra.ArbitraryArgs,
 		ValidArgsFunction: func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return completeDeclaredPackages(global, args, toComplete)
 		},
@@ -149,7 +157,7 @@ func runUpdate(cmd *cobra.Command, args []string, global, dryRun bool) error {
 		return err
 	}
 	if len(rows) == 0 {
-		console.Info("All tools up to date")
+		console.Info("All packages up to date")
 	}
 	for _, r := range rows {
 		console.Success("Updated %s %s → %s", r[0], r[1], r[2])
@@ -197,8 +205,8 @@ func syncAgePhrase(age time.Duration) string {
 
 func reportUpdatePlan(rows [][]string) {
 	if len(rows) == 0 {
-		console.Info("All tools up to date")
+		console.Info("All packages up to date")
 		return
 	}
-	console.Table([]string{"TOOL", "CURRENT", "LATEST"}, rows)
+	console.Table([]string{"PACKAGE", "CURRENT", "LATEST"}, rows)
 }
