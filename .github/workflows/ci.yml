@@ -3,13 +3,17 @@ name: CI
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - "**.md"
-      - LICENSE
+    paths:
+      - "**"
+      - "!**.md"
+      - "!LICENSE"
+      - "website/content/docs/reference/cli/**"
   pull_request:
-    paths-ignore:
-      - "**.md"
-      - LICENSE
+    paths:
+      - "**"
+      - "!**.md"
+      - "!LICENSE"
+      - "website/content/docs/reference/cli/**"
 
 permissions:
   contents: read
@@ -59,6 +63,25 @@ jobs:
         run: |
           go mod tidy
           git diff --exit-code -- go.mod go.sum
+
+  docs-current:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: command reference is up to date
+        run: |
+          make docs
+          if [ -n "$(git status --porcelain -- website/content/docs/reference/cli)" ]; then
+            git status --porcelain -- website/content/docs/reference/cli
+            git diff -- website/content/docs/reference/cli
+            echo "::error::website/content/docs/reference/cli is stale; run make docs and commit the result"
+            exit 1
+          fi
 
   vuln:
     runs-on: ubuntu-latest
