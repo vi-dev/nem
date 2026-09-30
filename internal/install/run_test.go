@@ -572,3 +572,34 @@ func TestRunRelinksInstalledDependents(t *testing.T) {
 		t.Fatalf("task count = %d, want none for a relink", n)
 	}
 }
+
+func TestRunLeavesLinksAloneWhenAnInstallFails(t *testing.T) {
+	h := testx.Home(t)
+	app := copyToolPkg("app")
+	app.Deps = []spec.Dep{{Name: "zlib", Kind: spec.DepKindLink}}
+	artifact := filepath.Join(t.TempDir(), "artifact")
+	if err := os.WriteFile(artifact, []byte("bytes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Install(context.Background(), h, app, "1.0.0", "official", artifact, false, map[string]string{"zlib": "1.3.1"}); err != nil {
+		t.Fatalf("pre-install: %v", err)
+	}
+	notFound := errors.New("archive not found")
+	withAcquire(t, func(context.Context, *spec.Package, string, spec.Platform, fetch.Source, string, report.Task) (string, error) {
+		return "", notFound
+	})
+
+	ctx, _ := testx.ReporterContext(context.Background())
+	jobs := []Job{
+		{Pkg: app, Version: "1.0.0", Catalog: "official", Links: map[string]string{"zlib": "1.3.2"}},
+		{Pkg: copyToolPkg("zlib"), Version: "1.3.2", Catalog: "official"},
+	}
+	if err := Run(ctx, h, jobs); !errors.Is(err, notFound) {
+		t.Fatalf("Run error = %v, want the failed install", err)
+	}
+	appDir, _ := h.PackageDir("app", "1.0.0")
+	links, err := ReadLinks(appDir)
+	if err != nil || links["zlib"] != "1.3.1" {
+		t.Fatalf("app links = %v, %v; a dependent must keep its links when an install in the same run fails", links, err)
+	}
+}

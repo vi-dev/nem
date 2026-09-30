@@ -34,27 +34,36 @@ func Run(ctx context.Context, h home.Home, jobs []Job) error {
 		return fmt.Errorf("create tmp dir: %w", err)
 	}
 
+	var installs, relinks []Job
+	for _, job := range jobs {
+		if !job.Reinstall && IsInstalled(h, job.Pkg.Name, job.Version) {
+			if !NeedsRelayout(h, job.Pkg.Name, job.Version, job.Links) {
+				relinks = append(relinks, job)
+				continue
+			}
+			job.Reinstall = true
+		}
+		installs = append(installs, job)
+	}
+
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(min(runtime.NumCPU(), 8))
 
-	for _, job := range jobs {
+	for _, job := range installs {
 		g.Go(func() error { return runJob(gctx, h, job) })
 	}
 	if err := g.Wait(); err != nil {
 		return err
 	}
-	return ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return relinkAll(ctx, h, relinks)
 }
 
 func runJob(gctx context.Context, h home.Home, job Job) error {
 	rep := report.FromContext(gctx)
 	name, version := job.Pkg.Name, job.Version
-	if !job.Reinstall && IsInstalled(h, name, version) {
-		if !NeedsRelayout(h, name, version, job.Links) {
-			return relink(gctx, h, job)
-		}
-		job.Reinstall = true
-	}
 
 	label := fmt.Sprintf("Installing %s %s", name, version)
 	cancelled := fmt.Sprintf("Cancelled %s %s", name, version)
@@ -94,24 +103,29 @@ func runJob(gctx context.Context, h home.Home, job Job) error {
 	return nil
 }
 
-func relink(ctx context.Context, h home.Home, job Job) error {
-	name, version := job.Pkg.Name, job.Version
-	dir, err := h.PackageDir(name, version)
-	if err != nil {
-		return fmt.Errorf("relink %s@%s: %w", name, version, err)
+func relinkAll(ctx context.Context, h home.Home, jobs []Job) error {
+	if len(jobs) == 0 {
+		return nil
 	}
 	release, err := fsx.Lock(h.LockFile())
 	if err != nil {
 		return err
 	}
 	defer release()
-	retargeted, err := WriteLinks(dir, job.Links)
-	if err != nil {
-		return fmt.Errorf("relink %s@%s: %w", name, version, err)
-	}
 	rep := report.FromContext(ctx)
-	for _, dep := range slices.Sorted(maps.Keys(retargeted)) {
-		rep.Debug("Relinked %s %s: %s %s → %s", name, version, dep, retargeted[dep], job.Links[dep])
+	for _, job := range jobs {
+		name, version := job.Pkg.Name, job.Version
+		dir, err := h.PackageDir(name, version)
+		if err != nil {
+			return fmt.Errorf("relink %s@%s: %w", name, version, err)
+		}
+		retargeted, err := WriteLinks(dir, job.Links)
+		if err != nil {
+			return fmt.Errorf("relink %s@%s: %w", name, version, err)
+		}
+		for _, dep := range slices.Sorted(maps.Keys(retargeted)) {
+			rep.Debug("Relinked %s %s: %s %s → %s", name, version, dep, retargeted[dep], job.Links[dep])
+		}
 	}
 	return nil
 }
