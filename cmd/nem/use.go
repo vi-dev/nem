@@ -32,12 +32,15 @@ var syncCatalogStore = func(ctx context.Context, ref, storePath string, progress
 func newUseCmd() *cobra.Command {
 	var global bool
 	cmd := &cobra.Command{
-		Use:   "use [<catalog>:]<pkg>[@<version>]...",
-		Short: "Declare and install packages",
+		Use:         "use [<catalog>:]<pkg>[@<version>]...",
+		Short:       "Declare and install packages",
+		Annotations: guide("Packages", "/docs/using/packages"),
 		Long: "Resolve each package against the configured catalogs, install it, and record " +
 			"the result: the version in nem.toml and the exact resolved closure, with digests " +
-			"and dependencies, in nem.lock. Without @<version>, nem picks the newest version " +
-			"compatible with the other declared packages. Without <catalog>:, catalogs are " +
+			"and dependencies, in nem.lock. Without @<version>, nem takes the first entry of " +
+			"the package's versions list, which catalogs keep newest first, and steps further " +
+			"down the list only when another package requires an older or compat-constrained " +
+			"one. Without <catalog>:, catalogs are " +
 			"searched in configured order and the first match wins.",
 		Example: "  nem use kubectl              # newest version from the first catalog that has it\n" +
 			"  nem use go@1.27.0            # an exact version\n" +
@@ -56,8 +59,9 @@ func newUseCmd() *cobra.Command {
 func newUnuseCmd() *cobra.Command {
 	var global bool
 	cmd := &cobra.Command{
-		Use:   "unuse <pkg>...",
-		Short: "Remove declared packages",
+		Use:         "unuse <pkg>...",
+		Short:       "Remove declared packages",
+		Annotations: guide("Packages", "/docs/using/packages"),
 		Long: "Remove packages from nem.toml and re-resolve nem.lock. Installed files stay " +
 			"under NEM_HOME because other projects may use them; nem clean reclaims them.",
 		Example: "  nem unuse kubectl            # drop it from this project\n" +

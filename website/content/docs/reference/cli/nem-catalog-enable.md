@@ -26,3 +26,4 @@ nem catalog enable official         # resolve from it again
 ## See also
 
 - [nem catalog](../nem-catalog/)
+- Guide: [Catalogs]({{< relref "/docs/using/catalogs" >}})

@@ -36,9 +36,10 @@ const (
 
 func newCatalogCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "catalog",
-		Aliases: []string{"cat"},
-		Short:   "Manage catalogs",
+		Use:         "catalog",
+		Aliases:     []string{"cat"},
+		Short:       "Manage catalogs",
+		Annotations: guide("Catalogs", "/docs/using/catalogs"),
 		Long: "Catalogs are the ordered sources nem resolves packages from. The consumption " +
 			"commands edit the list in config.yaml; the maintenance commands work on a " +
 			"catalog's contents, whether a local directory of package manifests or a " +
@@ -59,8 +60,9 @@ func newCatalogCmd() *cobra.Command {
 func newCatalogAddCmd() *cobra.Command {
 	var typeFlag string
 	cmd := &cobra.Command{
-		Use:   "add <name> <ref>",
-		Short: "Add a catalog",
+		Use:         "add <name> <ref>",
+		Short:       "Add a catalog",
+		Annotations: guide("Catalogs", "/docs/using/catalogs"),
 		Long: "Append a catalog to config.yaml under <name>, after the ones already configured. " +
 			"<ref> is an OCI reference or a local directory; the type is detected from it " +
 			"unless --type says otherwise. nem use and nem lock sync a new oci catalog when " +
@@ -125,9 +127,10 @@ func newCatalogAddCmd() *cobra.Command {
 
 func newCatalogListCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls"},
-		Short:   "List configured catalogs",
+		Use:         "list",
+		Aliases:     []string{"ls"},
+		Short:       "List configured catalogs",
+		Annotations: guide("Catalogs", "/docs/using/catalogs"),
 		Long: "Print every configured catalog in precedence order with its type, source, and " +
 			"status.",
 		Example: "  nem catalog list             # precedence order, first wins",
@@ -157,9 +160,10 @@ func newCatalogListCmd() *cobra.Command {
 
 func newCatalogRemoveCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "remove <name>",
-		Aliases: []string{"rm"},
-		Short:   "Remove a catalog",
+		Use:         "remove <name>",
+		Aliases:     []string{"rm"},
+		Short:       "Remove a catalog",
+		Annotations: guide("Catalogs", "/docs/using/catalogs"),
 		Long: "Delete a catalog from config.yaml. Packages already installed from it stay under " +
 			"NEM_HOME, but projects whose lockfile pins packages from it cannot sync them " +
 			"until the catalog is added back.",
@@ -201,9 +205,10 @@ func newCatalogRemoveCmd() *cobra.Command {
 
 func newCatalogUpdateCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "update [name]",
-		Aliases: []string{"up"},
-		Short:   "Sync oci catalogs from their remote",
+		Use:         "update [name]",
+		Aliases:     []string{"up"},
+		Short:       "Sync oci catalogs from their remote",
+		Annotations: guide("Catalogs", "/docs/using/catalogs"),
 		Long: "Pull the current index of each oci catalog from its registry into NEM_HOME so " +
 			"that resolution sees new packages and versions. Without a name, every enabled " +
 			"oci catalog is synced. dir catalogs are read live and need no sync.",
@@ -272,8 +277,9 @@ func syncOne(ctx context.Context, e config.CatalogEntry) error {
 
 func newCatalogReorderCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "reorder <name>...",
-		Short: "Reorder catalog precedence",
+		Use:         "reorder <name>...",
+		Short:       "Reorder catalog precedence",
+		Annotations: guide("Catalogs", "/docs/using/catalogs"),
 		Long: "Rewrite the precedence list. Name every configured catalog exactly once, first " +
 			"to last; a lookup without a <catalog>: prefix stops at the first catalog that " +
 			"has the package.",
@@ -304,8 +310,9 @@ func newCatalogReorderCmd() *cobra.Command {
 
 func newCatalogDisableCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "disable <name>...",
-		Short: "Disable configured catalogs",
+		Use:         "disable <name>...",
+		Short:       "Disable configured catalogs",
+		Annotations: guide("Catalogs", "/docs/using/catalogs"),
 		Long: "Skip the named catalogs during lookups while keeping their place in the " +
 			"precedence order. nem catalog enable reverses it.",
 		Example:           "  nem catalog disable official        # stop resolving from it",
@@ -317,8 +324,9 @@ func newCatalogDisableCmd() *cobra.Command {
 
 func newCatalogEnableCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "enable <name>...",
-		Short: "Enable configured catalogs",
+		Use:         "enable <name>...",
+		Short:       "Enable configured catalogs",
+		Annotations: guide("Catalogs", "/docs/using/catalogs"),
 		Long: "Include the named catalogs in lookups again, in the place they kept while " +
 			"disabled.",
 		Example:           "  nem catalog enable official         # resolve from it again",

@@ -32,8 +32,9 @@ type buildInput struct {
 func newCatalogBuildCmd() *cobra.Command {
 	var in buildInput
 	cmd := &cobra.Command{
-		Use:   "build [catalog]",
-		Short: "Build a catalog's build-from-source packages on the host platform",
+		Use:         "build [catalog]",
+		Short:       "Build a catalog's build-from-source packages on the host platform",
+		Annotations: guide("Building from source", "/docs/writing-packages/build-from-source"),
 		Long: "Build a catalog's build-from-source packages on this machine's platform and stage " +
 			"the resulting archives; with --push, publish them into the catalog. Without " +
 			"--package, every buildable package is built at its latest version. --missing " +

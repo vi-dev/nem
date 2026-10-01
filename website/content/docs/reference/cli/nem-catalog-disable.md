@@ -26,3 +26,4 @@ nem catalog disable official        # stop resolving from it
 ## See also
 
 - [nem catalog](../nem-catalog/)
+- Guide: [Catalogs]({{< relref "/docs/using/catalogs" >}})

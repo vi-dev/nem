@@ -38,3 +38,4 @@ nem catalog bump . --dry-run             # report without writing
 ## See also
 
 - [nem catalog](../nem-catalog/)
+- Guide: [Version discovery]({{< relref "/docs/writing-packages/version-discovery" >}})

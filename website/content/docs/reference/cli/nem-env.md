@@ -24,7 +24,7 @@ nem env --shell zsh          # render for a specific shell
 
 | Flag | Description |
 |------|-------------|
-| `--shell <string>` | shell dialect to render for: bash, zsh, or fish (default: $SHELL) |
+| `--shell <string>` | shell dialect to render for: bash or zsh (default: $SHELL) |
 
 ## Global flags
 
@@ -33,3 +33,4 @@ nem env --shell zsh          # render for a specific shell
 ## See also
 
 - [nem](../nem/)
+- Guide: [Shell integration]({{< relref "/docs/using/shell-integration" >}})

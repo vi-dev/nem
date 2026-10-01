@@ -17,8 +17,9 @@ import (
 func newSyncCmd() *cobra.Command {
 	var global bool
 	cmd := &cobra.Command{
-		Use:   "sync",
-		Short: "Install locked packages missing on this machine",
+		Use:         "sync",
+		Short:       "Install locked packages missing on this machine",
+		Annotations: guide("Packages", "/docs/using/packages"),
 		Long: "Install exactly what nem.lock pins and nothing else, verifying every download " +
 			"against its digest. It never resolves versions or rewrites files, which makes it " +
 			"the command for teammates, CI, and agents. A nem.toml declaration the lockfile " +

@@ -35,3 +35,4 @@ nem catalog fill registry.corp.example/nem/catalog:v2 --dry-run           # the 
 ## See also
 
 - [nem catalog](../nem-catalog/)
+- Guide: [Mirroring and filling]({{< relref "/docs/managing-catalogs/mirror-and-fill" >}})

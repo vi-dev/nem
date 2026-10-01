@@ -12,9 +12,10 @@ import (
 
 func newSearchCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "search [query]",
-		Aliases: []string{"find"},
-		Short:   "Search catalogs for packages",
+		Use:         "search [query]",
+		Aliases:     []string{"find"},
+		Short:       "Search catalogs for packages",
+		Annotations: guide("Catalogs", "/docs/using/catalogs"),
 		Example: "  nem search                   # every package in every enabled catalog\n" +
 			"  nem search kube              # names or descriptions containing \"kube\"",
 		Long:              "Search catalogs for packages by name or description.\nWithout a query, list every available package.",

@@ -13,8 +13,9 @@ func newCatalogDiffCmd() *cobra.Command {
 	var packages []string
 	var output string
 	cmd := &cobra.Command{
-		Use:   "diff <base> <target>",
-		Short: "Compare a base catalog's package manifests against a target catalog",
+		Use:         "diff <base> <target>",
+		Short:       "Compare a base catalog's package manifests against a target catalog",
+		Annotations: guide("Authoring workflow", "/docs/writing-packages/workflow"),
 		Long: "Lint <base>, then compare its package manifests against <target> and print one " +
 			"row per package with its status relative to target: new, updated, or removed, " +
 			"plus a count of unchanged packages. Base is the catalog being worked on and " +

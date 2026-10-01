@@ -14,10 +14,11 @@ import (
 
 func newSelfCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "self",
-		Short:   "Manage this nem installation",
-		Long:    "Commands that act on the nem binary itself rather than on a project.",
-		Example: "  nem self update              # update nem",
+		Use:         "self",
+		Short:       "Manage this nem installation",
+		Annotations: guide("Maintenance", "/docs/using/maintenance"),
+		Long:        "Commands that act on the nem binary itself rather than on a project.",
+		Example:     "  nem self update              # update nem",
 	}
 	cmd.AddCommand(newSelfUpdateCmd())
 	return cmd
@@ -29,9 +30,10 @@ func newSelfUpdateCmd() *cobra.Command {
 		check         bool
 	)
 	cmd := &cobra.Command{
-		Use:     "update",
-		Aliases: []string{"up"},
-		Short:   "Update nem to the latest build on its channel",
+		Use:         "update",
+		Aliases:     []string{"up"},
+		Short:       "Update nem to the latest build on its channel",
+		Annotations: guide("Maintenance", "/docs/using/maintenance"),
 		Example: "  nem self update                     # latest build on the current channel\n" +
 			"  nem self update --check             # report only\n" +
 			"  nem self update --version v0.3.0    # a specific release",

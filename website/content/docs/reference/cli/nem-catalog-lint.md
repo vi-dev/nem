@@ -34,3 +34,4 @@ nem catalog lint ghcr.io/vi-dev/nem-catalog:v2   # a published catalog
 ## See also
 
 - [nem catalog](../nem-catalog/)
+- Guide: [Authoring workflow]({{< relref "/docs/writing-packages/workflow" >}})

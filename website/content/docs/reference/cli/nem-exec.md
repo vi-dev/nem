@@ -29,3 +29,4 @@ nem exec -- go test ./...              # a CI step
 ## See also
 
 - [nem](../nem/)
+- Guide: [Shell integration]({{< relref "/docs/using/shell-integration" >}})

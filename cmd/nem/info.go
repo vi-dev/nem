@@ -12,8 +12,9 @@ import (
 
 func newInfoCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "info [<catalog>:]<pkg>",
-		Short: "Show a package's details and available versions",
+		Use:         "info [<catalog>:]<pkg>",
+		Short:       "Show a package's details and available versions",
+		Annotations: guide("Catalogs", "/docs/using/catalogs"),
 		Long: "Print a package's description, homepage, license, supported platforms, and " +
 			"executables, the catalog it comes from, and every version that catalog offers. " +
 			"A <catalog>: prefix restricts the lookup to one catalog; without it, the first " +

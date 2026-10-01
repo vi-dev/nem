@@ -28,3 +28,4 @@ nem catalog list             # precedence order, first wins
 ## See also
 
 - [nem catalog](../nem-catalog/)
+- Guide: [Catalogs]({{< relref "/docs/using/catalogs" >}})

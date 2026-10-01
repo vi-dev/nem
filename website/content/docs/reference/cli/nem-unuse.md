@@ -33,3 +33,4 @@ nem unuse -g jq              # drop it from the global manifest
 ## See also
 
 - [nem](../nem/)
+- Guide: [Packages]({{< relref "/docs/using/packages" >}})

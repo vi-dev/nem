@@ -33,3 +33,4 @@ nem catalog mirror ghcr.io/vi-dev/nem-catalog:v2 registry.corp.example/nem/catal
 ## See also
 
 - [nem catalog](../nem-catalog/)
+- Guide: [Mirroring and filling]({{< relref "/docs/managing-catalogs/mirror-and-fill" >}})

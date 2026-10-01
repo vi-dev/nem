@@ -14,8 +14,9 @@ import (
 func newLockCmd() *cobra.Command {
 	var global bool
 	cmd := &cobra.Command{
-		Use:   "lock",
-		Short: "Regenerate the lockfile from nem.toml and install",
+		Use:         "lock",
+		Short:       "Regenerate the lockfile from nem.toml and install",
+		Annotations: guide("Packages", "/docs/using/packages"),
 		Long: "Resolve every package nem.toml declares, rewrite nem.lock with the exact " +
 			"closure, and install what is missing. Run it after editing nem.toml by hand. " +
 			"Every declared version must exist in a catalog exactly as written; there are " +

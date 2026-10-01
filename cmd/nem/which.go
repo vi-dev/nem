@@ -6,8 +6,9 @@ import (
 
 func newWhichCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "which <command>...",
-		Short: "Show where a command resolves in the composed environment",
+		Use:         "which <command>...",
+		Short:       "Show where a command resolves in the composed environment",
+		Annotations: guide("Packages", "/docs/using/packages"),
 		Long: "Look each name up on the composed PATH and print the path it resolves to, one " +
 			"per line. A name that does not resolve is reported and the exit status is 1.",
 		Example: "  nem which kubectl            # the path nem's PATH picks\n" +

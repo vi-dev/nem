@@ -17,8 +17,9 @@ var (
 
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "version",
-		Short: "Print the version of nem",
+		Use:         "version",
+		Short:       "Print the version of nem",
+		Annotations: guide("Maintenance", "/docs/using/maintenance"),
 		Long: "Print the version of this nem binary together with its release channel, build " +
 			"time, commit, Go version, and platform.",
 		Example: "  nem version                  # full build information\n" +

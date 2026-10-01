@@ -13,9 +13,10 @@ func newCatalogPublishCmd() *cobra.Command {
 	var tags []string
 	var dryRun, force bool
 	cmd := &cobra.Command{
-		Use:     "publish <ref> [catalog]",
-		Aliases: []string{"pub"},
-		Short:   "Publish a catalog to an OCI registry",
+		Use:         "publish <ref> [catalog]",
+		Aliases:     []string{"pub"},
+		Short:       "Publish a catalog to an OCI registry",
+		Annotations: guide("Publishing your own catalog", "/docs/managing-catalogs/publish-your-own"),
 		Long: "Lint the catalog, then push its package manifests to <ref> as an OCI index and " +
 			"move the given tags to it. Manifests whose content is unchanged are not pushed " +
 			"again unless --force. Archives built with nem catalog build --push and nem " +

@@ -34,3 +34,4 @@ nem catalog test . --package jq --package yq    # several packages
 ## See also
 
 - [nem catalog](../nem-catalog/)
+- Guide: [Testing packages]({{< relref "/docs/writing-packages/testing" >}})

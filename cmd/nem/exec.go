@@ -23,9 +23,10 @@ func (e *ExitError) Error() string { return fmt.Sprintf("exit status %d", e.Code
 
 func newExecCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "exec [-- <cmd> [args...]]",
-		Aliases: []string{"x"},
-		Short:   "Run a command in the composed environment",
+		Use:         "exec [-- <cmd> [args...]]",
+		Aliases:     []string{"x"},
+		Short:       "Run a command in the composed environment",
+		Annotations: guide("Shell integration", "/docs/using/shell-integration"),
 		Long: "Run one command as a child process with the composed PATH and environment " +
 			"variables, and exit with its exact status. Nothing is installed; run nem sync " +
 			"first. Put -- before the command so its own flags are not parsed by nem.",

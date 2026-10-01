@@ -14,8 +14,9 @@ import (
 func newCatalogFmtCmd() *cobra.Command {
 	var packages []string
 	cmd := &cobra.Command{
-		Use:   "fmt [catalog]",
-		Short: "Rewrite package manifests to canonical form",
+		Use:         "fmt [catalog]",
+		Short:       "Rewrite package manifests to canonical form",
+		Annotations: guide("Authoring workflow", "/docs/writing-packages/workflow"),
 		Long: "Rewrite package manifests in canonical form: the field order, quoting, and " +
 			"layout nem catalog bump itself writes. Only a local directory or a single " +
 			"pkg.yaml can be formatted.",

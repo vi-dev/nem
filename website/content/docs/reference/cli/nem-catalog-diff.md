@@ -35,3 +35,4 @@ nem catalog diff . ghcr.io/vi-dev/nem-catalog:v2 --package jq    # one package
 ## See also
 
 - [nem catalog](../nem-catalog/)
+- Guide: [Authoring workflow]({{< relref "/docs/writing-packages/workflow" >}})

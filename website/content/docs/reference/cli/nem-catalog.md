@@ -59,3 +59,4 @@ nem catalog lint .                                      # validate a checkout
 ## See also
 
 - [nem](../nem/)
+- Guide: [Catalogs]({{< relref "/docs/using/catalogs" >}})

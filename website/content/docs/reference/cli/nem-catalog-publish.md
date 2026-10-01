@@ -38,3 +38,4 @@ nem catalog publish registry.example/nem/catalog --dry-run                # the 
 ## See also
 
 - [nem catalog](../nem-catalog/)
+- Guide: [Publishing your own catalog]({{< relref "/docs/managing-catalogs/publish-your-own" >}})

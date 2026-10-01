@@ -17,8 +17,9 @@ import (
 func newEnvCmd() *cobra.Command {
 	var shellName string
 	cmd := &cobra.Command{
-		Use:   "env",
-		Short: "Print the shell script that applies the composed environment",
+		Use:         "env",
+		Short:       "Print the shell script that applies the composed environment",
+		Annotations: guide("Shell integration", "/docs/using/shell-integration"),
 		Long: "Print the shell script that applies the composed environment to the current " +
 			"shell, together with the saved originals that let the same script restore them " +
 			"later. The hook runs it on every directory change; eval it yourself when you need " +
@@ -30,7 +31,7 @@ func newEnvCmd() *cobra.Command {
 			return runEnv(shellName)
 		},
 	}
-	cmd.Flags().StringVar(&shellName, "shell", "", "shell dialect to render for: bash, zsh, or fish (default: $SHELL)")
+	cmd.Flags().StringVar(&shellName, "shell", "", "shell dialect to render for: bash or zsh (default: $SHELL)")
 
 	_ = cmd.RegisterFlagCompletionFunc("shell", cobra.FixedCompletions([]string{"bash", "zsh"}, cobra.ShellCompDirectiveNoFileComp))
 	return cmd

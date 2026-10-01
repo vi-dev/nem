@@ -27,3 +27,4 @@ nem which go gofmt           # several at once
 ## See also
 
 - [nem](../nem/)
+- Guide: [Packages]({{< relref "/docs/using/packages" >}})

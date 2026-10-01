@@ -10,8 +10,9 @@ import (
 func newCatalogMirrorCmd() *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
-		Use:   "mirror <src> <dst>",
-		Short: "Replicate a catalog and its archives to another registry",
+		Use:         "mirror <src> <dst>",
+		Short:       "Replicate a catalog and its archives to another registry",
+		Annotations: guide("Mirroring and filling", "/docs/managing-catalogs/mirror-and-fill"),
 		Long: "Copy a catalog's index and every archive it references from <src> to <dst>, " +
 			"byte for byte, so that <dst> can be consumed as a catalog on its own. Re-running " +
 			"skips what is already present. Archives the source never published are not " +

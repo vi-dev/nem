@@ -1,10 +1,10 @@
 ---
-title: Getting Started
+title: Getting started
 weight: 1
 ---
 
 `nem` makes your development environment appear the moment you enter a project
-directory. Declare the tools and environment variables a project needs in its
+directory. Declare the packages and environment variables a project needs in its
 `nem.toml` file, and `nem` handles the rest.
 
 {{< callout type="info" >}}
@@ -34,6 +34,9 @@ It's possible to customize the installation using environment variables:
 | `NEM_VERSION`     | latest release | a release tag such as `v0.1.0`, or `unstable` |
 | `NEM_INSTALL_DIR` | `~/.local/bin` | install destination                           |
 | `GITHUB_TOKEN`    | unset          | optional; raises the GitHub API rate limit    |
+
+These and every other variable nem reads are listed under
+[Configuration variables](../reference/environment/).
 
 Examples:
 
@@ -92,9 +95,10 @@ exec $SHELL
 bash are supported), and `exec $SHELL` restarts the shell so the hook takes
 effect. The hook applies each project's environment automatically as you move
 between directories. Use `nem activate --print` to inspect the block instead
-of installing it.
+of installing it. [Shell integration](../using/shell-integration/) explains
+what the block does.
 
-### Declare your first tools
+### Declare your first packages
 
 ```shell
 nem use kubectl
@@ -116,14 +120,14 @@ Turn it off with `nem catalog disable official`, or add your own catalogs
 with `nem catalog add`.
 {{< /callout >}}
 
-### Use the tools
+### Use the packages
 
 ```shell
 go version
 kubectl version --client
 ```
 
-The tools are on your `PATH` only while you are in this directory (or a
+The packages are on your `PATH` only while you are in this directory (or a
 subdirectory). Leave and it disappears; come back and it returns.
 
 ### Share the environment
@@ -132,97 +136,39 @@ As long as `nem.toml` and `nem.lock` are committed, teammates, CI pipelines, and
 can reproduce the same environment by running:
 
 ```shell
-nem sync
+nem catalog update    # on a machine that has never synced the catalog
+nem sync              # install what nem.lock pins
 ```
 
-Which installs everything the lockfile pins that are missing on their machine — same versions, same digests.
+`nem sync` installs everything the lockfile pins that is missing on their
+machine — same versions, same digests. It reads package manifests from the
+local catalog store and never syncs it itself, so a machine that has never
+run `nem catalog update` does that once first.
 
 {{% /steps %}}
 
-### Everyday usage
+## Everyday usage
 
-Below are the most common commands you'll use with `nem`. 
+The commands you will use most. For every command, see the
+[command reference](../reference/cli/).
 
-For a complete list, run `nem help`.
-
-| Command                                    | Purpose                                                |
-|--------------------------------------------|--------------------------------------------------------|
-| `nem use [<catalog>:]<pkg>[@<version>]...` | Declare and install tools                              |
-| `nem sync`                                 | Install missing locked tools                           |
-| `nem status`                               | Show declared tools and composed environment variables |
-| `nem search <query>`                       | Search catalogs for packages                           |
-| `nem which <tool>...`                      | Show where a tool resolves in the composed environment |
-| `nem env` / `nem exec`                     | Print or run a command in the composed environment     |
-| `nem catalog`                              | Manage catalogs                                        |
-| `nem clean`                                | Reclaim disk space in `NEM_HOME`                       |
-| `nem self update`                          | Update nem itself                                      |
-
-## How nem works
-
-`nem` gives each project its own set of command-line tools and environment
-variables, scoped to that directory — plus a global set available everywhere.
-Nothing is installed into system directories: tools live under `nem`'s home
-and join your `PATH` only while they apply.
-
-### The manifest: `nem.toml`
-
-Each environment is described by a [`nem.toml`](../reference/nem-toml/) you keep in your project. It
-declares tools and environment variables:
-
-```toml
-[tools]
-kubectl = '1.36.3'
-terraform = '1.15.9'
-
-[env]
-AWS_PROFILE = 'dev'
-```
-
-You rarely edit it by hand — `nem use` and `nem unuse` maintain it. The
-global manifest lives at `~/.nem/nem.toml`; target it with `--global` / `-g`.
-
-### The lockfile: `nem.lock`
-
-Next to the manifest, `nem` writes [`nem.lock`](../reference/nem-lock/):
-the exact packages the manifest resolved to, including transitive
-dependencies, supported platforms, and a digest pinning each package's
-catalog manifest. `nem sync` installs from the lockfile, and every download
-is verified against its digest before it is installed. Commit both files:
-`nem.toml` says what you want, `nem.lock` makes it reproducible.
-
-If you edit `nem.toml` by hand, run `nem lock` to regenerate the lockfile and
-install.
-
-### The composed environment
-
-Inside a project directory, `nem` composes the global environment with the
-project's — the project's declarations win. `nem status` shows the result;
-`nem which <tool>` shows where a specific tool resolves.
-
-The composed environment reaches your shell in one of two ways:
-
-- [**Shell hook**](../guides/shell-integration/) — `nem activate` installs a hook (zsh, bash) that applies
-  the environment automatically as you change directories.
-- **Explicitly** — `nem exec` runs one command in the composed environment,
-  and `nem env` prints the shell script that applies it (bash or zsh)
-  — useful in CI and scripts.
-
-### Catalogs
-
-Packages come from catalogs: usually OCI images that map package names and
-versions to downloadable, digest-pinned artifacts. On first run, `nem`
-configures the official catalog, `ghcr.io/vi-dev/nem-catalog`.
-`nem catalog add` registers others — including your own mirror inside an
-air-gapped network.
-`nem search` and `nem info` look across enabled catalogs.
-
-### Where things live
-
-Everything `nem` installs stays under `NEM_HOME` (default `~/.nem`):
-installed packages, catalog data, and the global manifest and lockfile.
-`nem clean` reclaims disk space; deleting the directory removes everything
-`nem` ever installed.
+| Command | Purpose |
+|---------|---------|
+| [`nem use`](../reference/cli/nem-use/) | Declare and install packages |
+| [`nem sync`](../reference/cli/nem-sync/) | Install what `nem.lock` pins |
+| [`nem status`](../reference/cli/nem-status/) | Show declared packages and composed environment variables |
+| [`nem search`](../reference/cli/nem-search/) | Search catalogs for packages |
+| [`nem which`](../reference/cli/nem-which/) | Show where a command resolves in the composed environment |
+| [`nem exec`](../reference/cli/nem-exec/) | Run a command in the composed environment |
 
 ## Next steps
 
-To learn more about how to make the best of `nem`, check out our [Guides](../guides) and [Reference](../reference).
+[How nem works](../using/how-it-works/) explains the model behind the
+commands you just ran. From there, pick the section for what you do:
+
+{{< cards >}}
+  {{< card link="../using/" title="Using nem" subtitle="Packages, environment variables, the shell hook, CI, and coding agents." >}}
+  {{< card link="../managing-catalogs/" title="Managing catalogs" subtitle="Mirror or publish a catalog in a registry you control." >}}
+  {{< card link="../writing-packages/" title="Writing nem packages" subtitle="Write, build, and test packages for your own catalog." >}}
+  {{< card link="../reference/" title="Reference" subtitle="Commands, file formats, and the on-disk layout." >}}
+{{< /cards >}}

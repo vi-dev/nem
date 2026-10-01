@@ -29,3 +29,4 @@ nem catalog update official  # one catalog
 ## See also
 
 - [nem catalog](../nem-catalog/)
+- Guide: [Catalogs]({{< relref "/docs/using/catalogs" >}})

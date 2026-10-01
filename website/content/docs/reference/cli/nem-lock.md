@@ -33,3 +33,4 @@ nem lock -g                  # the global manifest
 ## See also
 
 - [nem](../nem/)
+- Guide: [Packages]({{< relref "/docs/using/packages" >}})

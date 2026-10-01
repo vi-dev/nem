@@ -28,9 +28,10 @@ func newCatalogOutdatedCmd() *cobra.Command {
 	var packages []string
 	var output string
 	cmd := &cobra.Command{
-		Use:     "outdated [catalog]",
-		Aliases: []string{"old"},
-		Short:   "Report packages whose upstream has a newer version",
+		Use:         "outdated [catalog]",
+		Aliases:     []string{"old"},
+		Short:       "Report packages whose upstream has a newer version",
+		Annotations: guide("Version discovery", "/docs/writing-packages/version-discovery"),
 		Long: "Compare each package's newest manifest version with the newest version its " +
 			"upstream offers and list the packages that lag behind. It never writes; " +
 			"nem catalog bump adds the versions.",

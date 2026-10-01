@@ -17,9 +17,10 @@ import (
 func newStatusCmd() *cobra.Command {
 	var global bool
 	cmd := &cobra.Command{
-		Use:     "status",
-		Aliases: []string{"st"},
-		Short:   "Show declared packages and composed environment variables",
+		Use:         "status",
+		Aliases:     []string{"st"},
+		Short:       "Show declared packages and composed environment variables",
+		Annotations: guide("Packages", "/docs/using/packages"),
 		Long: "Print the packages the current scope declares with their declared version, " +
 			"catalog, and whether each is locked and installed, then the environment " +
 			"variables nem composes for it with the package or manifest each one comes from. " +

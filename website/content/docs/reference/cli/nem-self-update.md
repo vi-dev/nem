@@ -37,3 +37,4 @@ nem self update --version v0.3.0    # a specific release
 ## See also
 
 - [nem self](../nem-self/)
+- Guide: [Maintenance]({{< relref "/docs/using/maintenance" >}})

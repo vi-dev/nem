@@ -22,8 +22,9 @@ import (
 func newCatalogTestCmd() *cobra.Command {
 	var packages []string
 	cmd := &cobra.Command{
-		Use:   "test [catalog]",
-		Short: "Install packages and run their declared test steps",
+		Use:         "test [catalog]",
+		Short:       "Install packages and run their declared test steps",
+		Annotations: guide("Testing packages", "/docs/writing-packages/testing"),
 		Long: "Install the selected packages from the catalog into NEM_HOME and run each " +
 			"one's declared test steps, continuing past failures and printing a summary at the " +
 			"end. A package without test steps is install-verified only. The exit status is " +

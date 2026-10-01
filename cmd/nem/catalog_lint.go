@@ -9,8 +9,9 @@ import (
 func newCatalogLintCmd() *cobra.Command {
 	var packages []string
 	cmd := &cobra.Command{
-		Use:   "lint [catalog]",
-		Short: "Validate package manifests in a catalog",
+		Use:         "lint [catalog]",
+		Short:       "Validate package manifests in a catalog",
+		Annotations: guide("Authoring workflow", "/docs/writing-packages/workflow"),
 		Long: "Parse and validate every package manifest in the catalog and print one warning " +
 			"per finding; the exit status is 1 when there are findings. The catalog is the " +
 			"current directory by default. A directory, a single pkg.yaml, or an OCI " +

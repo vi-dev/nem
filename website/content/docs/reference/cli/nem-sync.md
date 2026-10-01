@@ -33,3 +33,4 @@ nem sync -g                  # the global scope
 ## See also
 
 - [nem](../nem/)
+- Guide: [Packages]({{< relref "/docs/using/packages" >}})

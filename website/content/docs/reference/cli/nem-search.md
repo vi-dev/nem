@@ -30,3 +30,4 @@ nem search kube              # names or descriptions containing "kube"
 ## See also
 
 - [nem](../nem/)
+- Guide: [Catalogs]({{< relref "/docs/using/catalogs" >}})

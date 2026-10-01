@@ -27,3 +27,4 @@ nem deactivate bash          # a specific shell
 ## See also
 
 - [nem](../nem/)
+- Guide: [Shell integration]({{< relref "/docs/using/shell-integration" >}})

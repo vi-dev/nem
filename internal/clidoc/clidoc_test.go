@@ -244,3 +244,12 @@ func TestIndexListsOtherCommandsLast(t *testing.T) {
 		t.Errorf("Other commands (%d) must come after child groups (%d):\n%s", other, consumption, got)
 	}
 }
+
+func TestIndexListsChildrenOfUngroupedParents(t *testing.T) {
+	root := &cobra.Command{Use: "nem"}
+	self := &cobra.Command{Use: "self", Short: "Manage this nem installation"}
+	self.AddCommand(&cobra.Command{Use: "update", Short: "Update nem", RunE: nop})
+	root.AddCommand(self)
+	got := string(Pages(root)[0].Content)
+	mustContain(t, got, "### nem self\n\n| Command | Description |\n|---------|-------------|\n| [nem self update](nem-self-update/) | Update nem |\n")
+}

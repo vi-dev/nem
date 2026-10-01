@@ -18,8 +18,9 @@ var stdoutIsTTY = func() bool {
 func newActivateCmd() *cobra.Command {
 	var printOnly bool
 	cmd := &cobra.Command{
-		Use:   "activate [zsh|bash]",
-		Short: "Activate nem for the current shell",
+		Use:         "activate [zsh|bash]",
+		Short:       "Activate nem for the current shell",
+		Annotations: guide("Shell integration", "/docs/using/shell-integration"),
 		Long: "Install nem's hook block into the shell's startup file, .zshrc or .bashrc, between " +
 			"# >>> nem >>> and # <<< nem <<< markers. The hook re-applies the composed environment " +
 			"on every directory change and right after nem use, unuse, lock, and sync, and " +
@@ -40,8 +41,9 @@ func newActivateCmd() *cobra.Command {
 
 func newDeactivateCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "deactivate [zsh|bash]",
-		Short: "Deactivate nem for the current shell",
+		Use:         "deactivate [zsh|bash]",
+		Short:       "Deactivate nem for the current shell",
+		Annotations: guide("Shell integration", "/docs/using/shell-integration"),
 		Long: "Remove the hook block that nem activate installed from the shell's startup file. " +
 			"The current shell keeps its environment until it restarts.",
 		Example: "  nem deactivate               # the current $SHELL\n" +

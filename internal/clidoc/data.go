@@ -75,15 +75,34 @@ func indexData(root *cobra.Command) indexPage {
 		Root:        link{Text: root.CommandPath(), Href: slug(root) + "/"},
 		Tables:      groupTables(root, "", true, false),
 	}
-	for _, c := range root.Commands() {
-		if visible(c) && len(c.Groups()) > 0 {
+	var parents []*cobra.Command
+	collectParents(root, &parents)
+	for _, c := range parents {
+		if len(c.Groups()) > 0 {
 			p.Tables = append(p.Tables, groupTables(c, "", true, true)...)
+			continue
+		}
+		if t, ok := otherTable(c, "", true); ok {
+			t.Heading = "### " + c.CommandPath()
+			p.Tables = append(p.Tables, t)
 		}
 	}
 	if t, ok := otherTable(root, "", true); ok {
 		p.Tables = append(p.Tables, t)
 	}
 	return p
+}
+
+func collectParents(c *cobra.Command, out *[]*cobra.Command) {
+	for _, sub := range c.Commands() {
+		if !visible(sub) {
+			continue
+		}
+		if sub.HasAvailableSubCommands() {
+			*out = append(*out, sub)
+		}
+		collectParents(sub, out)
+	}
 }
 
 func sentence(short string) string {

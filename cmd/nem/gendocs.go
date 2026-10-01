@@ -7,6 +7,10 @@ import (
 	"github.com/vi-dev/nem/internal/report"
 )
 
+func guide(title, path string) map[string]string {
+	return map[string]string{clidoc.AnnotationGuideTitle: title, clidoc.AnnotationGuidePath: path}
+}
+
 func newGendocsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:    "gendocs <dir>",

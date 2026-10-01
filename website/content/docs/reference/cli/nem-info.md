@@ -27,3 +27,4 @@ nem info corp:kubectl        # from one catalog
 ## See also
 
 - [nem](../nem/)
+- Guide: [Catalogs]({{< relref "/docs/using/catalogs" >}})

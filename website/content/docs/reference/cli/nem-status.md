@@ -35,3 +35,4 @@ nem status -g                # the global scope alone
 ## See also
 
 - [nem](../nem/)
+- Guide: [Packages]({{< relref "/docs/using/packages" >}})

@@ -5,7 +5,7 @@ weight: 39
 
 Declare and install packages.
 
-Resolve each package against the configured catalogs, install it, and record the result: the version in nem.toml and the exact resolved closure, with digests and dependencies, in nem.lock. Without @&lt;version&gt;, nem picks the newest version compatible with the other declared packages. Without &lt;catalog&gt;:, catalogs are searched in configured order and the first match wins.
+Resolve each package against the configured catalogs, install it, and record the result: the version in nem.toml and the exact resolved closure, with digests and dependencies, in nem.lock. Without @&lt;version&gt;, nem takes the first entry of the package's versions list, which catalogs keep newest first, and steps further down the list only when another package requires an older or compat-constrained one. Without &lt;catalog&gt;:, catalogs are searched in configured order and the first match wins.
 
 ## Usage
 
@@ -35,3 +35,4 @@ nem use -g jq                # in the global manifest instead of the project
 ## See also
 
 - [nem](../nem/)
+- Guide: [Packages]({{< relref "/docs/using/packages" >}})

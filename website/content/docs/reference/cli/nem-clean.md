@@ -5,9 +5,9 @@ weight: 21
 
 Reclaim disk space in NEM_HOME.
 
-Remove leaked build staging, leaked downloads, and partial installs. Bare nem clean touches only this provable garbage and never prompts, so it is safe to run unattended.
+Remove leaked build staging, leaked downloads, partial installs, and leftover test installs. Bare nem clean touches only this provable garbage and never prompts, so it is safe to run unattended.
 
-With --unused or --all, also remove installed package versions; nem sync restores a project's packages. --unused measures the last time nem itself resolved a version — nem env on a directory change, nem exec, nem sync, or nem catalog build — not the last time a shell actually used it, so a shell that has not changed directories in a while can still have a version on its PATH that --unused would evict.
+With --unused or --all, also remove installed package versions; nem sync restores a project's packages. --unused measures the last time nem itself used a version — nem env on a directory change, nem exec, an install, or nem catalog build — not the last time a shell actually used it, so a shell that has not changed directories in a while can still have a version on its PATH that --unused would evict.
 
 ## Usage
 
@@ -40,3 +40,4 @@ nem clean --all --dry-run    # show what removing every version would free
 ## See also
 
 - [nem](../nem/)
+- Guide: [Maintenance]({{< relref "/docs/using/maintenance" >}})

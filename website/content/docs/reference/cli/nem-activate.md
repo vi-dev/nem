@@ -34,3 +34,4 @@ nem activate --print         # print the block instead of installing it
 ## See also
 
 - [nem](../nem/)
+- Guide: [Shell integration]({{< relref "/docs/using/shell-integration" >}})

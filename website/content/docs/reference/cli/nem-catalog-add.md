@@ -34,3 +34,4 @@ nem catalog add local ./my-catalog                                # a directory
 ## See also
 
 - [nem catalog](../nem-catalog/)
+- Guide: [Catalogs]({{< relref "/docs/using/catalogs" >}})

@@ -73,6 +73,21 @@ Every `nem` command, grouped as in `nem --help`. Every command also accepts `--c
 | [nem catalog publish](nem-catalog-publish/) | Publish a catalog to an OCI registry |
 | [nem catalog test](nem-catalog-test/) | Install packages and run their declared test steps |
 
+### nem completion
+
+| Command | Description |
+|---------|-------------|
+| [nem completion bash](nem-completion-bash/) | Generate the autocompletion script for bash |
+| [nem completion fish](nem-completion-fish/) | Generate the autocompletion script for fish |
+| [nem completion powershell](nem-completion-powershell/) | Generate the autocompletion script for powershell |
+| [nem completion zsh](nem-completion-zsh/) | Generate the autocompletion script for zsh |
+
+### nem self
+
+| Command | Description |
+|---------|-------------|
+| [nem self update](nem-self-update/) | Update nem to the latest build on its channel |
+
 ### Other commands
 
 | Command | Description |

@@ -26,3 +26,4 @@ nem catalog reorder corp official   # corp wins over official
 ## See also
 
 - [nem catalog](../nem-catalog/)
+- Guide: [Catalogs]({{< relref "/docs/using/catalogs" >}})

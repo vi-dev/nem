@@ -36,15 +36,18 @@ layout: hextra-home
 <div class="hx:mt-12">
 {{< hextra/feature-grid >}}
   {{< hextra/feature-card
-    title="Devtools as dependencies"
-    subtitle="<br/>Each project gets its own tool versions, switched automatically as you change directories — kubectl, terraform, go, or anything else. One `nem.toml` covers tools that would otherwise each bring their own version manager." >}}
+    title="Use nem"
+    link="docs/using/"
+    subtitle="For developers. Each project gets its own package versions, switched automatically as you change directories. Commit `nem.toml` and `nem.lock` and teammates, pipelines, and coding agents install exactly the same packages, same versions, same digests." >}}
 
   {{< hextra/feature-card
-    title="Same environment everywhere"
-    subtitle="<br/>Commit `nem.lock` and pipelines, containers, and AI coding agents install exactly the same tools — same versions, same digests. Rootless container images drop nem into CI jobs and dev containers cleanly." >}}
+    title="Manage a catalog"
+    link="docs/managing-catalogs/"
+    subtitle="For operators. Mirror the official catalog or publish your own into a registry you control, air-gapped networks included. Installs are checksum-verified and never need root, fit for regulated environments." >}}
 
   {{< hextra/feature-card
-    title="Works behind firewall"
-    subtitle="<br/>Host catalogs and packages with your own OCI registry, and audit them like any other artifact. Installs are checksum-verified and never need root — fit for regulated and air-gapped networks." >}}
+    title="Write packages"
+    link="docs/writing-packages/"
+    subtitle="For maintainers. One manifest per package: where versions and artifacts come from, how they install, how they are built from source and tested." >}}
 {{< /hextra/feature-grid >}}
 </div>

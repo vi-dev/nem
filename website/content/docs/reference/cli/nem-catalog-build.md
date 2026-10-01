@@ -39,3 +39,4 @@ nem catalog build . --dry-run                   # show the plan and its waves
 ## See also
 
 - [nem catalog](../nem-catalog/)
+- Guide: [Building from source]({{< relref "/docs/writing-packages/build-from-source" >}})

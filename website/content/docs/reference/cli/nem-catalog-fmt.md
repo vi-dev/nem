@@ -33,3 +33,4 @@ nem catalog fmt . --package kubectl    # one package
 ## See also
 
 - [nem catalog](../nem-catalog/)
+- Guide: [Authoring workflow]({{< relref "/docs/writing-packages/workflow" >}})

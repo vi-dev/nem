@@ -34,13 +34,14 @@ on_path = false
 on_loader_path = true
 ```
 
-`go` is a directly declared tool, needed on all four platforms, on `PATH`.
+The digests are abridged here; real ones are 64 hex characters. `go` is a
+directly declared package, needed on all four platforms, on `PATH`.
 `brotli` is a dependency nobody declared directly (`direct = false`) — here
 it's a linked library, so it's absent from `PATH` (`on_path = false`) but
 present on the loader path (`on_loader_path = true`), and it isn't needed
 on `darwin/amd64` at all, so that platform is missing from its list.
 
-## Covers all four platforms
+## Platforms
 
 The lock records the closure for **all four supported platforms** —
 `darwin/arm64`, `darwin/amd64`, `linux/arm64`, `linux/amd64` — in a single
@@ -50,8 +51,9 @@ entry needs every platform.
 
 ## Fields
 
-`version = 2` at the top of the file is a format marker. Each `[[package]]`
-block has:
+`version = 2` at the top of the file is a format marker; `version = 1` files
+are still read, with `on_path` taken as true for every entry. Parsing is
+strict: an unknown key is an error. Each `[[package]]` block has:
 
 | Field | Meaning |
 |---|---|
@@ -62,14 +64,15 @@ block has:
 | `platforms` | The subset of the four supported platforms that need this package |
 | `digest` | The catalog's manifest digest for this package at this version; omitted for `dir` catalogs |
 | `on_path` | Whether the package's binaries join `PATH` |
-| `on_loader_path` | Whether the package's libraries join the loader path |
+| `on_loader_path` | Whether the package's libraries join the loader path; omitted when false |
 
-Entries are sorted by name, and writes are atomic.
+Entries are sorted by name, writes are atomic, and a lockfile whose
+rendering has not changed is not rewritten.
 
 ## Semantics
 
-Only `nem use`, `nem unuse`, and `nem lock` resolve and rewrite this file.
-`nem sync` reads it verbatim and installs the current platform's subset —
+Only `nem use`, `nem unuse`, `nem update`, and `nem lock` resolve and rewrite
+this file. `nem sync` reads it verbatim and installs the current platform's subset —
 no resolution happens on that path. If `nem.toml` has drifted from what
 `nem.lock` covers, `sync` prints an advisory warning rather than failing;
 the lock stays authoritative until the next `nem lock`.
@@ -78,6 +81,8 @@ Each entry's `digest` pins the exact package manifest bytes at the time it
 was locked. If the catalog's entry for that name and version no longer
 matches — for example because a moving tag got republished — `sync` fails
 with a hint to re-lock, instead of silently installing something different
-from what was verified. The full integrity chain runs lock digest → package
+from what was verified. The check runs when `sync` has to fetch; a version
+that is already installed and correctly laid out is left alone without
+re-checking its digest. The full integrity chain runs lock digest → package
 manifest → artifact SHA-256, so every step from the lockfile down to the
 bytes on disk is pinned.

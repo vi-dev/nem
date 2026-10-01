@@ -28,3 +28,4 @@ nem catalog remove corp      # forget it
 ## See also
 
 - [nem catalog](../nem-catalog/)
+- Guide: [Catalogs]({{< relref "/docs/using/catalogs" >}})

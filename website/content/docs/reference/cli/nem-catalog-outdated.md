@@ -36,3 +36,4 @@ nem catalog outdated . --output json     # for scripts
 ## See also
 
 - [nem catalog](../nem-catalog/)
+- Guide: [Version discovery]({{< relref "/docs/writing-packages/version-discovery" >}})

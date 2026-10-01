@@ -11,8 +11,9 @@ func newCatalogFillCmd() *cobra.Command {
 	var packages []string
 	var dryRun bool
 	cmd := &cobra.Command{
-		Use:   "fill <ref>",
-		Short: "Download a catalog's upstream artifacts and publish them as archives",
+		Use:         "fill <ref>",
+		Short:       "Download a catalog's upstream artifacts and publish them as archives",
+		Annotations: guide("Mirroring and filling", "/docs/managing-catalogs/mirror-and-fill"),
 		Long: "For each package version the catalog's manifests pin by checksum, download the " +
 			"upstream artifact, verify it, and publish it as an archive beside the index at " +
 			"<ref>, so that consumers no longer reach upstream. It needs push access to <ref>; " +
