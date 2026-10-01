@@ -146,6 +146,7 @@ func warnLinkDrift(lock *project.Lockfile, locked map[string]string) {
 		}
 		have, err := install.ReadLinks(dir)
 		if err != nil {
+			console.Warn("%s %s: cannot read dependency links — %v", e.Name, e.Version, err)
 			continue
 		}
 		for _, dep := range slices.Sorted(maps.Keys(have)) {
