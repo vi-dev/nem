@@ -22,8 +22,9 @@ func newSyncCmd() *cobra.Command {
 		Annotations: guide("Packages", "/docs/using/packages"),
 		Long: "Install exactly what nem.lock pins and nothing else, verifying every download " +
 			"against its digest. It never resolves versions or rewrites files, which makes it " +
-			"the command for teammates, CI, and agents. A nem.toml declaration the lockfile " +
-			"does not cover earns a warning to run nem lock.",
+			"the command for teammates, CI, and agents. A catalog that was never synced is " +
+			"synced first. A nem.toml declaration the lockfile does not cover earns a warning " +
+			"to run nem lock.",
 		Example: "  nem sync                     # in a checked-out project\n" +
 			"  nem sync -g                  # the global scope",
 		Args: cobra.NoArgs,
@@ -55,6 +56,9 @@ func runSync(cmd *cobra.Command, global bool) error {
 	if err != nil {
 		return err
 	}
+	if err := autoSyncUnsyncedCatalogs(cmd.Context(), cfg, set); err != nil {
+		return err
+	}
 
 	current := spec.Current().String()
 	versions := project.Versions(lock.Packages)
@@ -67,6 +71,7 @@ func runSync(cmd *cobra.Command, global bool) error {
 		hit, err := set.Lookup(cmd.Context(), project.ToolKey{Catalog: entry.Catalog, Name: entry.Name})
 		if err != nil {
 			if installed {
+				console.Debug("Skipping %s %s: %v", entry.Name, entry.Version, err)
 				continue
 			}
 			return err

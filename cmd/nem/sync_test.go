@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -312,6 +313,13 @@ func TestSyncSkipsInstalledEntryWithUnavailableCatalog(t *testing.T) {
 		t.Fatalf("PackageDir: %v", err)
 	}
 	writeMetaFile(t, installDir, "package: tool\nversion: v1.0.0\ncatalog: missing\nlayout: 2\n")
+	official, err := h.CatalogStore("official")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stubSyncEmptyCatalog(context.Background(), "", official, nil); err != nil {
+		t.Fatal(err)
+	}
 
 	writeFile(t, filepath.Join(projDir, "nem.toml"), "[tools]\n")
 	writeLockFile(t, filepath.Join(projDir, "nem.lock"),
@@ -323,6 +331,15 @@ func TestSyncSkipsInstalledEntryWithUnavailableCatalog(t *testing.T) {
 	}
 	if out != "" || errb != "" {
 		t.Fatalf("sync on an installed entry whose catalog is gone must be silent: stdout=%q stderr=%q", out, errb)
+	}
+
+	_, errb, err = runNem(t, nemHomeDir, "--verbose", "sync")
+	if err != nil {
+		t.Fatalf("sync --verbose: %v\nstderr: %s", err, errb)
+	}
+	want := "DEBUG Skipping tool v1.0.0: "
+	if !strings.Contains(errb, want) {
+		t.Fatalf("stderr = %q, want a line starting %q", errb, want)
 	}
 }
 
@@ -474,5 +491,53 @@ func TestSyncReinstallsOldLayoutWhenDigestMatches(t *testing.T) {
 	links, err := install.ReadLinks(appDir)
 	if err != nil || links["zlib"] != "1.1.0" {
 		t.Fatalf("app links = %v, %v; want zlib 1.1.0", links, err)
+	}
+}
+
+func TestSyncColdSyncsUnsyncedOCICatalogBeforeLookup(t *testing.T) {
+	nemHomeDir := t.TempDir()
+	h := testNemHome(nemHomeDir)
+	projDir := t.TempDir()
+	chdir(t, projDir)
+
+	if _, errb, err := runNem(t, nemHomeDir, "catalog", "add", "demo", "ghcr.io/x/y:v2"); err != nil {
+		t.Fatalf("catalog add: %v\n%s", err, errb)
+	}
+	store, err := h.CatalogStore("demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(store); !os.IsNotExist(err) {
+		t.Fatal("setup broken: catalog store must not exist before the first sync")
+	}
+	installDir, err := h.PackageDir("tool", "v1.0.0")
+	if err != nil {
+		t.Fatalf("PackageDir: %v", err)
+	}
+	writeMetaFile(t, installDir, "package: tool\nversion: v1.0.0\ncatalog: demo\nlayout: 2\n")
+	writeFile(t, filepath.Join(projDir, "nem.toml"), "[tools]\n\"demo:tool\" = \"v1.0.0\"\n")
+	writeLockFile(t, filepath.Join(projDir, "nem.lock"),
+		project.LockEntry{Name: "tool", Version: "v1.0.0", Catalog: "demo", Direct: true, Platforms: []string{spec.Current().String()}})
+
+	var calls []string
+	testx.Swap(t, &syncCatalogStore, fakeOCICatalogSync(t, &calls, otherPlatform(t)))
+
+	_, errb, err := runNem(t, nemHomeDir, "sync")
+	if err != nil {
+		t.Fatalf("sync: %v\n%s", err, errb)
+	}
+	if want := "ghcr.io/x/y:v2|" + store; !slices.Contains(calls, want) {
+		t.Fatalf("syncCatalogStore not called for the unsynced demo catalog: %v", calls)
+	}
+	if !strings.Contains(errb, "Synced catalog demo") {
+		t.Fatalf("stderr = %q, want the sync task outcome", errb)
+	}
+
+	calls = nil
+	if _, errb, err := runNem(t, nemHomeDir, "sync"); err != nil {
+		t.Fatalf("second sync: %v\n%s", err, errb)
+	}
+	if len(calls) != 0 {
+		t.Fatalf("already-synced stores must not be re-synced, got calls %v", calls)
 	}
 }

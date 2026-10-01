@@ -42,10 +42,11 @@ nem sync                                                    # on every other mac
 ```
 
 A registry with a private CA or without TLS needs a `hosts:` entry in
-[config.yaml](../../reference/config-yaml/) before the `add`. The
-`nem catalog update` matters here: `nem sync` installs from the local
-catalog store and never syncs it, so a fresh machine runs `update` once
-first; see [Packages](../../using/packages/#sharing).
+[config.yaml](../../reference/config-yaml/) before the `add`. A fresh
+machine does not need the `update`: `nem sync` syncs a store that was never
+synced before installing, and `nem use` does the same; `update` is what
+refreshes a store that already exists. See
+[Packages](../../using/packages/#sharing).
 
 ## Keeping it current
 

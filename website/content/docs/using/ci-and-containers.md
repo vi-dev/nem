@@ -45,20 +45,20 @@ packages — as a CI job's base image, or as the base of a
 ## The CI pattern
 
 There's no shell hook to install in a pipeline. Check out the project,
-sync the catalog once, run `nem sync` to install whatever the lockfile pins
-that's missing on the runner, then run each step under `nem exec` so it
-sees the composed environment:
+run `nem sync` to install whatever the lockfile pins that's missing on the
+runner, then run each step under `nem exec` so it sees the composed
+environment:
 
 ```shell
-nem catalog update                     # the catalog store starts empty on a fresh runner
 nem sync                               # install what nem.lock pins
 nem exec -- kubectl apply -f manifests/   # each step in the composed environment
 nem exec -- go test ./...
 ```
 
-`nem sync` reads package manifests from the local catalog store and never
-syncs it itself, so the `nem catalog update` step is what makes a cold
-runner work.
+The catalog store starts empty on a fresh runner; `nem sync` syncs it before
+looking anything up. A restored but stale store is not re-synced, so a
+pipeline that caches the store runs `nem catalog update` when it needs
+newer manifests.
 
 ## Caching
 
@@ -74,13 +74,12 @@ downloads when `nem.lock` changes:
     restore-keys: nem-${{ runner.os }}-
 - run: curl -fsSL https://raw.githubusercontent.com/vi-dev/nem/main/install.sh | bash
 - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-- run: nem catalog update
 - run: nem sync
 - run: nem exec -- go test ./...
 ```
 
-The catalog store under `$NEM_HOME/catalogs` is small; `nem catalog update`
-fills it in seconds, so cache only `packages`. See the
+The catalog store under `$NEM_HOME/catalogs` is small and `nem sync` fills
+it in seconds, so cache only `packages`. See the
 [NEM_HOME reference](../../reference/nem-home/) for everything that lives
 under it.
 

@@ -44,8 +44,9 @@ lists the versions each row adds, which is enough to drive a scoped
 ## After a refresh
 
 Developers see the new versions after `nem catalog update`. A store that
-was never synced is synced by the next `nem use`, but a stale one is not;
-`nem update` warns when a catalog was last synced more than a week ago.
+was never synced is synced by the next `nem use` or `nem sync`, but a stale
+one is not; `nem update` warns when a catalog was last synced more than a
+week ago.
 Consumers who pinned the catalog by digest see nothing until someone
 gives them the new digest, which is what pinning is for.
 

@@ -5,7 +5,7 @@ weight: 36
 
 Install locked packages missing on this machine.
 
-Install exactly what nem.lock pins and nothing else, verifying every download against its digest. It never resolves versions or rewrites files, which makes it the command for teammates, CI, and agents. A nem.toml declaration the lockfile does not cover earns a warning to run nem lock.
+Install exactly what nem.lock pins and nothing else, verifying every download against its digest. It never resolves versions or rewrites files, which makes it the command for teammates, CI, and agents. A catalog that was never synced is synced first. A nem.toml declaration the lockfile does not cover earns a warning to run nem lock.
 
 ## Usage
 

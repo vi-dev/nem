@@ -71,7 +71,7 @@ which is the point.
 ## CI runners
 
 A runner is a developer machine with no memory. Either add the catalog in
-the job, before `nem catalog update` and `nem sync`, or bake the
+the job, before `nem sync`, or bake the
 `config.yaml` into the runner image. [CI and containers](../../using/ci-and-containers/)
 has the job shape; the rootless image is a good base for a runner image
 that carries the configuration.

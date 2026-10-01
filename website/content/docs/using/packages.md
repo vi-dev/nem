@@ -83,14 +83,13 @@ version that contradicts what the manifest declares.
 Commit both `nem.toml` and `nem.lock`. Teammates and CI run:
 
 ```shell
-nem catalog update    # once, on a machine that has never synced the catalog
 nem sync              # install what nem.lock pins
 ```
 
 `nem sync` installs exactly what the lockfile pins and warns if `nem.toml`
 has drifted from `nem.lock`, for example a declared package the lock doesn't
-cover yet. It reads package manifests from the local catalog store and never
-syncs it itself; `nem catalog update` fills the store the first time.
+cover yet. It reads package manifests from the local catalog store, syncing
+a store that was never synced first; a stale store needs `nem catalog update`.
 
 ```
 WARN nem.toml declares tree@2.3.2, which nem.lock does not cover — run `nem lock`

@@ -136,14 +136,13 @@ As long as `nem.toml` and `nem.lock` are committed, teammates, CI pipelines, and
 can reproduce the same environment by running:
 
 ```shell
-nem catalog update    # on a machine that has never synced the catalog
 nem sync              # install what nem.lock pins
 ```
 
 `nem sync` installs everything the lockfile pins that is missing on their
-machine — same versions, same digests. It reads package manifests from the
-local catalog store and never syncs it itself, so a machine that has never
-run `nem catalog update` does that once first.
+machine — same versions, same digests. A catalog store that was never
+synced is synced first; a stale one is not, which is what `nem catalog
+update` is for.
 
 {{% /steps %}}
 
