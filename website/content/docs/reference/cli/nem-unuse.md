@@ -5,7 +5,7 @@ weight: 37
 
 Remove declared packages.
 
-Remove packages from nem.toml and re-resolve nem.lock. Installed files stay under NEM_HOME because other projects may use them; nem clean reclaims them.
+Remove packages from nem.toml, re-resolve nem.lock, and install what the new resolution needs so the remaining packages link against the versions it pins. Installed files stay under NEM_HOME because other projects may use them; nem clean reclaims them.
 
 ## Usage
 

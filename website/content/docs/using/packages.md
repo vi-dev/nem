@@ -27,8 +27,10 @@ version.
 If `<catalog>:` is not specified, `nem` searches for the package in all catalogs, in order, until it finds a match.
 
 `nem unuse <pkg>...` removes declarations from `nem.toml` and re-resolves
-`nem.lock`. It never deletes installed packages — other projects on the same
-machine may still be using them.
+`nem.lock`. Dropping a pin can move a shared dependency, so it then installs
+what the new lock needs and relinks the packages that stay. It never deletes
+installed packages — other projects on the same machine may still be using
+them.
 
 ## Updating packages
 

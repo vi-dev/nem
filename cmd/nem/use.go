@@ -62,8 +62,10 @@ func newUnuseCmd() *cobra.Command {
 		Use:         "unuse <pkg>...",
 		Short:       "Remove declared packages",
 		Annotations: guide("Packages", "/docs/using/packages"),
-		Long: "Remove packages from nem.toml and re-resolve nem.lock. Installed files stay " +
-			"under NEM_HOME because other projects may use them; nem clean reclaims them.",
+		Long: "Remove packages from nem.toml, re-resolve nem.lock, and install what the new " +
+			"resolution needs so the remaining packages link against the versions it pins. " +
+			"Installed files stay under NEM_HOME because other projects may use them; " +
+			"nem clean reclaims them.",
 		Example: "  nem unuse kubectl            # drop it from this project\n" +
 			"  nem unuse -g jq              # drop it from the global manifest",
 		Args: cobra.MinimumNArgs(1),
@@ -272,27 +274,36 @@ func runUnuse(cmd *cobra.Command, args []string, global bool) error {
 	if err != nil {
 		return err
 	}
-	defer release()
 
 	path, err := manifestPath(global, false)
 	if err != nil {
+		release()
 		return err
 	}
 	manifest, _, sources, err := loadUseState(path)
 	if err != nil {
+		release()
 		return err
 	}
 
 	for _, name := range args {
 		if !project.RemoveTool(manifest, name) {
+			release()
 			return fmt.Errorf("package %s is not declared", name)
 		}
 	}
 
 	result, err := resolve.Resolve(cmd.Context(), manifestTools(manifest), sources)
 	if err != nil {
+		release()
 		return err
 	}
 
-	return writeManifestAndLock(manifest, result)
+	if err := writeManifestAndLock(manifest, result); err != nil {
+		release()
+		return err
+	}
+	release()
+
+	return install.Run(cmd.Context(), nemHome, install.Jobs(result, sources, nil))
 }

@@ -439,3 +439,64 @@ func TestHintForTable(t *testing.T) {
 		})
 	}
 }
+
+func TestUnuseRelinksRemainingDependents(t *testing.T) {
+	nemHomeDir := t.TempDir()
+	h := testNemHome(nemHomeDir)
+	projDir := t.TempDir()
+	chdir(t, projDir)
+
+	catalogRoot := t.TempDir()
+	zlibYAML := "schema: 2\nname: zlib\nlibs: [lib]\n" +
+		"artifact:\n  oci: \":{{.Version}}\"\ninstall:\n  - extract: {}\n" +
+		"versions:\n  - version: \"1.1.0\"\n  - version: \"1.0.0\"\n"
+	writeFile(t, filepath.Join(catalogRoot, "pkgs", "zlib", "pkg.yaml"), zlibYAML)
+	appYAML := "schema: 2\nname: app\ndeps:\n  - name: zlib\n    kind: link\n    compat: \"1\"\n" +
+		"artifact:\n  oci: \":{{.Version}}\"\ninstall:\n  - extract: {}\n" +
+		"versions:\n  - version: \"1.0.0\"\n"
+	writeFile(t, filepath.Join(catalogRoot, "pkgs", "app", "pkg.yaml"), appYAML)
+	if _, errb, err := runNem(t, nemHomeDir, "catalog", "add", "demo", catalogRoot); err != nil {
+		t.Fatalf("catalog add: %v\n%s", err, errb)
+	}
+
+	appDir, err := h.PackageDir("app", "1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(appDir, "bin", "app"), "installed app")
+	writeMetaFile(t, appDir, "package: app\nversion: 1.0.0\ncatalog: demo\nbins: [bin]\nlayout: 2\n")
+	for _, v := range []string{"1.0.0", "1.1.0"} {
+		zlibDir, err := h.PackageDir("zlib", v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeMetaFile(t, zlibDir, "package: zlib\nversion: "+v+"\ncatalog: demo\nlayout: 2\nlibs: [lib]\n")
+	}
+	if _, err := install.WriteLinks(appDir, map[string]string{"zlib": "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(projDir, "nem.toml"), "[tools]\n\"demo:app\" = \"1.0.0\"\n\"demo:zlib\" = \"1.0.0\"\n")
+	platforms := []string{spec.Current().String()}
+	writeLockFile(t, filepath.Join(projDir, "nem.lock"),
+		project.LockEntry{Name: "app", Version: "1.0.0", Catalog: "demo", Direct: true, OnPath: true, Platforms: platforms},
+		project.LockEntry{Name: "zlib", Version: "1.0.0", Catalog: "demo", Direct: true, OnLoaderPath: true, Platforms: platforms})
+
+	_, errb, err := runNem(t, nemHomeDir, "unuse", "zlib")
+	if err != nil {
+		t.Fatalf("unuse: %v\n%s", err, errb)
+	}
+	if strings.Contains(errb, "Installed") {
+		t.Fatalf("every version was already installed; nothing should be downloaded:\n%s", errb)
+	}
+	lf, err := project.LoadLock(filepath.Join(projDir, "nem.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := project.Versions(lf.Packages)["zlib"]; v != "1.1.0" {
+		t.Fatalf("lock zlib = %q, want 1.1.0 after the explicit pin is dropped", v)
+	}
+	links, err := install.ReadLinks(appDir)
+	if err != nil || links["zlib"] != "1.1.0" {
+		t.Fatalf("app links = %v, %v; want zlib relinked to 1.1.0", links, err)
+	}
+}
