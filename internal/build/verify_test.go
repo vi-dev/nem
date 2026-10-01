@@ -98,6 +98,10 @@ func TestDepsRpathViolation(t *testing.T) {
 		{a + "/../../zlib/1.3.2/lib", 1, escape},
 		{a + "/../../../lib/vendor/plugins", 3, ""},
 		{a + "/../lib", 1, ""},
+		{a + "/lib/../../../zlib/1.3.2/lib", 1, escape},
+		{a + "/./.nem-link-dependencies/zlib/lib", 1, ""},
+		{a + "/.nem-link-dependencies/../.nem-link-dependencies/zlib/lib", 1, ""},
+		{a + "/x/../../.nem-link-dependencies/zlib/lib", 1, mustBe},
 		{"/usr/lib/libz.1.dylib", 1, ""},
 		{"libz.so.1", 1, ""},
 	}
@@ -177,5 +181,29 @@ func run(t *testing.T, name string, args ...string) {
 	out, err := exec.Command(name, args...).CombinedOutput()
 	if err != nil {
 		t.Fatalf("%s %v: %v\n%s", name, args, err, out)
+	}
+}
+
+func TestCutAnchorAcceptsEverySpellingAndInteriorClimbs(t *testing.T) {
+	anchors := []string{"$ORIGIN", "${ORIGIN}"}
+	cases := []struct {
+		ref  string
+		rest string
+		ups  int
+		ok   bool
+	}{
+		{"$ORIGIN/.nem-link-dependencies/zlib/lib", ".nem-link-dependencies/zlib/lib", 0, true},
+		{"${ORIGIN}/.nem-link-dependencies/zlib/lib", ".nem-link-dependencies/zlib/lib", 0, true},
+		{"${ORIGIN}/../../zlib/lib", "zlib/lib", 2, true},
+		{"$ORIGIN/lib/../../../zlib/lib", "zlib/lib", 2, true},
+		{"$ORIGIN/./lib/./x", "lib/x", 0, true},
+		{"$ORIGINAL/lib", "", 0, false},
+		{"/usr/lib", "", 0, false},
+	}
+	for _, tc := range cases {
+		rest, ups, ok := cutAnchor(tc.ref, anchors)
+		if rest != tc.rest || ups != tc.ups || ok != tc.ok {
+			t.Errorf("cutAnchor(%q) = (%q, %d, %v), want (%q, %d, %v)", tc.ref, rest, ups, ok, tc.rest, tc.ups, tc.ok)
+		}
 	}
 }

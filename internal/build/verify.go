@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -76,14 +77,33 @@ func loaderAnchor() string {
 	return "@loader_path"
 }
 
+func loaderAnchors() []string {
+	if runtime.GOOS == "linux" {
+		return []string{"$ORIGIN", "${ORIGIN}"}
+	}
+	return []string{"@loader_path"}
+}
+
 func cutLoaderAnchor(ref string) (rest string, ups int, ok bool) {
-	rest, ok = strings.CutPrefix(ref, loaderAnchor()+"/")
+	return cutAnchor(ref, loaderAnchors())
+}
+
+func cutAnchor(ref string, anchors []string) (rest string, ups int, ok bool) {
+	for _, anchor := range anchors {
+		if rest, ok = strings.CutPrefix(ref, anchor+"/"); ok {
+			break
+		}
+	}
 	if !ok {
 		return "", 0, false
 	}
+	rest = path.Clean(rest)
 	for strings.HasPrefix(rest, "../") {
 		rest = rest[3:]
 		ups++
+	}
+	if rest == ".." {
+		rest, ups = "", ups+1
 	}
 	return rest, ups, true
 }
