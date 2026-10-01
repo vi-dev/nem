@@ -20,6 +20,10 @@ build:
 docs:
 	env -u GOROOT go run ./cmd/nem gendocs website/content/docs/reference/cli
 
+.PHONY: site
+site:
+	out=$$(mktemp -d) && cd website && hugo --gc --minify --environment production -d "$$out" && cd .. && hack/check-links.sh "$$out" /nem && rm -rf "$$out"
+
 .PHONY: install
 install:
 	go build -ldflags "$(LDFLAGS)" -o $(HOME)/.local/bin/nem ./cmd/nem
