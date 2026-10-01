@@ -46,3 +46,12 @@ func TestHookBlockUnknownDialectReturnsEmpty(t *testing.T) {
 		t.Errorf("expected empty block for an unrecognized dialect, got:\n%s", out)
 	}
 }
+
+func TestHookBlockReevaluatesAfterEveryLockWritingCommand(t *testing.T) {
+	for _, d := range []Dialect{Bash, Zsh} {
+		out := HookBlock(d)
+		if !strings.Contains(out, "use|unuse|lock|sync|update)") {
+			t.Errorf("%v block must re-eval after use, unuse, lock, sync and update, got:\n%s", d, out)
+		}
+	}
+}

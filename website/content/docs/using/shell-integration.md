@@ -38,12 +38,10 @@ The installed block:
 - Registers a hook that re-evaluates `eval "$(nem env --shell <shell>)"`:
   zsh's `chpwd` runs it on every `cd`, bash's `PROMPT_COMMAND` before every
   prompt;
-- Wraps the `nem` command so `use`, `unuse`, `lock`, and `sync` re-apply the
-  environment immediately, without waiting for the next directory change;
+- Wraps the `nem` command so `use`, `unuse`, `lock`, `sync`, and `update`
+  re-apply the environment immediately, without waiting for the next
+  directory change;
 - Sources `nem`'s shell completions.
-
-`nem update` is not wrapped: the shell picks up an update on the next
-directory change, or run `eval "$(nem env)"` to apply it at once.
 
 ## Leaving restores everything
 

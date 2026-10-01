@@ -14,7 +14,7 @@ nem() {
   command nem "$@"
   local __nem_rc=$?
   case "$1" in
-    use|unuse|lock|sync)
+    use|unuse|lock|sync|update)
       eval "$(command nem env --shell %[1]s)"
       ;;
   esac

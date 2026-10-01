@@ -5,7 +5,7 @@ weight: 2
 
 Activate nem for the current shell.
 
-Install nem's hook block into the shell's startup file, .zshrc or .bashrc, between # &gt;&gt;&gt; nem &gt;&gt;&gt; and # &lt;&lt;&lt; nem &lt;&lt;&lt; markers. The hook re-applies the composed environment on every directory change and right after nem use, unuse, lock, and sync, and sources nem's completions. Without a shell name, $SHELL decides. Restart the shell afterwards.
+Install nem's hook block into the shell's startup file, .zshrc or .bashrc, between # &gt;&gt;&gt; nem &gt;&gt;&gt; and # &lt;&lt;&lt; nem &lt;&lt;&lt; markers. The hook re-applies the composed environment on every directory change and right after nem use, unuse, lock, sync, and update, and sources nem's completions. Without a shell name, $SHELL decides. Restart the shell afterwards.
 
 ## Usage
 

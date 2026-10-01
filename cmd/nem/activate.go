@@ -23,7 +23,7 @@ func newActivateCmd() *cobra.Command {
 		Annotations: guide("Shell integration", "/docs/using/shell-integration"),
 		Long: "Install nem's hook block into the shell's startup file, .zshrc or .bashrc, between " +
 			"# >>> nem >>> and # <<< nem <<< markers. The hook re-applies the composed environment " +
-			"on every directory change and right after nem use, unuse, lock, and sync, and " +
+			"on every directory change and right after nem use, unuse, lock, sync, and update, and " +
 			"sources nem's completions. Without a shell name, $SHELL decides. Restart the " +
 			"shell afterwards.",
 		Example: "  nem activate                 # the current $SHELL\n" +
