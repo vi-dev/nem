@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"oras.land/oras-go/v2/registry/remote/errcode"
 
 	"github.com/vi-dev/nem/internal/build"
 	"github.com/vi-dev/nem/internal/catalog"
+	"github.com/vi-dev/nem/internal/fetch"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/resolve"
 )
@@ -43,9 +43,9 @@ func hintFor(err error) string {
 	if _, ok := errors.AsType[*build.CycleError](err); ok {
 		return "Break the dependency cycle or build the packages separately"
 	}
-	if strings.Contains(err.Error(), "relative oci ref requires an oci catalog") {
-		return "Source-built archives are not servable from a plain checkout; deps built in this batch are, " +
-			"and published ones need an OCI catalog (nem catalog add ... ghcr.io/...)"
+	if errors.Is(err, fetch.ErrNoArchiveStore) {
+		return "Relative oci refs resolve inside the archive store of the catalog that serves the package; " +
+			"add that catalog with `nem catalog add <name> <dir|ref>`"
 	}
 	var eresp *errcode.ErrorResponse
 	if errors.As(err, &eresp) && eresp.StatusCode == http.StatusUnauthorized {

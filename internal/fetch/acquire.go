@@ -95,6 +95,8 @@ func Acquire(ctx context.Context, pkg *spec.Package, version string, plat spec.P
 	return Download(ctx, httpClient, url, sha, dir, meta, task)
 }
 
+var ErrNoArchiveStore = errors.New("relative oci ref requires a catalog archive store")
+
 func acquireOCI(ctx context.Context, pkg *spec.Package, version string, plat spec.Platform, src Source, dir string) (string, error) {
 	ref, err := templateOCIRef(pkg.Artifact.OCI, version, plat)
 	if err != nil {
@@ -102,7 +104,7 @@ func acquireOCI(ctx context.Context, pkg *spec.Package, version string, plat spe
 	}
 	if isRelativeOCIRef(ref) {
 		if len(src.Archives) == 0 {
-			return "", errors.New("relative oci ref requires an oci catalog")
+			return "", ErrNoArchiveStore
 		}
 		return pullFrom(ctx, src.Archives, pkg.Name, ociRefTag(ref), plat, dir)
 	}

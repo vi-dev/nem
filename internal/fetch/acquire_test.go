@@ -372,7 +372,10 @@ func TestAcquireOCIRelativeRefWithoutStoresErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("want error for relative oci ref without catalog")
 	}
-	want := "relative oci ref requires an oci catalog"
+	if !errors.Is(err, ErrNoArchiveStore) {
+		t.Errorf("got %v, want ErrNoArchiveStore", err)
+	}
+	want := "relative oci ref requires a catalog archive store"
 	if err.Error() != want {
 		t.Errorf("got %q, want %q", err.Error(), want)
 	}
