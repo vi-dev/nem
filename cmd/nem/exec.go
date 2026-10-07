@@ -76,6 +76,7 @@ func runExec(cmd *cobra.Command, args []string) error {
 
 	resolved, lookErr := lookPath(args[0], pathValue)
 	if lookErr != nil {
+		console.Error(fmt.Errorf("command %s not found", args[0]), "Run `nem use <pkg>` or `nem sync`")
 		return &ExitError{Code: exitCodeFor(lookErr)}
 	}
 
@@ -87,9 +88,19 @@ func runExec(cmd *cobra.Command, args []string) error {
 	child.Stderr = cmd.ErrOrStderr()
 
 	if err := child.Run(); err != nil {
+		if _, ran := errors.AsType[*exec.ExitError](err); !ran {
+			console.Error(fmt.Errorf("command %s: %w", args[0], startCause(err)), "")
+		}
 		return &ExitError{Code: exitCodeFor(err)}
 	}
 	return nil
+}
+
+func startCause(err error) error {
+	if pathErr, ok := errors.AsType[*fs.PathError](err); ok {
+		return pathErr.Err
+	}
+	return err
 }
 
 func buildChildEnv(base []string, res envx.Result, pathValue string) []string {

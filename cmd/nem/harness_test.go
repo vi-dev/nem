@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -30,8 +31,9 @@ func runNem(t *testing.T, nemHomeDir string, args ...string) (string, string, er
 	var out, errb bytes.Buffer
 	err := execNem(t, nemHomeDir, nil, &out, &errb, append(args, "--color", "never")...)
 	if err != nil && ranHook && console != nil {
-
-		console.Error(err, hintFor(err))
+		if _, exit := errors.AsType[*ExitError](err); !exit {
+			console.Error(err, hintFor(err))
+		}
 	}
 	return out.String(), errb.String(), err
 }

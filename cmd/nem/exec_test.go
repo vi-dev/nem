@@ -61,13 +61,38 @@ func TestExecNotFoundCommandExits127(t *testing.T) {
 	projDir := t.TempDir()
 	chdir(t, projDir)
 
-	_, _, err := runNem(t, nemHomeDir, "exec", "--", "definitely-not-a-real-command-xyz")
+	_, errb, err := runNem(t, nemHomeDir, "exec", "--", "definitely-not-a-real-command-xyz")
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) {
 		t.Fatalf("exec error = %v, want *ExitError", err)
 	}
 	if exitErr.Code != 127 {
 		t.Fatalf("exit code = %d, want 127", exitErr.Code)
+	}
+	want := "ERROR Command definitely-not-a-real-command-xyz not found\n" +
+		"  hint: Run `nem use <pkg>` or `nem sync`\n"
+	if !strings.Contains(errb, want) {
+		t.Fatalf("stderr = %q, want it to contain %q", errb, want)
+	}
+}
+
+func TestExecMissingPathCommandReportsError(t *testing.T) {
+	nemHomeDir := t.TempDir()
+	projDir := t.TempDir()
+	chdir(t, projDir)
+
+	missing := filepath.Join(projDir, "no-such-binary")
+	_, errb, err := runNem(t, nemHomeDir, "exec", "--", missing)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("exec error = %v, want *ExitError", err)
+	}
+	if exitErr.Code != 127 {
+		t.Fatalf("exit code = %d, want 127", exitErr.Code)
+	}
+	want := "ERROR Command " + missing + ": no such file or directory\n"
+	if !strings.Contains(errb, want) {
+		t.Fatalf("stderr = %q, want it to contain %q", errb, want)
 	}
 }
 
