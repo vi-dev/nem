@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/vi-dev/nem/compare/v0.10.0...v0.10.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* Report an unrunnable command instead of exiting silently ([19e57ea](https://github.com/vi-dev/nem/commit/19e57ea496dddd95272f3e21b067cb697f0d5743))
+
 ## [0.10.0](https://github.com/vi-dev/nem/compare/v0.9.0...v0.10.0) (2026-10-01)
 
 
