@@ -36,8 +36,9 @@ nem catalog test . --package jq --package yq   # several
 
 `nem catalog test` installs the version into a throwaway directory under
 `NEM_HOME/packages`, runs the steps for the platform it is on, and removes
-the install afterwards. A package with no `test` steps is install-verified
-only. It continues past failures, prints a summary, and exits 1 if any
+the install afterwards. Every install must leave at least one file under
+one of its `bins` or `libs` directories; a package with no `test` steps is
+install-verified only. It continues past failures, prints a summary, and exits 1 if any
 package failed.
 
 Built packages are tested twice: `nem catalog build` runs the steps

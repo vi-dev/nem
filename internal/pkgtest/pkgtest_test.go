@@ -23,12 +23,17 @@ import (
 
 func tarFixture(t *testing.T, dir string) string {
 	t.Helper()
+	return tarFixtureWith(t, dir, "bin/tool")
+}
+
+func tarFixtureWith(t *testing.T, dir, entry string) string {
+	t.Helper()
 	path := filepath.Join(dir, "artifact.tar.gz")
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
 	body := []byte("#!/bin/sh\necho hi\n")
-	if err := tw.WriteHeader(&tar.Header{Name: "bin/tool", Mode: 0o755, Size: int64(len(body))}); err != nil {
+	if err := tw.WriteHeader(&tar.Header{Name: entry, Mode: 0o755, Size: int64(len(body))}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tw.Write(body); err != nil {
@@ -503,5 +508,44 @@ func TestInstallAndRunFailingStepQuotesTheAuthorsScript(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "export") {
 		t.Fatalf("error must not quote the loader-path prologue, got: %v", err)
+	}
+}
+
+func TestInstallAndRunFailsWhenNothingLandsUnderBins(t *testing.T) {
+	h, pkg, _ := installable(t)
+	artifact := tarFixtureWith(t, t.TempDir(), "tool")
+	out, err := runInstallOut(t, h, pkg, artifact)
+	if err == nil {
+		t.Fatal("want an error when the bins dir is empty")
+	}
+	if !strings.Contains(err.Error(), "test-install tool@v1") || !strings.Contains(err.Error(), "no files under bin") {
+		t.Fatalf("error must name the install and the empty bins dir, got: %v", err)
+	}
+	if strings.Contains(out, "Installed tool v1") {
+		t.Fatalf("an empty install must not be reported as installed, got:\n%s", out)
+	}
+	if got := aliasDirs(t, h); len(got) != 0 {
+		t.Fatalf("alias must be removed after failure, found %v", got)
+	}
+}
+
+func TestInstallAndRunAcceptsALibraryWithEmptyBins(t *testing.T) {
+	h, pkg, _ := installableWithLibs(t)
+	artifact := tarFixtureWith(t, t.TempDir(), "lib/libtool.so")
+	if err := runInstall(t, h, pkg, artifact); err != nil {
+		t.Fatalf("a library with files under libs must pass install-verify: %v", err)
+	}
+}
+
+func TestInstallAndRunNamesEveryEmptyDirAndSkipsTheSteps(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "step-ran")
+	h, pkg, _ := installableWithLibs(t, spec.TestStep{Run: "touch " + marker})
+	artifact := tarFixtureWith(t, t.TempDir(), "tool")
+	err := runInstall(t, h, pkg, artifact)
+	if err == nil || !strings.Contains(err.Error(), "no files under bin, lib") {
+		t.Fatalf("error must list the empty bins and libs dirs, got: %v", err)
+	}
+	if _, statErr := os.Stat(marker); statErr == nil {
+		t.Fatal("test steps must not run against an empty install")
 	}
 }

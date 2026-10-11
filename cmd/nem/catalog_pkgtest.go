@@ -27,7 +27,8 @@ func newCatalogTestCmd() *cobra.Command {
 		Annotations: guide("Testing packages", "/docs/writing-packages/testing"),
 		Long: "Install the selected packages from the catalog into NEM_HOME and run each " +
 			"one's declared test steps, continuing past failures and printing a summary at the " +
-			"end. A package without test steps is install-verified only. The exit status is " +
+			"end. Every install must leave a file under one of its bins or libs directories; " +
+			"a package without test steps is install-verified only. The exit status is " +
 			"1 when any package fails.",
 		Example: "  nem catalog test                                # every package at its latest version\n" +
 			"  nem catalog test . --package jq@1.8.3           # one version\n" +

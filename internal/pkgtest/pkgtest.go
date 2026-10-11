@@ -68,6 +68,9 @@ func InstallAndRun(ctx context.Context, h home.Home, deps []build.ResolvedDep,
 		return fmt.Errorf("test-install %s@%s: %w", pkg.Name, version, installErr)
 	}
 	prefix := filepath.Join(aliasDir, version)
+	if dirs := append(append([]string{}, r.Bins...), r.Libs...); !anyHasFiles(prefix, dirs) {
+		return fmt.Errorf("test-install %s@%s: no files under %s", pkg.Name, version, strings.Join(dirs, ", "))
+	}
 	if len(steps) == 0 {
 		if len(r.Test) > 0 {
 			rep.Info("No test of %s applies to %s; nothing asserted", pkg.Name, plat)
@@ -120,6 +123,21 @@ func InstallAndRun(ctx context.Context, h home.Home, deps []build.ResolvedDep,
 	}
 	rep.Success("Tested %s %s (%s)", pkg.Name, version, report.Plural(len(steps), "step"))
 	return nil
+}
+
+func anyHasFiles(prefix string, dirs []string) bool {
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(filepath.Join(prefix, dir))
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func removeUsageRow(h home.Home, key string) error {

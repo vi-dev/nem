@@ -316,7 +316,8 @@ its `env` exports applied, and the same `NEM_*` and compiler variables as a
 build step except `NEM_STAGING_DIR` and `NEM_OUTPUT`; see
 [Configuration variables](../environment/#variables-in-build-and-test-steps).
 `NEM_PREFIX` names the throwaway install, which is deleted after the test.
-A package with no `test` entries is install-verified only.
+A package with no `test` entries is install-verified only: the install must
+leave at least one file under one of its `bins` or `libs` directories.
 
 ## `versions`
 
