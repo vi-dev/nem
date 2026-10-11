@@ -12,17 +12,21 @@ the exact rule for each key is on the
 ## Identity
 
 ```yaml
-schema: 2
+schema: 3
 name: jq
 description: Command-line JSON processor
 homepage: https://jqlang.org
 license: MIT
 ```
 
-`schema` is always `2`. `name` is what people type after `nem use`, and it
+`schema` is `3`. Catalogs still carrying `2` load; `nem catalog fmt`
+rewrites it. `name` is what people type after `nem use`, and it
 must match the directory the manifest lives in. `description` is shown by
 `nem search` and `nem info`, `homepage` and `license` by `nem info`, and
 nothing else depends on them.
+
+Older versions can keep an earlier recipe in a frozen sibling file; see
+[Frozen recipes](../recipes/).
 
 ## Where versions come from
 

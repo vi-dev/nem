@@ -43,6 +43,9 @@ build:
 `nem catalog bump` fills `sourceSha256` for built packages the same way it
 fills `sha256` for downloaded ones.
 
+When a new major changes the build, freeze the old recipe instead of
+growing the steps with version checks; see [Frozen recipes](../recipes/).
+
 ## What a build does
 
 `nem catalog build` runs one task per package: download and verify the

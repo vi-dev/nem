@@ -19,7 +19,7 @@ Aliases: `cat`
 
 ```shell
 nem catalog list                                        # what is configured
-nem catalog add corp registry.example/nem/catalog:v2    # add one
+nem catalog add corp registry.example/nem/catalog:v3    # add one
 nem catalog lint .                                      # validate a checkout
 ```
 

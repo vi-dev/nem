@@ -25,7 +25,7 @@ Built-from-source packages later add an `archives/` directory beside
 per platform:
 
 ```yaml
-schema: 2                                   # always 2
+schema: 3                                   # current schema
 name: jq                                    # must match the directory name
 description: Command-line JSON processor
 homepage: https://jqlang.org

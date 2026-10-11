@@ -1,6 +1,6 @@
 ---
 title: Testing packages
-weight: 8
+weight: 9
 ---
 
 A `test` step is a shell command that must exit 0 against an installed

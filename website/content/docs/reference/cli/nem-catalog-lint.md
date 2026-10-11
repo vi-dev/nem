@@ -18,7 +18,7 @@ nem catalog lint [catalog] [flags]
 ```shell
 nem catalog lint                                 # the current directory
 nem catalog lint . --package kubectl             # one package
-nem catalog lint ghcr.io/vi-dev/nem-catalog:v2   # a published catalog
+nem catalog lint ghcr.io/vi-dev/nem-catalog:v3   # a published catalog
 ```
 
 ## Flags

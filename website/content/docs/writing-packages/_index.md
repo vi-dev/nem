@@ -18,6 +18,7 @@ catalog healthy.
   {{< card link="install-actions/" title="Install actions" subtitle="Extract, copy, move, and mkdir, and when to use each." >}}
   {{< card link="dependencies-and-exports/" title="Dependencies and exports" subtitle="Run and link dependencies, libraries, and exported variables." >}}
   {{< card link="build-from-source/" title="Building from source" subtitle="Recipes, the build environment, and covering every platform." >}}
+  {{< card link="recipes/" title="Frozen recipes" subtitle="Keep an older recipe for the versions that still need it." >}}
   {{< card link="testing/" title="Testing packages" subtitle="Test steps and nem catalog test." >}}
   {{< card link="workflow/" title="Authoring workflow" subtitle="Lint, fmt, test, build, diff, and keeping packages current." >}}
 {{< /cards >}}

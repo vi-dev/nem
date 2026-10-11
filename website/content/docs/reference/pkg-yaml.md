@@ -4,7 +4,7 @@ weight: 5
 ---
 
 The package manifest: one `pkgs/<name>/pkg.yaml` per package in a catalog,
-schema 2. It says where a package's artifacts come from, how they are laid
+schema 3. It says where a package's artifacts come from, how they are laid
 out on disk, what the package exports, and which versions exist with their
 checksums. Parsing is strict: an unknown key anywhere is an error, except
 inside `sha256`, where keys for other platforms are ignored.
@@ -14,7 +14,7 @@ canonical form.
 ## Example: a prebuilt binary
 
 ```yaml
-schema: 2
+schema: 3
 name: kubectl
 description: The Kubernetes command-line tool
 homepage: https://kubernetes.io/docs/reference/kubectl/
@@ -46,7 +46,7 @@ versions:
 ## Example: built from source
 
 ```yaml
-schema: 2
+schema: 3
 name: aardvark-dns
 description: Authoritative DNS server for container networks
 homepage: https://github.com/containers/aardvark-dns
@@ -87,11 +87,19 @@ test:
   - run: aardvark-dns --version | grep -q "$NEM_VERSION"
 ```
 
+## Frozen recipe files
+
+`pkgs/<name>/recipe@<prefix>.yaml` holds a complete recipe (the keys
+`platforms`, `artifact`, `install`, `deps`, `bins`, `libs`, `env`, `build`,
+`test`) for every listed version the prefix matches, where the prefix is
+dot-separated numeric components and the longest match wins. A recipe file
+must not carry identity keys. See [Frozen recipes](../../writing-packages/recipes/).
+
 ## Top-level keys
 
 | Key | Required | Meaning |
 |---|---|---|
-| `schema` | yes | Must be `2`. |
+| `schema` | yes | `3`; `2` is still accepted and `nem catalog fmt` rewrites it. |
 | `name` | yes | Package name, `^[a-z0-9][a-z0-9._-]*$`. Also the directory name under `pkgs/`. |
 | `description` | no | One line, shown by `nem search` and `nem info`. |
 | `homepage` | no | URL shown by `nem info`. |

@@ -23,8 +23,8 @@ CA or plain HTTP needs a `hosts:` entry first, see
 ### Mirror the catalog
 
 ```shell
-nem catalog mirror ghcr.io/vi-dev/nem-catalog:v2 registry.corp.example/nem/catalog:v2 --dry-run   # what would be copied
-nem catalog mirror ghcr.io/vi-dev/nem-catalog:v2 registry.corp.example/nem/catalog:v2             # copy it
+nem catalog mirror ghcr.io/vi-dev/nem-catalog:v3 registry.corp.example/nem/catalog:v3 --dry-run   # what would be copied
+nem catalog mirror ghcr.io/vi-dev/nem-catalog:v3 registry.corp.example/nem/catalog:v3             # copy it
 ```
 
 Both references need a tag or digest. The run copies the index and every
@@ -43,9 +43,9 @@ fixes.
 ### Fill the archives
 
 ```shell
-nem catalog fill registry.corp.example/nem/catalog:v2 --package jq --dry-run   # start with one package
-nem catalog fill registry.corp.example/nem/catalog:v2 --package jq             # download, verify, publish
-nem catalog fill registry.corp.example/nem/catalog:v2                          # everything, when ready
+nem catalog fill registry.corp.example/nem/catalog:v3 --package jq --dry-run   # start with one package
+nem catalog fill registry.corp.example/nem/catalog:v3 --package jq             # download, verify, publish
+nem catalog fill registry.corp.example/nem/catalog:v3                          # everything, when ready
 ```
 
 `fill` downloads each version's artifact for every platform, verifies it
@@ -71,7 +71,7 @@ developers use is a good starting scope.
 ### Add it and use it
 
 ```shell
-nem catalog add corp registry.corp.example/nem/catalog:v2   # appended after official
+nem catalog add corp registry.corp.example/nem/catalog:v3   # appended after official
 nem catalog reorder corp official                           # make it win over official
 ```
 

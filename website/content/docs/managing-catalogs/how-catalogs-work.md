@@ -9,15 +9,17 @@ mirror, fill, publish, or pin, is an operation on one of those two things.
 
 ## The index
 
-A catalog reference such as `ghcr.io/vi-dev/nem-catalog:v2` points at an
+A catalog reference such as `ghcr.io/vi-dev/nem-catalog:v3` points at an
 OCI index with one entry per package. Each entry is a small OCI image
 manifest carrying the package name, description, and latest version as
-annotations, and that manifest has a single layer: the package's
-`pkg.yaml` as written, with media type `application/vnd.nem.pkg.v2+yaml`.
+annotations. That manifest has a layer for the package's `pkg.yaml` as
+written, with media type `application/vnd.nem.pkg.v3+yaml`, plus one
+layer per frozen recipe, with media type
+`application/vnd.nem.recipe.v3+yaml` and the file name as its title.
 A catalog with hundreds of packages is one index, one such manifest per
-package, and one `pkg.yaml` blob each; nothing else. The digest of a
-package's manifest is what `nem.lock` records as `digest`, so a lockfile
-pins the exact `pkg.yaml` a version resolved from.
+package, and one blob per `pkg.yaml` and frozen recipe; nothing else. The
+digest of a package's manifest is what `nem.lock` records as `digest`, so
+a lockfile pins the exact recipe files a version resolved from.
 
 ## The archives
 
@@ -42,8 +44,8 @@ bytes are checked against what the manifest pins.
 
 ## Tags and digests
 
-A tag such as `v2` moves every time the catalog is published. `nem catalog
-publish` also writes a release tag of the form `v2.20260930T092433Z` on
+A tag such as `v3` moves every time the catalog is published. `nem catalog
+publish` also writes a release tag of the form `v3.20260930T092433Z` on
 every run, so each published state keeps a permanent name. A digest,
 `@sha256:…`, names one exact index: a consumer who adds a catalog by
 digest gets that state until they choose another, and `nem catalog

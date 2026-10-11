@@ -10,8 +10,8 @@ when developers see it.
 ## The loop
 
 ```shell
-nem catalog mirror ghcr.io/vi-dev/nem-catalog:v2 registry.corp.example/nem/catalog:v2   # new manifests and archives
-nem catalog fill registry.corp.example/nem/catalog:v2                                   # archives for the new versions
+nem catalog mirror ghcr.io/vi-dev/nem-catalog:v3 registry.corp.example/nem/catalog:v3   # new manifests and archives
+nem catalog fill registry.corp.example/nem/catalog:v3                                   # archives for the new versions
 ```
 
 Both commands skip what is already present, so a scheduled run with
@@ -25,8 +25,8 @@ to your registry.
 mirror second, the rows are what the source has that the mirror lacks:
 
 ```shell
-nem catalog diff ghcr.io/vi-dev/nem-catalog:v2 registry.corp.example/nem/catalog:v2                 # new and updated packages
-nem catalog diff ghcr.io/vi-dev/nem-catalog:v2 registry.corp.example/nem/catalog:v2 --output json   # for automation
+nem catalog diff ghcr.io/vi-dev/nem-catalog:v3 registry.corp.example/nem/catalog:v3                 # new and updated packages
+nem catalog diff ghcr.io/vi-dev/nem-catalog:v3 registry.corp.example/nem/catalog:v3 --output json   # for automation
 ```
 
 ```
@@ -50,13 +50,23 @@ week ago.
 Consumers who pinned the catalog by digest see nothing until someone
 gives them the new digest, which is what pinning is for.
 
+## Moving to the v3 catalog
+
+After upgrading nem, the official catalog is read from the `v3` tag; a
+saved configuration that still names `v2` is moved to `v3` the next time
+nem opens it. Every package manifest digest changes with the new tag, so a
+project whose committed `nem.lock` was pinned against `v2` digests gets a
+digest mismatch from `nem sync` and must run `nem lock` once, then commit
+the new lockfile. The `v2` tag is frozen at its last publish and receives
+no new versions.
+
 ## Scoped fills
 
 A package that developers ask for can be filled on its own without
 walking the whole catalog:
 
 ```shell
-nem catalog fill registry.corp.example/nem/catalog:v2 --package terraform   # one package, every version
+nem catalog fill registry.corp.example/nem/catalog:v3 --package terraform   # one package, every version
 ```
 
 ## Retention

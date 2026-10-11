@@ -42,7 +42,7 @@ such as `localhost:5000` default to plain HTTP without an entry.
 ## What a developer runs
 
 ```shell
-nem catalog add corp registry.example/nem/catalog:v2   # appended after the catalogs already configured
+nem catalog add corp registry.example/nem/catalog:v3   # appended after the catalogs already configured
 nem catalog reorder corp official                      # if the corporate catalog should win
 nem catalog update                                     # sync it
 ```
@@ -64,7 +64,7 @@ nem catalog add corp registry.example/nem/catalog@sha256:…   # one exact state
 ```
 
 The digest of a tag comes from your registry's UI or from
-`oras manifest fetch --descriptor registry.example/nem/catalog:v2`. A
+`oras manifest fetch --descriptor registry.example/nem/catalog:v3`. A
 pinned consumer never sees new packages until someone changes the digest,
 which is the point.
 
