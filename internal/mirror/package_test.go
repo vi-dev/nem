@@ -14,15 +14,15 @@ import (
 func TestClassify(t *testing.T) {
 	cases := []struct {
 		name             string
-		pkg              *spec.Package
+		pkg              *spec.Recipe
 		wantParticipates bool
 		wantPrebuilt     bool
 	}{
-		{"url", &spec.Package{Artifact: spec.Artifact{URL: "https://example.com/{{.Version}}"}}, true, false},
-		{"github", &spec.Package{Artifact: spec.Artifact{GitHub: &spec.GitHubAsset{Repo: "a/b"}}}, true, false},
-		{"oci relative", &spec.Package{Artifact: spec.Artifact{OCI: ":{{.Version}}"}}, true, true},
-		{"oci relative digest", &spec.Package{Artifact: spec.Artifact{OCI: "@{{.Version}}"}}, true, true},
-		{"oci absolute", &spec.Package{Artifact: spec.Artifact{OCI: "ghcr.io/other/pkg:{{.Version}}"}}, false, true},
+		{"url", &spec.Recipe{Artifact: spec.Artifact{URL: "https://example.com/{{.Version}}"}}, true, false},
+		{"github", &spec.Recipe{Artifact: spec.Artifact{GitHub: &spec.GitHubAsset{Repo: "a/b"}}}, true, false},
+		{"oci relative", &spec.Recipe{Artifact: spec.Artifact{OCI: ":{{.Version}}"}}, true, true},
+		{"oci relative digest", &spec.Recipe{Artifact: spec.Artifact{OCI: "@{{.Version}}"}}, true, true},
+		{"oci absolute", &spec.Recipe{Artifact: spec.Artifact{OCI: "ghcr.io/other/pkg:{{.Version}}"}}, false, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -31,6 +31,24 @@ func TestClassify(t *testing.T) {
 				t.Errorf("classify() = (%v, %v), want (%v, %v)", gotParticipates, gotPrebuilt, c.wantParticipates, c.wantPrebuilt)
 			}
 		})
+	}
+}
+
+func TestPlanVersionsDecidesPerVersion(t *testing.T) {
+	pkg := &spec.Package{
+		Base:     spec.Recipe{Artifact: spec.Artifact{OCI: ":{{.Version}}"}},
+		Frozen:   []spec.Recipe{{Prefix: "1", Artifact: spec.Artifact{URL: "https://example.com/{{.Version}}"}}},
+		Versions: []spec.VersionEntry{{Version: "2.0.0"}, {Version: "1.0.0"}},
+	}
+	got := planVersions(pkg)
+	if len(got) != 2 || got[0] != (versionPlan{version: "2.0.0", prebuilt: true}) || got[1] != (versionPlan{version: "1.0.0"}) {
+		t.Fatalf("planVersions() = %+v, want 2.0.0 prebuilt and 1.0.0 upstream", got)
+	}
+
+	pkg.Base = spec.Recipe{Artifact: spec.Artifact{OCI: "ghcr.io/other/pkg:{{.Version}}"}}
+	got = planVersions(pkg)
+	if len(got) != 1 || got[0] != (versionPlan{version: "1.0.0"}) {
+		t.Fatalf("planVersions() = %+v, want only the frozen upstream 1.0.0", got)
 	}
 }
 

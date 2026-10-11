@@ -377,3 +377,19 @@ func TestDiffNewVersionUnderBase(t *testing.T) {
 		t.Fatalf("added version only: %+v", res.Changes)
 	}
 }
+
+func TestDiffBuildFollowsFrozenSourceRecipeUnderPrebuiltBase(t *testing.T) {
+	prebuilt := `schema: 3
+name: gpgme
+artifact: {oci: ":{{.Version}}"}
+install: [{extract: {}}]
+versions: [2.2.0, 2.1.2, 1.24.3, 1.24.2]
+`
+	target := writeFrozenFixture(t, prebuilt, map[string]string{"recipe@1.yaml": diffFrozenRecipe})
+	base := writeFrozenFixture(t, prebuilt,
+		map[string]string{"recipe@1.yaml": strings.Replace(diffFrozenRecipe, `run: "old"`, `run: "older"`, 1)})
+	res := compare(t, base, target)
+	if len(res.Changes) != 1 || strings.Join(res.Changes[0].Diff, ",") != "1.24.3,1.24.2" || !res.Changes[0].Build {
+		t.Fatalf("frozen source-built edit must build the 1.x versions: %+v", res.Changes)
+	}
+}

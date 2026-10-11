@@ -419,14 +419,14 @@ func TestResolveDepsBuildRolesRunVsLink(t *testing.T) {
 	pkg := &spec.Package{
 		Schema: 2,
 		Name:   "tool",
-		Build: &spec.Build{
+		Base: spec.Recipe{Build: &spec.Build{
 			Deps: []spec.Dep{
 				{Name: "openssl", Kind: spec.DepKindLink},
 				{Name: "make"},
 			},
-		},
+		}},
 	}
-	res, err := resolve.Dependencies(context.Background(), pkg.Name, pkg.Platforms, pkg.Build.Deps, namedSources(root))
+	res, err := resolve.Dependencies(context.Background(), pkg.Name, pkg.Base.Platforms, pkg.Base.Build.Deps, namedSources(root))
 	if err != nil {
 		t.Fatalf("ResolveDeps: %v", err)
 	}
@@ -560,14 +560,14 @@ func TestResolveDepsBareBuildDepDefersToExactDep(t *testing.T) {
 	pkg := &spec.Package{
 		Schema: 2,
 		Name:   "tool",
-		Build: &spec.Build{
+		Base: spec.Recipe{Build: &spec.Build{
 			Deps: []spec.Dep{
 				{Name: "a"},
 				{Name: "b"},
 			},
-		},
+		}},
 	}
-	res, err := resolve.Dependencies(context.Background(), pkg.Name, pkg.Platforms, pkg.Build.Deps, namedSources(root))
+	res, err := resolve.Dependencies(context.Background(), pkg.Name, pkg.Base.Platforms, pkg.Base.Build.Deps, namedSources(root))
 	if err != nil {
 		t.Fatalf("ResolveDeps: %v", err)
 	}
@@ -681,11 +681,13 @@ func TestResolveDepsWalksTheGivenList(t *testing.T) {
 	pkg := &spec.Package{
 		Schema: 2,
 		Name:   "tool",
-		Deps:   []spec.Dep{{Name: "alpha"}},
-		Build:  &spec.Build{Deps: []spec.Dep{{Name: "beta"}}},
+		Base: spec.Recipe{
+			Deps:  []spec.Dep{{Name: "alpha"}},
+			Build: &spec.Build{Deps: []spec.Dep{{Name: "beta"}}},
+		},
 	}
 
-	res, err := resolve.Dependencies(context.Background(), pkg.Name, pkg.Platforms, pkg.Deps, namedSources(root))
+	res, err := resolve.Dependencies(context.Background(), pkg.Name, pkg.Base.Platforms, pkg.Base.Deps, namedSources(root))
 	if err != nil {
 		t.Fatalf("ResolveDeps: %v", err)
 	}

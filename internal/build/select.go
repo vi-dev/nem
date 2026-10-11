@@ -75,6 +75,15 @@ func SelectAll(ctx context.Context, t *Target) ([]Selection, error) {
 
 func buildable(r *spec.Recipe) bool { return r.Artifact.OCI != "" && r.Build != nil }
 
+func anyBuildable(pkg *spec.Package, versions []string) bool {
+	for _, v := range versions {
+		if r, err := pkg.Recipe(v); err == nil && buildable(r) {
+			return true
+		}
+	}
+	return false
+}
+
 func selection(pkg *spec.Package, version, reason string) (Selection, error) {
 	r, err := pkg.Recipe(version)
 	if err != nil {
@@ -197,11 +206,12 @@ func SelectMissing(ctx context.Context, t *Target, scope []spec.Ref) ([]Selectio
 			return nil, MissingStats{}, err
 		}
 		for _, pkg := range pkgs {
-			if !buildable(pkg.LatestRecipe()) {
+			versions := versionsOf(pkg)
+			if !anyBuildable(pkg, versions) {
 				stats.Skipped++
 				continue
 			}
-			candidates = append(candidates, candidate{pkg: pkg, versions: versionsOf(pkg)})
+			candidates = append(candidates, candidate{pkg: pkg, versions: versions})
 		}
 	}
 	for _, ref := range scope {
@@ -213,16 +223,16 @@ func SelectMissing(ctx context.Context, t *Target, scope []spec.Ref) ([]Selectio
 			}
 			return nil, MissingStats{}, err
 		}
-		if !buildable(pkg.LatestRecipe()) {
-			stats.Skipped++
-			continue
-		}
 		versions := versionsOf(pkg)
 		if ref.Version != "" {
 			if !pkg.HasEqualVersion(ref.Version) {
 				return nil, MissingStats{}, &catalog.VersionNotFoundError{Name: ref.Name, Version: ref.Version, Catalog: t.Ref}
 			}
 			versions = []string{ref.Version}
+		}
+		if !anyBuildable(pkg, versions) {
+			stats.Skipped++
+			continue
 		}
 		candidates = append(candidates, candidate{pkg: pkg, versions: versions})
 	}

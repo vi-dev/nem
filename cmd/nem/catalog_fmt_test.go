@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/vi-dev/nem/internal/spec"
+	"github.com/vi-dev/nem/internal/testx"
 )
 
 const fmtFixture = lintFixtureGoPkg
@@ -134,5 +135,21 @@ func TestCatalogFmtFormatsManifestPathAsFileCatalog(t *testing.T) {
 	}
 	if _, _, err := runNem(t, nemHome, "catalog", "fmt", recipe, "--package", "nosuch"); err == nil {
 		t.Fatal("--package with a non-matching name must error")
+	}
+}
+
+func TestCatalogFmtRewritesSchemaAndRecipeFiles(t *testing.T) {
+	dir := writeLintFixture(t, map[string]string{"tool": "schema: 2\nname: tool\nartifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\nversions: [2.0.0, 1.0.0]\n"})
+	testx.WriteFile(t, filepath.Join(dir, "pkgs", "tool", "recipe@1.yaml"), "artifact:   {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]")
+	if _, errb, err := runNem(t, t.TempDir(), "catalog", "fmt", dir); err != nil {
+		t.Fatalf("fmt: %v\n%s", err, errb)
+	}
+	pkg, _ := os.ReadFile(filepath.Join(dir, "pkgs", "tool", "pkg.yaml"))
+	if !strings.HasPrefix(string(pkg), "schema: 3\n") {
+		t.Fatalf("pkg.yaml: %q", pkg)
+	}
+	recipe, _ := os.ReadFile(filepath.Join(dir, "pkgs", "tool", "recipe@1.yaml"))
+	if !strings.HasSuffix(string(recipe), "\n") || strings.Contains(string(recipe), "artifact:   {") {
+		t.Fatalf("recipe not formatted: %q", recipe)
 	}
 }

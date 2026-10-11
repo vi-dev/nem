@@ -220,18 +220,15 @@ func lintTemplates(id string, pkg *spec.Package) []Finding {
 		if err != nil {
 			continue
 		}
-		scoped := *pkg
-		scoped.Artifact = r.Artifact
-		scoped.Build = r.Build
 		for _, plat := range r.SupportedBy() {
-			if _, err := scoped.ArtifactURL(v.Version, plat); err != nil {
+			if _, err := pkg.ArtifactURL(v.Version, plat); err != nil {
 				findings = append(findings, Finding{
 					Pkg: id,
 					Msg: fmt.Sprintf("artifact template for %s on %s: %v", v.Version, plat, err),
 				})
 			}
 			if r.Artifact.GitHub != nil {
-				if _, err := scoped.AssetName(v.Version, plat); err != nil {
+				if _, err := pkg.AssetName(v.Version, plat); err != nil {
 					findings = append(findings, Finding{
 						Pkg: id,
 						Msg: fmt.Sprintf("asset template for %s on %s: %v", v.Version, plat, err),

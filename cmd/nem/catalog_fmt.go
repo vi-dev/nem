@@ -58,18 +58,32 @@ func newCatalogFmtCmd() *cobra.Command {
 				return fmt.Errorf("no package manifests under %s", cat)
 			}
 			for _, name := range names {
-				data, err := editor.ReadManifest(ctx, name)
+				files, err := editor.ReadFiles(ctx, name)
 				if err != nil {
 					return err
 				}
-				formatted, err := spec.Format(data)
-				if err != nil {
+				formatted := spec.Files{Recipes: map[string][]byte{}}
+				if formatted.Pkg, err = spec.FormatPackage(files.Pkg); err != nil {
 					return fmt.Errorf("%s: %w", name, err)
 				}
-				if bytes.Equal(data, formatted) {
+				changed := !bytes.Equal(files.Pkg, formatted.Pkg)
+				if !changed {
+					formatted.Pkg = nil
+				}
+				for file, data := range files.Recipes {
+					out, err := spec.Format(data)
+					if err != nil {
+						return fmt.Errorf("%s: %s: %w", name, file, err)
+					}
+					if !bytes.Equal(data, out) {
+						formatted.Recipes[file] = out
+						changed = true
+					}
+				}
+				if !changed {
 					continue
 				}
-				if err := editor.UpdateManifest(ctx, name, formatted); err != nil {
+				if err := editor.WriteFiles(ctx, name, formatted); err != nil {
 					return err
 				}
 				console.Success("Formatted %s", name)

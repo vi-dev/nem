@@ -22,14 +22,14 @@ func mirrorPackage(ctx context.Context, opts Options, manifest ocix.TitledManife
 	task := rep.Task(label)
 	task.Segment("probing")
 
-	data, _, err := store.PkgBytes(ctx, manifest.Title)
+	files, _, err := store.Files(ctx, manifest.Title)
 	if err != nil {
 		agg.failed.Add(1)
 		rep.Warn("%s: %v", manifest.Title, err)
 		task.Fail(failedOutcome)
 		return
 	}
-	pkg, err := spec.Parse(data)
+	pkg, err := spec.ParseFiles(files)
 	if err != nil {
 		agg.failed.Add(1)
 		rep.Warn("%s: %v", manifest.Title, err)
@@ -37,8 +37,12 @@ func mirrorPackage(ctx context.Context, opts Options, manifest ocix.TitledManife
 		return
 	}
 
-	participates, prebuilt := classify(pkg)
-	if !participates || len(pkg.Versions) == 0 {
+	if len(pkg.Versions) == 0 {
+		task.Discard()
+		return
+	}
+	plans := planVersions(pkg)
+	if len(plans) == 0 {
 		task.Discard()
 		return
 	}
@@ -60,11 +64,17 @@ func mirrorPackage(ctx context.Context, opts Options, manifest ocix.TitledManife
 
 	copied := 0
 	failed := false
-	for _, v := range pkg.Versions {
+	for _, p := range plans {
 		if ctx.Err() != nil {
 			break
 		}
-		outcome := mirrorVersion(ctx, src, dst, manifest.Title, v.Version, prebuilt, opts.DryRun, task)
+		if p.err != nil {
+			rep.Warn("%s %s: %v", manifest.Title, p.version, p.err)
+			agg.failed.Add(1)
+			failed = true
+			continue
+		}
+		outcome := mirrorVersion(ctx, src, dst, manifest.Title, p.version, p.prebuilt, opts.DryRun, task)
 		if outcome == outcomeCancelled {
 			break
 		}
@@ -94,9 +104,30 @@ func mirrorPackage(ctx context.Context, opts Options, manifest ocix.TitledManife
 	}
 }
 
-func classify(pkg *spec.Package) (participates, prebuilt bool) {
-	if pkg.Artifact.OCI != "" {
-		return ociRefIsRelative(pkg.Artifact.OCI), true
+type versionPlan struct {
+	version  string
+	prebuilt bool
+	err      error
+}
+
+func planVersions(pkg *spec.Package) []versionPlan {
+	var plans []versionPlan
+	for _, v := range pkg.Versions {
+		r, err := pkg.Recipe(v.Version)
+		if err != nil {
+			plans = append(plans, versionPlan{version: v.Version, err: err})
+			continue
+		}
+		if participates, prebuilt := classify(r); participates {
+			plans = append(plans, versionPlan{version: v.Version, prebuilt: prebuilt})
+		}
+	}
+	return plans
+}
+
+func classify(r *spec.Recipe) (participates, prebuilt bool) {
+	if r.Artifact.OCI != "" {
+		return ociRefIsRelative(r.Artifact.OCI), true
 	}
 	return true, false
 }

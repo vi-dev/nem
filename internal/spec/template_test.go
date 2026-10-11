@@ -7,7 +7,7 @@ import (
 
 func TestArtifactURL(t *testing.T) {
 	p := valid()
-	p.Artifact.URL = "https://go.dev/dl/go{{.Version}}.{{.OS}}-{{.Arch}}.tar.gz"
+	p.Base.Artifact.URL = "https://go.dev/dl/go{{.Version}}.{{.OS}}-{{.Arch}}.tar.gz"
 	got, err := p.ArtifactURL("1.26.5", Platform{"darwin", "arm64"})
 	if err != nil {
 		t.Fatalf("ArtifactURL: %v", err)
@@ -20,7 +20,7 @@ func TestArtifactURL(t *testing.T) {
 
 func TestTemplateHelpers(t *testing.T) {
 	p := valid()
-	p.Artifact.URL = `https://x/{{trimPrefix .Version "v"}}/{{replace .OS "darwin" "macos"}}`
+	p.Base.Artifact.URL = `https://x/{{trimPrefix .Version "v"}}/{{replace .OS "darwin" "macos"}}`
 	got, err := p.ArtifactURL("v1.0.0", Platform{"darwin", "arm64"})
 	if err != nil {
 		t.Fatalf("ArtifactURL: %v", err)
@@ -32,7 +32,7 @@ func TestTemplateHelpers(t *testing.T) {
 
 func TestTemplateUnknownKeyErrors(t *testing.T) {
 	p := valid()
-	p.Artifact.URL = "https://x/{{.Bogus}}"
+	p.Base.Artifact.URL = "https://x/{{.Bogus}}"
 	if _, err := p.ArtifactURL("v1", Platform{"linux", "amd64"}); err == nil {
 		t.Fatal("want error for unknown template key")
 	}
@@ -40,7 +40,7 @@ func TestTemplateUnknownKeyErrors(t *testing.T) {
 
 func TestAssetName(t *testing.T) {
 	p := valid()
-	p.Artifact = Artifact{GitHub: &GitHubAsset{Repo: "golang/go", Asset: "go{{.Version}}.{{.OS}}-{{.Arch}}.tar.gz"}}
+	p.Base.Artifact = Artifact{GitHub: &GitHubAsset{Repo: "golang/go", Asset: "go{{.Version}}.{{.OS}}-{{.Arch}}.tar.gz"}}
 	got, err := p.AssetName("1.26.5", Platform{"linux", "amd64"})
 	if err != nil || got != "go1.26.5.linux-amd64.tar.gz" {
 		t.Fatalf("AssetName: %q, %v", got, err)
@@ -121,7 +121,7 @@ func TestExpandActionPaths(t *testing.T) {
 
 func TestVersionHelpers(t *testing.T) {
 	p := valid()
-	p.Artifact.URL = "https://x/{{versionMajor .Version}}/{{versionMajorMinor .Version}}/julia-{{.Version}}.tar.gz"
+	p.Base.Artifact.URL = "https://x/{{versionMajor .Version}}/{{versionMajorMinor .Version}}/julia-{{.Version}}.tar.gz"
 	got, err := p.ArtifactURL("1.12.1", Platform{"linux", "amd64"})
 	if err != nil {
 		t.Fatalf("ArtifactURL: %v", err)
@@ -133,7 +133,7 @@ func TestVersionHelpers(t *testing.T) {
 
 func TestVersionHelpersShortInput(t *testing.T) {
 	p := valid()
-	p.Artifact.URL = "https://x/{{versionMajorMinor .Version}}"
+	p.Base.Artifact.URL = "https://x/{{versionMajorMinor .Version}}"
 	got, err := p.ArtifactURL("7", Platform{"linux", "amd64"})
 	if err != nil {
 		t.Fatalf("ArtifactURL: %v", err)
@@ -145,7 +145,7 @@ func TestVersionHelpersShortInput(t *testing.T) {
 
 func TestArtifactURLMeta(t *testing.T) {
 	p := valid()
-	p.Artifact.URL = "https://x/{{.Meta.date}}/py-{{.Version}}.tar.gz"
+	p.Base.Artifact.URL = "https://x/{{.Meta.date}}/py-{{.Version}}.tar.gz"
 	p.Versions = []VersionEntry{{
 		Version: "3.14.7",
 		Meta:    map[string]string{"date": "20260814"},
@@ -162,7 +162,7 @@ func TestArtifactURLMeta(t *testing.T) {
 
 func TestArtifactURLMetaMissingKey(t *testing.T) {
 	p := valid()
-	p.Artifact.URL = "https://x/{{.Meta.date}}/py-{{.Version}}.tar.gz"
+	p.Base.Artifact.URL = "https://x/{{.Meta.date}}/py-{{.Version}}.tar.gz"
 	if _, err := p.ArtifactURL("v1.0.0", Platform{"darwin", "arm64"}); err == nil {
 		t.Fatal("want error when version has no meta for template key")
 	}

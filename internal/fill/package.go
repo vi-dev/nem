@@ -26,14 +26,14 @@ func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledM
 	task := rep.Task(label)
 	task.Segment("probing")
 
-	data, _, err := store.PkgBytes(ctx, nm.Title)
+	files, _, err := store.Files(ctx, nm.Title)
 	if err != nil {
 		agg.failed.Add(1)
 		rep.Warn("%s: %v", nm.Title, err)
 		task.Fail(failedOutcome)
 		return
 	}
-	pkg, err := spec.Parse(data)
+	pkg, err := spec.ParseFiles(files)
 	if err != nil {
 		agg.failed.Add(1)
 		rep.Warn("%s: %v", nm.Title, err)
@@ -41,12 +41,12 @@ func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledM
 		return
 	}
 
-	if pkg.Artifact.OCI != "" {
-		agg.notFillable.Add(1)
+	if len(pkg.Versions) == 0 {
 		task.Discard()
 		return
 	}
-	if len(pkg.Versions) == 0 {
+	if !anyFillable(pkg) {
+		agg.notFillable.Add(1)
 		task.Discard()
 		return
 	}
@@ -62,9 +62,19 @@ func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledM
 	filled, healed := 0, 0
 	failed := false
 	for _, v := range pkg.Versions {
+		r, err := pkg.Recipe(v.Version)
+		if err != nil {
+			rep.Warn("%s %s: %v", nm.Title, v.Version, err)
+			failed = true
+			agg.failed.Add(1)
+			continue
+		}
+		if r.Artifact.OCI != "" {
+			continue
+		}
 		cancelled := false
 		var batch []batchedManifest
-		for _, plat := range pkg.SupportedBy() {
+		for _, plat := range r.SupportedBy() {
 			if ctx.Err() != nil {
 				cancelled = true
 				break
@@ -142,6 +152,15 @@ func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledM
 	default:
 		task.Discard()
 	}
+}
+
+func anyFillable(pkg *spec.Package) bool {
+	for _, v := range pkg.Versions {
+		if r, err := pkg.Recipe(v.Version); err != nil || r.Artifact.OCI == "" {
+			return true
+		}
+	}
+	return false
 }
 
 type itemOutcome int

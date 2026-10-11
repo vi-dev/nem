@@ -16,10 +16,6 @@ var TagRE = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$`)
 
 var metaKeyRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
 
-func (p *Package) SupportedBy() []Platform {
-	return (&Recipe{Platforms: p.Platforms}).SupportedBy()
-}
-
 func validateHTTPURL(s string) error {
 	u, err := url.Parse(s)
 	if err != nil {

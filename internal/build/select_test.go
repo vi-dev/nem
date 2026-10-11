@@ -446,7 +446,7 @@ func TestSelectBarePackageNameTakesTheLatestVersion(t *testing.T) {
 	if sels[0].Version != "v2.0.0" || sels[0].Reason != "forced" {
 		t.Fatalf("selection = %+v, want the spec's first version selected as forced", sels[0])
 	}
-	if !platformsEqual(sels[0].Platforms, sels[0].Pkg.SupportedBy()) {
+	if !platformsEqual(sels[0].Platforms, sels[0].Pkg.Base.SupportedBy()) {
 		t.Fatalf("Platforms = %v, want every platform the package supports", sels[0].Platforms)
 	}
 }
@@ -644,5 +644,26 @@ func TestSelectMissingSkipsVersionsWhoseRecipeIsNotBuildable(t *testing.T) {
 	}
 	if len(sels) == 0 {
 		t.Fatal("2.0.0 is missing on every platform and must be selected")
+	}
+}
+
+func TestSelectMissingSelectsVersionsOfAFrozenBuildableRecipe(t *testing.T) {
+	dir := t.TempDir()
+	prebuilt := "schema: 3\nname: zb\nartifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\nversions: [2.0.0, 1.0.0]\n"
+	testx.WriteFile(t, filepath.Join(dir, "pkgs", "zb", "pkg.yaml"), prebuilt)
+	testx.WriteFile(t, filepath.Join(dir, "pkgs", "zb", "recipe@1.yaml"), selectFrozen)
+	target, err := build.OpenTarget(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, scope := range [][]spec.Ref{nil, {{Name: "zb"}}} {
+		sels, stats, err := build.SelectMissing(context.Background(), target, scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stats.Checked != 1 || stats.Skipped != 0 {
+			t.Fatalf("scope %v: stats = %+v, want zb checked", scope, stats)
+		}
+		assertReasons(t, sels, map[string]string{"zb@1.0.0": "missing archive"})
 	}
 }

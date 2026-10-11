@@ -573,7 +573,7 @@ func TestRunLeavesOldLayoutAloneWithoutLinkDeps(t *testing.T) {
 func TestRunRelinksInstalledDependents(t *testing.T) {
 	h := testx.Home(t)
 	app := copyToolPkg("app")
-	app.Deps = []spec.Dep{{Name: "zlib", Kind: spec.DepKindLink}}
+	app.Base.Deps = []spec.Dep{{Name: "zlib", Kind: spec.DepKindLink}}
 	artifact := filepath.Join(t.TempDir(), "artifact")
 	if err := os.WriteFile(artifact, []byte("bytes"), 0o644); err != nil {
 		t.Fatal(err)
@@ -604,7 +604,7 @@ func TestRunRelinksInstalledDependents(t *testing.T) {
 func TestRunLeavesLinksAloneWhenAnInstallFails(t *testing.T) {
 	h := testx.Home(t)
 	app := copyToolPkg("app")
-	app.Deps = []spec.Dep{{Name: "zlib", Kind: spec.DepKindLink}}
+	app.Base.Deps = []spec.Dep{{Name: "zlib", Kind: spec.DepKindLink}}
 	artifact := filepath.Join(t.TempDir(), "artifact")
 	if err := os.WriteFile(artifact, []byte("bytes"), 0o644); err != nil {
 		t.Fatal(err)

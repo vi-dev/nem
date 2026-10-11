@@ -141,18 +141,16 @@ func UpstreamURL(pkg *spec.Package, version string, plat spec.Platform) (string,
 	if err != nil {
 		return "", err
 	}
-	scoped := *pkg
-	scoped.Artifact = r.Artifact
 	var url string
 	switch {
 	case r.Artifact.GitHub != nil:
-		asset, err := scoped.AssetName(version, plat)
+		asset, err := pkg.AssetName(version, plat)
 		if err != nil {
 			return "", err
 		}
 		url = GitHubURL(r.Artifact.GitHub.Repo, version, asset)
 	case r.Artifact.URL != "":
-		u, err := scoped.ArtifactURL(version, plat)
+		u, err := pkg.ArtifactURL(version, plat)
 		if err != nil {
 			return "", err
 		}

@@ -69,14 +69,9 @@ func (s *Store) Files(ctx context.Context, name string) (spec.Files, string, err
 	}
 	files, err := FetchFiles(ctx, s.target, m)
 	if err != nil {
-		return spec.Files{}, "", fmt.Errorf("load %s for %s: %w", spec.PkgFileName, name, err)
+		return spec.Files{}, "", fmt.Errorf("load package files for %s: %w", name, err)
 	}
 	return files, m.Digest.String(), nil
-}
-
-func (s *Store) PkgBytes(ctx context.Context, name string) ([]byte, string, error) {
-	files, dig, err := s.Files(ctx, name)
-	return files.Pkg, dig, err
 }
 
 func (s *Store) CopyTo(ctx context.Context, dst oras.Target, dstRef string, progress ProgressFunc) (ocispec.Descriptor, error) {
@@ -218,9 +213,4 @@ func FetchFiles(ctx context.Context, src oras.ReadOnlyTarget, man ocispec.Descri
 		return spec.Files{}, errors.New("manifest has no pkg.yaml layer")
 	}
 	return files, nil
-}
-
-func FetchPkgBytes(ctx context.Context, src oras.ReadOnlyTarget, man ocispec.Descriptor) ([]byte, error) {
-	files, err := FetchFiles(ctx, src, man)
-	return files.Pkg, err
 }

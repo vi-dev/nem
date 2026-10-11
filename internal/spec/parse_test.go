@@ -47,19 +47,19 @@ func TestParseFull(t *testing.T) {
 	if p.Name != "go" || p.Schema != 2 {
 		t.Fatalf("basic fields: %+v", p)
 	}
-	if len(p.Deps) != 2 || p.Deps[0].Name != "git" || p.Deps[1].Version != "v6.5" {
-		t.Fatalf("deps: %+v", p.Deps)
+	if len(p.Base.Deps) != 2 || p.Base.Deps[0].Name != "git" || p.Base.Deps[1].Version != "v6.5" {
+		t.Fatalf("deps: %+v", p.Base.Deps)
 	}
 	if p.VersionDiscovery == nil || p.VersionDiscovery.GitHub.Prefix != "go" {
 		t.Fatalf("discovery: %+v", p.VersionDiscovery)
 	}
-	if len(p.Install) != 4 || p.Install[0].Extract.Strip != 1 ||
-		p.Install[1].Copy.Dst != "bin/gofmt" || p.Install[2].Move.Dst != "go" ||
-		p.Install[3].Mkdir != "cache" {
-		t.Fatalf("install: %+v", p.Install)
+	if len(p.Base.Install) != 4 || p.Base.Install[0].Extract.Strip != 1 ||
+		p.Base.Install[1].Copy.Dst != "bin/gofmt" || p.Base.Install[2].Move.Dst != "go" ||
+		p.Base.Install[3].Mkdir != "cache" {
+		t.Fatalf("install: %+v", p.Base.Install)
 	}
-	if p.Install[1].Copy.Mode != 0o755 {
-		t.Fatalf("copy mode: got %o, want %o", p.Install[1].Copy.Mode, uint32(0o755))
+	if p.Base.Install[1].Copy.Mode != 0o755 {
+		t.Fatalf("copy mode: got %o, want %o", p.Base.Install[1].Copy.Mode, uint32(0o755))
 	}
 	if len(p.Versions) != 1 || p.Versions[0].Sha256["linux/amd64"] != "bbb" ||
 		p.Versions[0].SourceSha256 != "ccc" {
@@ -85,8 +85,8 @@ versions:
 	if p.Versions[0].Version != "v1.0.0" || p.Versions[0].Sha256 != nil {
 		t.Fatalf("bare scalar entry: %+v", p.Versions[0])
 	}
-	if len(p.Bins) != 1 || p.Bins[0] != "bin" {
-		t.Fatalf("bins default: %+v", p.Bins)
+	if len(p.Base.Bins) != 1 || p.Base.Bins[0] != "bin" {
+		t.Fatalf("bins default: %+v", p.Base.Bins)
 	}
 }
 
@@ -225,17 +225,17 @@ versions: [v1.0.0]
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if len(p.Install[0].Platforms) != 1 || p.Install[0].Platforms[0] != (Platform{OS: "linux"}) {
-		t.Fatalf("extract platforms: %+v", p.Install[0].Platforms)
+	if len(p.Base.Install[0].Platforms) != 1 || p.Base.Install[0].Platforms[0] != (Platform{OS: "linux"}) {
+		t.Fatalf("extract platforms: %+v", p.Base.Install[0].Platforms)
 	}
-	if len(p.Install[1].Platforms) != 1 || p.Install[1].Platforms[0] != (Platform{OS: "darwin", Arch: "arm64"}) {
-		t.Fatalf("copy platforms: %+v", p.Install[1].Platforms)
+	if len(p.Base.Install[1].Platforms) != 1 || p.Base.Install[1].Platforms[0] != (Platform{OS: "darwin", Arch: "arm64"}) {
+		t.Fatalf("copy platforms: %+v", p.Base.Install[1].Platforms)
 	}
-	if len(p.Install[2].Platforms) != 2 || p.Install[2].Mkdir != "cache" {
-		t.Fatalf("mkdir action: %+v", p.Install[2])
+	if len(p.Base.Install[2].Platforms) != 2 || p.Base.Install[2].Mkdir != "cache" {
+		t.Fatalf("mkdir action: %+v", p.Base.Install[2])
 	}
-	if p.Install[3].Platforms != nil {
-		t.Fatalf("unconstrained action platforms: %+v", p.Install[3].Platforms)
+	if p.Base.Install[3].Platforms != nil {
+		t.Fatalf("unconstrained action platforms: %+v", p.Base.Install[3].Platforms)
 	}
 }
 
@@ -276,14 +276,14 @@ versions: [v1.0.0]
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if len(p.Build.Steps) != 2 {
-		t.Fatalf("steps: %+v", p.Build.Steps)
+	if len(p.Base.Build.Steps) != 2 {
+		t.Fatalf("steps: %+v", p.Base.Build.Steps)
 	}
-	if len(p.Build.Steps[0].Platforms) != 1 || p.Build.Steps[0].Platforms[0] != (Platform{OS: "linux"}) {
-		t.Fatalf("step platforms: %+v", p.Build.Steps[0])
+	if len(p.Base.Build.Steps[0].Platforms) != 1 || p.Base.Build.Steps[0].Platforms[0] != (Platform{OS: "linux"}) {
+		t.Fatalf("step platforms: %+v", p.Base.Build.Steps[0])
 	}
-	if p.Build.Steps[1].Run != "make install" || p.Build.Steps[1].Platforms != nil {
-		t.Fatalf("unconstrained step: %+v", p.Build.Steps[1])
+	if p.Base.Build.Steps[1].Run != "make install" || p.Base.Build.Steps[1].Platforms != nil {
+		t.Fatalf("unconstrained step: %+v", p.Base.Build.Steps[1])
 	}
 }
 
@@ -307,14 +307,14 @@ versions:
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if len(pkg.Libs) != 1 || pkg.Libs[0] != "lib" {
-		t.Fatalf("Libs = %v, want [lib]", pkg.Libs)
+	if len(pkg.Base.Libs) != 1 || pkg.Base.Libs[0] != "lib" {
+		t.Fatalf("Libs = %v, want [lib]", pkg.Base.Libs)
 	}
-	if pkg.Deps[0].Kind != DepKindRun {
-		t.Fatalf("gpg dep kind = %q, want run (default)", pkg.Deps[0].Kind)
+	if pkg.Base.Deps[0].Kind != DepKindRun {
+		t.Fatalf("gpg dep kind = %q, want run (default)", pkg.Base.Deps[0].Kind)
 	}
-	if pkg.Deps[1].Kind != DepKindLink || pkg.Deps[1].Compat != "3" {
-		t.Fatalf("openssl dep = %+v, want kind=link compat=3", pkg.Deps[1])
+	if pkg.Base.Deps[1].Kind != DepKindLink || pkg.Base.Deps[1].Compat != "3" {
+		t.Fatalf("openssl dep = %+v, want kind=link compat=3", pkg.Base.Deps[1])
 	}
 }
 
@@ -352,15 +352,15 @@ versions: [v1.0.0]
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if p.Build.Normalize != nil {
-		t.Fatalf("absent normalize must parse to nil, got %v", *p.Build.Normalize)
+	if p.Base.Build.Normalize != nil {
+		t.Fatalf("absent normalize must parse to nil, got %v", *p.Base.Build.Normalize)
 	}
 	p, err = Parse([]byte(strings.Replace(src, "  output: out", "  output: out\n  normalize: false", 1)))
 	if err != nil {
 		t.Fatalf("Parse with normalize: %v", err)
 	}
-	if p.Build.Normalize == nil || *p.Build.Normalize {
-		t.Fatalf("normalize: false must parse to *false, got %v", p.Build.Normalize)
+	if p.Base.Build.Normalize == nil || *p.Base.Build.Normalize {
+		t.Fatalf("normalize: false must parse to *false, got %v", p.Base.Build.Normalize)
 	}
 }
 
@@ -390,23 +390,23 @@ func TestParseTestSteps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if len(p.Test) != 2 {
-		t.Fatalf("want 2 test steps, got %d", len(p.Test))
+	if len(p.Base.Test) != 2 {
+		t.Fatalf("want 2 test steps, got %d", len(p.Base.Test))
 	}
-	if p.Test[0].Run != "rg --version\n" && p.Test[0].Run != "rg --version" {
-		t.Fatalf("step 0 run = %q", p.Test[0].Run)
+	if p.Base.Test[0].Run != "rg --version\n" && p.Base.Test[0].Run != "rg --version" {
+		t.Fatalf("step 0 run = %q", p.Base.Test[0].Run)
 	}
-	if len(p.Test[0].Platforms) != 0 {
-		t.Fatalf("step 0 should be unconstrained, got %v", p.Test[0].Platforms)
+	if len(p.Base.Test[0].Platforms) != 0 {
+		t.Fatalf("step 0 should be unconstrained, got %v", p.Base.Test[0].Platforms)
 	}
-	if !strings.Contains(p.Test[1].Run, "printf") {
-		t.Fatalf("step 1 run = %q", p.Test[1].Run)
+	if !strings.Contains(p.Base.Test[1].Run, "printf") {
+		t.Fatalf("step 1 run = %q", p.Base.Test[1].Run)
 	}
-	if len(p.Test[1].Platforms) != 2 {
-		t.Fatalf("want 2 platforms on step 1, got %v", p.Test[1].Platforms)
+	if len(p.Base.Test[1].Platforms) != 2 {
+		t.Fatalf("want 2 platforms on step 1, got %v", p.Base.Test[1].Platforms)
 	}
-	if p.Test[1].Platforms[0] != (Platform{OS: "linux", Arch: "amd64"}) {
-		t.Fatalf("step 1 platform 0 = %v", p.Test[1].Platforms[0])
+	if p.Base.Test[1].Platforms[0] != (Platform{OS: "linux", Arch: "amd64"}) {
+		t.Fatalf("step 1 platform 0 = %v", p.Base.Test[1].Platforms[0])
 	}
 }
 
@@ -415,8 +415,8 @@ func TestParseNoTestSection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if p.Test != nil {
-		t.Fatalf("want nil Test with no test: key, got %v", p.Test)
+	if p.Base.Test != nil {
+		t.Fatalf("want nil Test with no test: key, got %v", p.Base.Test)
 	}
 }
 

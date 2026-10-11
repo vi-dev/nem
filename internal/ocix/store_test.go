@@ -55,13 +55,13 @@ func TestSyncAndLoad(t *testing.T) {
 		t.Fatalf("Packages: %+v", pkgs)
 	}
 
-	data, mdig, err := s.PkgBytes(ctx, "go")
-	if err != nil || string(data) != string(goYAML) || !strings.HasPrefix(mdig, "sha256:") {
-		t.Fatalf("PkgBytes: %q, %q, %v", data, mdig, err)
+	files, mdig, err := s.Files(ctx, "go")
+	if err != nil || string(files.Pkg) != string(goYAML) || !strings.HasPrefix(mdig, "sha256:") {
+		t.Fatalf("Files: %q, %q, %v", files.Pkg, mdig, err)
 	}
 
 	var nf *ocix.PkgNotInIndexError
-	if _, _, err := s.PkgBytes(ctx, "absent"); !errors.As(err, &nf) {
+	if _, _, err := s.Files(ctx, "absent"); !errors.As(err, &nf) {
 		t.Fatalf("want PkgNotInIndexError, got %v", err)
 	}
 }
@@ -149,7 +149,7 @@ func TestSyncIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestFetchPkgBytesReturnsLayer(t *testing.T) {
+func TestFetchFilesReturnsPkgLayer(t *testing.T) {
 	store, err := oci.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -163,16 +163,17 @@ func TestFetchPkgBytesReturnsLayer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := ocix.FetchPkgBytes(context.Background(), store, idx.Manifests[0])
+	files, err := ocix.FetchFiles(context.Background(), store, idx.Manifests[0])
 	if err != nil {
-		t.Fatalf("FetchPkgBytes: %v", err)
+		t.Fatalf("FetchFiles: %v", err)
 	}
+	got := files.Pkg
 	if !bytes.Equal(got, yaml) {
 		t.Fatalf("bytes = %q, want %q", got, yaml)
 	}
 }
 
-func TestFetchPkgBytesRejectsManifestWithoutPkgLayer(t *testing.T) {
+func TestFetchFilesRejectsManifestWithoutPkgLayer(t *testing.T) {
 	store, err := oci.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -192,8 +193,8 @@ func TestFetchPkgBytesRejectsManifestWithoutPkgLayer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := ocix.FetchPkgBytes(context.Background(), store, archIdx.Manifests[0]); err == nil {
-		t.Fatal("FetchPkgBytes accepted a manifest without a pkg.yaml layer, want error")
+	if _, err := ocix.FetchFiles(context.Background(), store, archIdx.Manifests[0]); err == nil {
+		t.Fatal("FetchFiles accepted a manifest without a pkg.yaml layer, want error")
 	}
 }
 

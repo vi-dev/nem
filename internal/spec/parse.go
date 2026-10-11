@@ -143,7 +143,6 @@ func ParseFiles(f Files) (*Package, error) {
 		return nil, err
 	}
 	p.Base = base
-	p.mirrorBase()
 	for _, name := range f.Names() {
 		prefix, ok := ParseRecipeFileName(name)
 		if !ok {
@@ -164,11 +163,6 @@ func ParseFiles(f Files) (*Package, error) {
 		return CompareVersions(p.Frozen[i].Prefix, p.Frozen[j].Prefix) < 0
 	})
 	return p, nil
-}
-
-func (p *Package) mirrorBase() {
-	p.Platforms, p.Deps, p.Artifact, p.Install = p.Base.Platforms, p.Base.Deps, p.Base.Artifact, p.Base.Install
-	p.Bins, p.Libs, p.Env, p.Build, p.Test = p.Base.Bins, p.Base.Libs, p.Base.Env, p.Base.Build, p.Base.Test
 }
 
 func shapeRecipe(raw rawRecipe) (Recipe, error) {

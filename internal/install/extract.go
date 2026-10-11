@@ -13,10 +13,8 @@ func extract(artifactPath string, root *os.Root, strip int, singleName string) e
 }
 
 func singleFileName(r *spec.Recipe, pkg *spec.Package, version string, plat spec.Platform) string {
-	scoped := *pkg
-	scoped.Artifact = r.Artifact
 	if r.Artifact.GitHub != nil {
-		name, err := scoped.AssetName(version, plat)
+		name, err := pkg.AssetName(version, plat)
 		if err != nil {
 			return ""
 		}
@@ -25,7 +23,7 @@ func singleFileName(r *spec.Recipe, pkg *spec.Package, version string, plat spec
 	if r.Artifact.URL == "" {
 		return ""
 	}
-	raw, err := scoped.ArtifactURL(version, plat)
+	raw, err := pkg.ArtifactURL(version, plat)
 	if err != nil {
 		return ""
 	}

@@ -6,17 +6,8 @@ type Package struct {
 	Description      string
 	Homepage         string
 	License          string
-	Platforms        []Platform
-	Deps             []Dep
 	Versions         []VersionEntry
 	VersionDiscovery *Discovery
-	Artifact         Artifact
-	Install          []Action
-	Bins             []string
-	Libs             []string
-	Env              []EnvExport
-	Build            *Build
-	Test             []TestStep
 	Base             Recipe
 	Frozen           []Recipe
 }

@@ -18,7 +18,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/discover"
+	"github.com/vi-dev/nem/internal/fetch"
 	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
@@ -987,5 +989,64 @@ func TestBumpCancellationEndsTasksAsCancelled(t *testing.T) {
 	}
 	if warns := rep.Warns(); len(warns) != 0 {
 		t.Fatalf("cancellation must not warn, got %v", warns)
+	}
+}
+
+func TestBumpBackportHashesFrozenRecipePlatformsOnly(t *testing.T) {
+	dir := t.TempDir()
+	testx.WriteFile(t, filepath.Join(dir, "pkgs", "tool", "pkg.yaml"),
+		"schema: 3\nname: tool\nartifact: {url: \"https://example.com/{{.Version}}-{{.OS}}-{{.Arch}}\"}\ninstall: [{extract: {}}]\n"+
+			"versions:\n  - version: 2.0.0\n    sha256: {darwin/arm64: a, darwin/amd64: a, linux/arm64: a, linux/amd64: a}\n")
+	testx.WriteFile(t, filepath.Join(dir, "pkgs", "tool", "recipe@1.yaml"),
+		"artifact: {url: \"https://example.com/{{.Version}}-{{.OS}}-{{.Arch}}\"}\ninstall: [{extract: {}}]\nplatforms: [linux/amd64]\n")
+	var hashed []string
+	testx.Swap(t, &digestURL, func(_ context.Context, _ *http.Client, url string, _ fetch.Meta, _ report.Task) (string, error) {
+		hashed = append(hashed, url)
+		return "b", nil
+	})
+	res, err := Run(context.Background(), dir, Options{Packages: refs(t, "tool@1.0.1")})
+	if err != nil || res.Failed() != 0 {
+		t.Fatalf("Run: %+v, %v", res, err)
+	}
+	if len(hashed) != 1 || !strings.HasSuffix(hashed[0], "1.0.1-linux-amd64") {
+		t.Fatalf("backport under recipe@1 must hash linux/amd64 only: %v", hashed)
+	}
+	pkg, _, err := catalog.NewDir(dir).Package(context.Background(), "tool")
+	if err != nil {
+		t.Fatalf("edited catalog must validate with the frozen recipe: %v", err)
+	}
+	if !pkg.HasEqualVersion("1.0.1") {
+		t.Fatal("1.0.1 not added")
+	}
+}
+
+func TestBumpBackportProbesMetaInTheFrozenRecipe(t *testing.T) {
+	dir := t.TempDir()
+	testx.WriteFile(t, filepath.Join(dir, "pkgs", "tool", "pkg.yaml"),
+		"schema: 3\nname: tool\nartifact: {url: \"https://example.com/{{.Version}}-{{.OS}}-{{.Arch}}\"}\ninstall: [{extract: {}}]\n"+
+			"versionDiscovery: {github: {repo: a/tool}}\n"+
+			"versions:\n  - version: 2.0.0\n    sha256: {darwin/arm64: a, darwin/amd64: a, linux/arm64: a, linux/amd64: a}\n"+
+			"  - version: 1.24.3\n    meta: {date: \"20250101\"}\n    sha256: {linux/amd64: a}\n")
+	testx.WriteFile(t, filepath.Join(dir, "pkgs", "tool", "recipe@1.yaml"),
+		"artifact: {url: \"https://example.com/{{.Version}}-{{.OS}}-{{.Arch}}?d={{.Meta.date}}\"}\ninstall: [{extract: {}}]\nplatforms: [linux/amd64]\n")
+	discovered := false
+	stubListFunc(t, func(context.Context, *spec.Package) ([]discover.Discovered, error) {
+		discovered = true
+		return []discover.Discovered{{Version: "1.24.4", Meta: map[string]string{"date": "20260101"}}}, nil
+	})
+	var hashed []string
+	testx.Swap(t, &digestURL, func(_ context.Context, _ *http.Client, url string, _ fetch.Meta, _ report.Task) (string, error) {
+		hashed = append(hashed, url)
+		return "b", nil
+	})
+	res, err := Run(context.Background(), dir, Options{Packages: refs(t, "tool@1.24.4")})
+	if err != nil || res.Failed() != 0 {
+		t.Fatalf("Run: %+v, %v", res, err)
+	}
+	if !discovered {
+		t.Fatal("a backport under a recipe using .Meta must run discovery")
+	}
+	if len(hashed) != 1 || !strings.HasSuffix(hashed[0], "?d=20260101") {
+		t.Fatalf("backport must hash the meta-expanded URL: %v", hashed)
 	}
 }

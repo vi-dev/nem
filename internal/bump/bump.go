@@ -160,11 +160,11 @@ func bumpOne(ctx context.Context, editor catalog.Editor, j job, opts Options, ex
 		task.Fail("Failed to bump " + row.Name)
 		return row
 	}
-	data, err := editor.ReadManifest(ctx, j.name)
+	files, err := editor.ReadFiles(ctx, j.name)
 	if err != nil {
 		return fail(err)
 	}
-	pkg, err := spec.Parse(data)
+	pkg, err := spec.ParseFiles(files)
 	if err != nil {
 		return fail(err)
 	}
@@ -178,7 +178,7 @@ func bumpOne(ctx context.Context, editor catalog.Editor, j job, opts Options, ex
 		task.Discard()
 		return nil
 	}
-	if err := spec.ValidateEditable(data); err != nil {
+	if err := spec.ValidateEditable(files.Pkg); err != nil {
 		return fail(err)
 	}
 
@@ -222,7 +222,7 @@ func bumpOne(ctx context.Context, editor catalog.Editor, j job, opts Options, ex
 		task.Done(resultLine("Would bump", "Would backfill", pkg.Name, current, row.Head, targets))
 		return row
 	}
-	added, head, err := apply(ctx, editor, pkg.Name, data, pkg, targets, metas, task, row)
+	added, head, err := apply(ctx, editor, pkg.Name, files, pkg, targets, metas, task, row)
 	if err != nil {
 		return fail(err)
 	}
@@ -248,9 +248,9 @@ func displayVersion(v string) string {
 	return v
 }
 
-func apply(ctx context.Context, editor catalog.Editor, name string, data []byte, pkg *spec.Package, targets []string, metas map[string]map[string]string, task report.Task, row *Row) ([]string, string, error) {
+func apply(ctx context.Context, editor catalog.Editor, name string, files spec.Files, pkg *spec.Package, targets []string, metas map[string]map[string]string, task report.Task, row *Row) ([]string, string, error) {
 	rep := report.FromContext(ctx)
-	edited := data
+	edited := files.Pkg
 	var added []string
 	var lastErr error
 	for _, target := range targets {
@@ -271,7 +271,11 @@ func apply(ctx context.Context, editor catalog.Editor, name string, data []byte,
 			return nil, "", err
 		}
 		added = append(added, target)
-		if pkg.Build != nil && len(pkg.Versions) > 0 && spec.CompareVersions(target, pkg.Versions[0].Version) < 0 {
+		covering, err := withVersion(pkg, target, nil).Recipe(target)
+		if err != nil {
+			return nil, "", err
+		}
+		if covering.Build != nil && len(pkg.Versions) > 0 && spec.CompareVersions(target, pkg.Versions[0].Version) < 0 {
 			rep.Warn("%s %s: source-built, archive not published yet", pkg.Name, target)
 			row.Unpublished = append(row.Unpublished, target)
 		}
@@ -280,7 +284,7 @@ func apply(ctx context.Context, editor catalog.Editor, name string, data []byte,
 		return nil, "", fmt.Errorf("no versions could be added: %w", lastErr)
 	}
 
-	check, err := spec.Parse(edited)
+	check, err := spec.ParseFiles(spec.Files{Pkg: edited, Recipes: files.Recipes})
 	if err != nil {
 		return nil, "", fmt.Errorf("edited manifest is invalid: %w", err)
 	}
@@ -352,20 +356,24 @@ func candidateVersions(ctx context.Context, pkg *spec.Package, backfill int) ([]
 	return out, metas, nil
 }
 
-// templatesUseMeta reports whether any of the package's remote references
+// templatesUseMeta reports whether any of the recipe's remote references
 // expand per-version discovery metadata.
-func templatesUseMeta(pkg *spec.Package) bool {
-	if strings.Contains(pkg.Artifact.URL, ".Meta") {
+func templatesUseMeta(r *spec.Recipe) bool {
+	if strings.Contains(r.Artifact.URL, ".Meta") {
 		return true
 	}
-	if g := pkg.Artifact.GitHub; g != nil && strings.Contains(g.Asset, ".Meta") {
+	if g := r.Artifact.GitHub; g != nil && strings.Contains(g.Asset, ".Meta") {
 		return true
 	}
-	return pkg.Build != nil && strings.Contains(pkg.Build.Source.URL, ".Meta")
+	return r.Build != nil && strings.Contains(r.Build.Source.URL, ".Meta")
 }
 
 func discoverMetaFor(ctx context.Context, pkg *spec.Package, version string) (map[string]string, error) {
-	if !templatesUseMeta(pkg) {
+	r, err := withVersion(pkg, version, nil).Recipe(version)
+	if err != nil {
+		return nil, err
+	}
+	if !templatesUseMeta(r) {
 		return nil, nil
 	}
 	discovered, err := listVersions(ctx, pkg)
@@ -380,11 +388,7 @@ func discoverMetaFor(ctx context.Context, pkg *spec.Package, version string) (ma
 	return nil, nil
 }
 
-// withMeta returns a package whose head version carries the given metadata.
-func withMeta(pkg *spec.Package, version string, meta map[string]string) *spec.Package {
-	if len(meta) == 0 {
-		return pkg
-	}
+func withVersion(pkg *spec.Package, version string, meta map[string]string) *spec.Package {
 	p := *pkg
 	p.Versions = append([]spec.VersionEntry{{Version: version, Meta: meta}}, pkg.Versions...)
 	return &p
@@ -404,13 +408,17 @@ func insertPos(data []byte, version string) (int, error) {
 }
 
 func buildEntry(ctx context.Context, pkg *spec.Package, target string, meta map[string]string, task report.Task) (spec.VersionEntry, error) {
-	pkg = withMeta(pkg, target, meta)
-	if pkg.Artifact.OCI != "" {
-		return buildOCIEntry(ctx, pkg, target, meta, task)
+	pkg = withVersion(pkg, target, meta)
+	r, err := pkg.Recipe(target)
+	if err != nil {
+		return spec.VersionEntry{Version: target, Meta: meta}, err
+	}
+	if r.Artifact.OCI != "" {
+		return buildOCIEntry(ctx, pkg, r, target, meta, task)
 	}
 
 	e := spec.VersionEntry{Version: target, Meta: meta}
-	platforms := pkg.SupportedBy()
+	platforms := r.SupportedBy()
 	e.Sha256 = make(map[string]string, len(platforms))
 	for _, plat := range platforms {
 		url, err := fetch.UpstreamURL(pkg, target, plat)
@@ -428,9 +436,9 @@ func buildEntry(ctx context.Context, pkg *spec.Package, target string, meta map[
 	return e, nil
 }
 
-func buildOCIEntry(ctx context.Context, pkg *spec.Package, target string, meta map[string]string, task report.Task) (spec.VersionEntry, error) {
+func buildOCIEntry(ctx context.Context, pkg *spec.Package, r *spec.Recipe, target string, meta map[string]string, task report.Task) (spec.VersionEntry, error) {
 	e := spec.VersionEntry{Version: target, Meta: meta}
-	if pkg.Build == nil {
+	if r.Build == nil {
 		return e, nil
 	}
 	url, err := pkg.BuildSourceURL(target, spec.Current())

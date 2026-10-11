@@ -87,7 +87,7 @@ func expand(tmpl string, ctx any) (string, error) {
 }
 
 func (p *Package) ArtifactURL(version string, plat Platform) (string, error) {
-	return expand(p.Artifact.URL, p.templateCtx(version, plat))
+	return expand(p.selectRecipe(version).Artifact.URL, p.templateCtx(version, plat))
 }
 
 func (p *Package) BuildSourceURL(version string, plat Platform) (string, error) {
@@ -99,10 +99,11 @@ func (p *Package) BuildSourceURL(version string, plat Platform) (string, error) 
 }
 
 func (p *Package) AssetName(version string, plat Platform) (string, error) {
-	if p.Artifact.GitHub == nil {
+	r := p.selectRecipe(version)
+	if r.Artifact.GitHub == nil {
 		return "", fmt.Errorf("package %s has no github artifact", p.Name)
 	}
-	return expand(p.Artifact.GitHub.Asset, p.templateCtx(version, plat))
+	return expand(r.Artifact.GitHub.Asset, p.templateCtx(version, plat))
 }
 
 func (p *Package) templateCtx(version string, plat Platform) templateCtx {

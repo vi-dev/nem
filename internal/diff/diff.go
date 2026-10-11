@@ -160,21 +160,30 @@ func diffOne(ctx context.Context, base, target catalog.Entry, name string) (Chan
 		return Change{}, false, nil
 	case t == nil:
 		c.Status = StatusNew
-		c.Build = b.pkg.LatestRecipe().Build != nil
 		c.Base = latest(b.pkg)
 		c.Diff = versionsOf(b.pkg)
+		c.Build = anyBuilds(b.pkg, c.Diff)
 	case b == nil:
 		c.Status = StatusRemoved
-		c.Build = t.pkg.LatestRecipe().Build != nil
+		c.Build = anyBuilds(t.pkg, versionsOf(t.pkg))
 		c.Target = latest(t.pkg)
 	default:
 		c.Status = StatusUpdated
-		c.Build = b.pkg.LatestRecipe().Build != nil
 		c.Base = latest(b.pkg)
 		c.Target = latest(t.pkg)
 		c.Diff = changedVersions(b.pkg, t.pkg)
+		c.Build = anyBuilds(b.pkg, c.Diff)
 	}
 	return c, true, nil
+}
+
+func anyBuilds(pkg *spec.Package, versions []string) bool {
+	for _, v := range versions {
+		if r, err := pkg.Recipe(v); err == nil && r.Build != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func latest(pkg *spec.Package) string {

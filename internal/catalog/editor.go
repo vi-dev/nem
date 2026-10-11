@@ -9,6 +9,7 @@ import (
 
 type Editor interface {
 	ReadManifest(ctx context.Context, name string) ([]byte, error)
+	ReadFiles(ctx context.Context, name string) (spec.Files, error)
 	CreateManifest(ctx context.Context, name string, data []byte) error
 	UpdateManifest(ctx context.Context, name string, data []byte) error
 	WriteFiles(ctx context.Context, name string, files spec.Files) error
