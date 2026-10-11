@@ -97,7 +97,7 @@ func selectDependencies(ctx context.Context, t *Target, root *spec.Package, cata
 	if len(deps) == 0 {
 		return nil, nil
 	}
-	resolvedDeps, err := resolve.Dependencies(ctx, root, deps, catalogs)
+	resolvedDeps, err := resolve.Dependencies(ctx, root.Name, root.Platforms, deps, catalogs)
 	if err != nil {
 		return nil, err
 	}

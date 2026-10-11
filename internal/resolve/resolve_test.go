@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -425,7 +426,7 @@ func TestResolveDepsBuildRolesRunVsLink(t *testing.T) {
 			},
 		},
 	}
-	res, err := resolve.Dependencies(context.Background(), pkg, pkg.Build.Deps, namedSources(root))
+	res, err := resolve.Dependencies(context.Background(), pkg.Name, pkg.Platforms, pkg.Build.Deps, namedSources(root))
 	if err != nil {
 		t.Fatalf("ResolveDeps: %v", err)
 	}
@@ -566,7 +567,7 @@ func TestResolveDepsBareBuildDepDefersToExactDep(t *testing.T) {
 			},
 		},
 	}
-	res, err := resolve.Dependencies(context.Background(), pkg, pkg.Build.Deps, namedSources(root))
+	res, err := resolve.Dependencies(context.Background(), pkg.Name, pkg.Platforms, pkg.Build.Deps, namedSources(root))
 	if err != nil {
 		t.Fatalf("ResolveDeps: %v", err)
 	}
@@ -684,7 +685,7 @@ func TestResolveDepsWalksTheGivenList(t *testing.T) {
 		Build:  &spec.Build{Deps: []spec.Dep{{Name: "beta"}}},
 	}
 
-	res, err := resolve.Dependencies(context.Background(), pkg, pkg.Deps, namedSources(root))
+	res, err := resolve.Dependencies(context.Background(), pkg.Name, pkg.Platforms, pkg.Deps, namedSources(root))
 	if err != nil {
 		t.Fatalf("ResolveDeps: %v", err)
 	}
@@ -693,5 +694,246 @@ func TestResolveDepsWalksTheGivenList(t *testing.T) {
 	}
 	if got := entry(t, res, "alpha"); got.Version != "v1.0.0" {
 		t.Fatalf("alpha version = %q", got.Version)
+	}
+}
+
+func writeFrozen(t *testing.T, root, name, prefix, body string) {
+	t.Helper()
+	path := filepath.Join(root, "pkgs", name, spec.RecipeFileName(prefix))
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func TestResolvePinnedOldVersionPullsFrozenRecipeDeps(t *testing.T) {
+	root := t.TempDir()
+	writeSpec(t, root, pkgSpec{name: "app", versions: "[2.0.0, 1.0.0]"})
+	writeFrozen(t, root, "app", "1", "deps: [{name: legacy, kind: link}]\nlibs: [lib]\nartifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n")
+	writeSpec(t, root, pkgSpec{name: "legacy", libs: "[lib]", versions: "[0.1.0]"})
+
+	res, err := resolve.Resolve(context.Background(), []resolve.Tool{{Key: project.ToolKey{Name: "app"}}}, namedSources(root))
+	if err != nil {
+		t.Fatalf("Resolve latest: %v", err)
+	}
+	for _, e := range res.Entries {
+		if e.Name == "legacy" {
+			t.Fatalf("latest app must not pull the frozen recipe's dep: %+v", res.Entries)
+		}
+	}
+
+	res, err = resolve.Resolve(context.Background(), []resolve.Tool{{Key: project.ToolKey{Name: "app"}, Version: "1.0.0"}}, namedSources(root))
+	if err != nil {
+		t.Fatalf("Resolve pinned: %v", err)
+	}
+	if e := entry(t, res, "legacy"); e.Version != "0.1.0" || !e.OnLoaderPath {
+		t.Fatalf("pinned app@1.0.0 must pull legacy as a link dep: %+v", e)
+	}
+	if e := entry(t, res, "app"); !e.OnLoaderPath {
+		t.Fatalf("app@1.0.0 has libs in its frozen recipe: %+v", e)
+	}
+}
+
+func TestResolveSettlesWhenCompatPicksAnOlderRecipe(t *testing.T) {
+	root := t.TempDir()
+	writeSpec(t, root, pkgSpec{name: "user", deps: []string{`{name: lib, kind: link, compat: "1"}`}, versions: "[1.0.0]"})
+	writeSpec(t, root, pkgSpec{name: "lib", libs: "[lib]", versions: "[2.0.0, 1.5.0]"})
+	writeFrozen(t, root, "lib", "1", "deps: [{name: extra, kind: link}]\nlibs: [lib]\nartifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n")
+	writeSpec(t, root, pkgSpec{name: "extra", libs: "[lib]", versions: "[0.0.1]"})
+
+	res, err := resolve.Resolve(context.Background(), []resolve.Tool{{Key: project.ToolKey{Name: "user"}}}, namedSources(root))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if e := entry(t, res, "lib"); e.Version != "1.5.0" {
+		t.Fatalf("compat 1 must pick 1.5.0: %+v", e)
+	}
+	if e := entry(t, res, "extra"); e.Version != "0.0.1" {
+		t.Fatalf("the 1.x recipe's dep must be in the lock: %+v", e)
+	}
+}
+
+func TestResolveSettleWidensPlatformsOfAKnownDemand(t *testing.T) {
+	root := t.TempDir()
+	writeSpec(t, root, pkgSpec{name: "a", versions: "[2.0.0, 1.0.0]"})
+	writeFrozen(t, root, "a", "1", "deps: [{name: x}]\nartifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n")
+	writeSpec(t, root, pkgSpec{name: "b", deps: []string{"{name: a, version: 1.0.0}", "{name: x, platforms: [linux]}"}, versions: "[1.0.0]"})
+	writeSpec(t, root, pkgSpec{name: "x", versions: "[1.0.0]"})
+
+	tools := []resolve.Tool{{Key: project.ToolKey{Name: "a"}}, {Key: project.ToolKey{Name: "b"}}}
+	res, err := resolve.Resolve(context.Background(), tools, namedSources(root))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if e := entry(t, res, "a"); e.Version != "1.0.0" {
+		t.Fatalf("a must yield to b's exact 1.0.0: %+v", e)
+	}
+	if e := entry(t, res, "x"); len(e.Platforms) != len(spec.SupportedPlatforms) {
+		t.Fatalf("a@1.0.0 needs x on every platform: %+v", e)
+	}
+}
+
+func TestResolveLoaderPathFollowsThePickedRecipe(t *testing.T) {
+	root := t.TempDir()
+	writeSpec(t, root, pkgSpec{name: "a", versions: "[2.0.0, 1.0.0]"})
+	writeFrozen(t, root, "a", "1", "libs: [lib]\nartifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n")
+	writeSpec(t, root, pkgSpec{name: "b", deps: []string{"{name: a, version: 1.0.0}"}, versions: "[1.0.0]"})
+
+	tools := []resolve.Tool{{Key: project.ToolKey{Name: "a"}}, {Key: project.ToolKey{Name: "b"}}}
+	res, err := resolve.Resolve(context.Background(), tools, namedSources(root))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if e := entry(t, res, "a"); e.Version != "1.0.0" || !e.OnLoaderPath {
+		t.Fatalf("direct a@1.0.0 has libs in its picked recipe: %+v", e)
+	}
+}
+
+func TestResolveDropsDepsOfAnUnpickedRecipe(t *testing.T) {
+	root := t.TempDir()
+	writeSpec(t, root, pkgSpec{name: "a", deps: []string{"{name: y}"}, versions: "[2.0.0, 1.0.0]"})
+	writeFrozen(t, root, "a", "1", "artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n")
+	writeSpec(t, root, pkgSpec{name: "b", deps: []string{"{name: a, version: 1.0.0}"}, versions: "[1.0.0]"})
+	writeSpec(t, root, pkgSpec{name: "y", versions: "[1.0.0]"})
+
+	tools := []resolve.Tool{{Key: project.ToolKey{Name: "a"}}, {Key: project.ToolKey{Name: "b"}}}
+	res, err := resolve.Resolve(context.Background(), tools, namedSources(root))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if e := entry(t, res, "a"); e.Version != "1.0.0" {
+		t.Fatalf("a must yield to b's exact 1.0.0: %+v", e)
+	}
+	for _, e := range res.Entries {
+		if e.Name == "y" {
+			t.Fatalf("y is only needed by the unpicked a@2.0.0: %+v", res.Entries)
+		}
+	}
+}
+
+func TestResolveReportsOscillationWithoutBacktracking(t *testing.T) {
+	root := t.TempDir()
+	writeSpec(t, root, pkgSpec{name: "a", deps: []string{"{name: z}"}, versions: "[2.0.0, 1.0.0]"})
+	writeFrozen(t, root, "a", "1", "artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n")
+	writeSpec(t, root, pkgSpec{name: "z", deps: []string{"{name: a, version: 1.0.0}"}, versions: "[1.0.0]"})
+
+	_, err := resolve.Resolve(context.Background(), []resolve.Tool{{Key: project.ToolKey{Name: "a"}}}, namedSources(root))
+	var unsettled *resolve.UnsettledError
+	if !errors.As(err, &unsettled) {
+		t.Fatalf("want UnsettledError, got %v", err)
+	}
+	if !slices.Contains(unsettled.Names, "a") {
+		t.Fatalf("a's pick keeps changing: %v", unsettled.Names)
+	}
+	if unsettled.Rounds != 3 {
+		t.Fatalf("a two-round cycle must be reported at round 3, got %d", unsettled.Rounds)
+	}
+}
+
+func TestResolveIgnoresConflictsOfAnUnpickedRecipe(t *testing.T) {
+	root := t.TempDir()
+	writeSpec(t, root, pkgSpec{name: "a", deps: []string{"{name: y, version: 1.0.0}"}, versions: "[2.0.0, 1.0.0]"})
+	writeFrozen(t, root, "a", "1", "artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n")
+	writeSpec(t, root, pkgSpec{name: "b", deps: []string{"{name: a, version: 1.0.0}"}, versions: "[1.0.0]"})
+	writeSpec(t, root, pkgSpec{name: "y", versions: "[2.0.0, 1.0.0]"})
+
+	tools := []resolve.Tool{
+		{Key: project.ToolKey{Name: "a"}},
+		{Key: project.ToolKey{Name: "b"}},
+		{Key: project.ToolKey{Name: "y"}, Version: "2.0.0"},
+	}
+	res, err := resolve.Resolve(context.Background(), tools, namedSources(root))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if e := entry(t, res, "a"); e.Version != "1.0.0" {
+		t.Fatalf("a must yield to b's exact 1.0.0: %+v", e)
+	}
+	entry(t, res, "b")
+	if e := entry(t, res, "y"); e.Version != "2.0.0" {
+		t.Fatalf("y keeps its pin: %+v", e)
+	}
+}
+
+func TestResolveIgnoresMissingDepOfAnUnpickedRecipe(t *testing.T) {
+	root := t.TempDir()
+	writeSpec(t, root, pkgSpec{name: "a", deps: []string{"{name: gone}"}, versions: "[2.0.0, 1.0.0]"})
+	writeFrozen(t, root, "a", "1", "artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n")
+	writeSpec(t, root, pkgSpec{name: "b", deps: []string{"{name: a, version: 1.0.0}"}, versions: "[1.0.0]"})
+
+	tools := []resolve.Tool{{Key: project.ToolKey{Name: "a"}}, {Key: project.ToolKey{Name: "b"}}}
+	res, err := resolve.Resolve(context.Background(), tools, namedSources(root))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if e := entry(t, res, "a"); e.Version != "1.0.0" {
+		t.Fatalf("a must yield to b's exact 1.0.0: %+v", e)
+	}
+}
+
+func TestResolveConflictInThePickedRecipeStillErrors(t *testing.T) {
+	root := t.TempDir()
+	writeSpec(t, root, pkgSpec{name: "a", versions: "[2.0.0, 1.0.0]"})
+	writeFrozen(t, root, "a", "1", "deps: [{name: y, version: 1.0.0}]\nartifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n")
+	writeSpec(t, root, pkgSpec{name: "b", deps: []string{"{name: a, version: 1.0.0}"}, versions: "[1.0.0]"})
+	writeSpec(t, root, pkgSpec{name: "y", versions: "[2.0.0, 1.0.0]"})
+
+	tools := []resolve.Tool{
+		{Key: project.ToolKey{Name: "a"}},
+		{Key: project.ToolKey{Name: "b"}},
+		{Key: project.ToolKey{Name: "y"}, Version: "2.0.0"},
+	}
+	_, err := resolve.Resolve(context.Background(), tools, namedSources(root))
+	var pce *resolve.PinConflictError
+	if !errors.As(err, &pce) {
+		t.Fatalf("want PinConflictError, got %v", err)
+	}
+	if pce.Name != "y" || pce.Pinned != "2.0.0" || pce.Required != "1.0.0" {
+		t.Fatalf("PinConflictError: %+v", pce)
+	}
+}
+
+func TestResolveSeedsUnresolvedPackagesFromTheirPins(t *testing.T) {
+	root := t.TempDir()
+	writeSpec(t, root, pkgSpec{name: "x", deps: []string{"{name: p}", "{name: q}"}, versions: "[1.0.0]"})
+	writeSpec(t, root, pkgSpec{name: "p", deps: []string{"{name: q, version: 2.0.0}"}, versions: "[2.0.0, 1.0.0]"})
+	writeFrozen(t, root, "p", "1", "artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n")
+	writeSpec(t, root, pkgSpec{name: "q", deps: []string{"{name: p, version: 2.0.0}"}, versions: "[2.0.0, 1.0.0]"})
+	writeFrozen(t, root, "q", "1", "artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n")
+
+	x := resolve.Tool{Key: project.ToolKey{Name: "x"}}
+	p := resolve.Tool{Key: project.ToolKey{Name: "p"}, Version: "1.0.0"}
+	q := resolve.Tool{Key: project.ToolKey{Name: "q"}, Version: "1.0.0"}
+	orders := map[string][]resolve.Tool{
+		"floating root first": {x, p, q},
+		"pins first":          {p, q, x},
+	}
+	for name, tools := range orders {
+		t.Run(name, func(t *testing.T) {
+			res, err := resolve.Resolve(context.Background(), tools, namedSources(root))
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			for pkg, want := range map[string]string{"p": "1.0.0", "q": "1.0.0", "x": "1.0.0"} {
+				if e := entry(t, res, pkg); e.Version != want {
+					t.Fatalf("%s: want %s, got %+v", pkg, want, e)
+				}
+			}
+			if len(res.Entries) != 3 {
+				t.Fatalf("want exactly p, q, x: %+v", res.Entries)
+			}
+		})
+	}
+}
+
+func TestResolveStableRoundPrefersTheConflictOverAWalkError(t *testing.T) {
+	root := t.TempDir()
+	writeSpec(t, root, pkgSpec{name: "a", deps: []string{"{name: gone}", "{name: y, version: 1.0.0}"}, versions: "[1.0.0]"})
+	writeSpec(t, root, pkgSpec{name: "y", versions: "[2.0.0, 1.0.0]"})
+
+	tools := []resolve.Tool{{Key: project.ToolKey{Name: "a"}}, {Key: project.ToolKey{Name: "y"}, Version: "2.0.0"}}
+	_, err := resolve.Resolve(context.Background(), tools, namedSources(root))
+	var pce *resolve.PinConflictError
+	if !errors.As(err, &pce) {
+		t.Fatalf("want PinConflictError, got %v", err)
 	}
 }

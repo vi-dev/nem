@@ -103,7 +103,7 @@ func buildPackage(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.
 	if len(pkg.Build.Deps) > 0 {
 		task.Segment("installing deps")
 	}
-	deps, err := ResolveDeps(ctx, h, set, pkg, pkg.Build.Deps, opts.LocalStore)
+	deps, err := ResolveDeps(ctx, h, set, pkg.Name, pkg.Platforms, pkg.Build.Deps, opts.LocalStore)
 	if err != nil {
 		return err
 	}
@@ -213,11 +213,11 @@ func fetchBuildSource(ctx context.Context, pkg *spec.Package, version, staging s
 }
 
 func ResolveDeps(ctx context.Context, h home.Home, set *catalog.Set,
-	pkg *spec.Package, deps []spec.Dep, local *archive.Dir) ([]ResolvedDep, error) {
+	name string, platforms []spec.Platform, deps []spec.Dep, local *archive.Dir) ([]ResolvedDep, error) {
 	if len(deps) == 0 {
 		return nil, nil
 	}
-	result, err := resolve.Dependencies(ctx, pkg, deps, set)
+	result, err := resolve.Dependencies(ctx, name, platforms, deps, set)
 	if err != nil {
 		return nil, err
 	}

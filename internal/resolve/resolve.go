@@ -3,8 +3,10 @@ package resolve
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/project"
@@ -65,13 +67,52 @@ type candidate struct {
 type collector struct {
 	set   *catalog.Set
 	cands map[string]*candidate
+	picks map[string]string
+	hits  map[string]catalog.Hit
+	err   error
 }
 
-func newCollector(set *catalog.Set) *collector {
-	return &collector{set: set, cands: map[string]*candidate{}}
+func (c *collector) fail(err error) {
+	if c.err == nil {
+		c.err = err
+	}
 }
 
-func (c *collector) record(d demand, platform spec.Platform) {
+func newCollector(set *catalog.Set, picks map[string]string, hits map[string]catalog.Hit) *collector {
+	return &collector{set: set, cands: map[string]*candidate{}, picks: picks, hits: hits}
+}
+
+func (c *collector) lookup(ctx context.Context, name string) (catalog.Hit, error) {
+	if hit, ok := c.hits[name]; ok {
+		return hit, nil
+	}
+	hit, err := c.set.Lookup(ctx, project.ToolKey{Name: name})
+	if err != nil {
+		return catalog.Hit{}, err
+	}
+	c.hits[name] = hit
+	return hit, nil
+}
+
+func (c *collector) provisionalVersion(d demand) string {
+	if pick, ok := c.picks[d.pkg.Name]; ok && satisfies(pick, d) && d.pkg.HasEqualVersion(pick) {
+		return pick
+	}
+	if d.kind == demandRanged {
+		return selectHighest(d.pkg.Versions, d.compat)
+	}
+	return d.version
+}
+
+func (c *collector) recipe(d demand) (*spec.Recipe, error) {
+	return d.pkg.Recipe(c.provisionalVersion(d))
+}
+
+func (c *collector) record(d demand, platform spec.Platform) error {
+	r, err := c.recipe(d)
+	if err != nil {
+		return err
+	}
 	cand, ok := c.cands[d.pkg.Name]
 	if !ok {
 		cand = &candidate{platforms: map[spec.Platform]bool{}}
@@ -79,45 +120,131 @@ func (c *collector) record(d demand, platform spec.Platform) {
 	}
 	cand.platforms[platform] = true
 	cand.onPath = cand.onPath || !d.link
-	cand.onLoaderPath = cand.onLoaderPath || ((d.direct || d.link) && len(d.pkg.Libs) > 0)
+	cand.onLoaderPath = cand.onLoaderPath || ((d.direct || d.link) && len(r.Libs) > 0)
 	for _, seen := range cand.demands {
 		if seen.kind == d.kind && seen.version == d.version && seen.compat == d.compat && seen.direct == d.direct {
-			return
+			return nil
 		}
 	}
 	cand.demands = append(cand.demands, d)
+	return nil
 }
 
-func (c *collector) walk(ctx context.Context, d demand, platform spec.Platform, visited map[string]bool) error {
-	c.record(d, platform)
+func (c *collector) walk(ctx context.Context, d demand, platform spec.Platform, visited map[string]bool) {
+	if err := c.record(d, platform); err != nil {
+		c.fail(err)
+		return
+	}
 	if visited[d.pkg.Name] {
-		return nil
+		return
 	}
 	visited[d.pkg.Name] = true
-	return c.walkDeps(ctx, d.pkg, platform, visited)
+	r, err := c.recipe(d)
+	if err != nil {
+		c.fail(err)
+		return
+	}
+	c.walkDeps(ctx, r.Deps, platform, visited)
 }
 
-func (c *collector) walkDeps(ctx context.Context, pkg *spec.Package, platform spec.Platform, visited map[string]bool) error {
-	for _, dep := range pkg.Deps {
+func (c *collector) walkDeps(ctx context.Context, deps []spec.Dep, platform spec.Platform, visited map[string]bool) {
+	for _, dep := range deps {
 		if !spec.PlatformsInclude(dep.Platforms, platform) {
 			continue
 		}
-		hit, err := c.set.Lookup(ctx, project.ToolKey{Name: dep.Name})
+		d, ok, err := c.demandFor(ctx, dep, platform)
 		if err != nil {
-			return err
-		}
-		if !slices.Contains(hit.Pkg.SupportedBy(), platform) {
+			c.fail(err)
 			continue
 		}
-		d, err := edgeDemand(dep, hit.Pkg, hit.Entry.Name, hit.Digest)
-		if err != nil {
-			return err
-		}
-		if err := c.walk(ctx, d, platform, visited); err != nil {
-			return err
+		if ok {
+			c.walk(ctx, d, platform, visited)
 		}
 	}
-	return nil
+}
+
+func (c *collector) demandFor(ctx context.Context, dep spec.Dep, platform spec.Platform) (demand, bool, error) {
+	hit, err := c.lookup(ctx, dep.Name)
+	if err != nil {
+		return demand{}, false, err
+	}
+	d, err := edgeDemand(dep, hit.Pkg, hit.Entry.Name, hit.Digest)
+	if err != nil {
+		return demand{}, false, err
+	}
+	r, err := c.recipe(d)
+	if err != nil {
+		return demand{}, false, err
+	}
+	if !slices.Contains(r.SupportedBy(), platform) {
+		return demand{}, false, nil
+	}
+	return d, true, nil
+}
+
+const maxSettleRounds = 8
+
+type UnsettledError struct {
+	Rounds int
+	Names  []string
+	Err    error
+}
+
+func (e *UnsettledError) Error() string {
+	msg := fmt.Sprintf("dependency resolution did not settle after %d rounds: %s keep changing; pin one of them",
+		e.Rounds, strings.Join(e.Names, ", "))
+	if e.Err != nil {
+		msg += " (last error: " + e.Err.Error() + ")"
+	}
+	return msg
+}
+
+func (e *UnsettledError) Unwrap() error { return e.Err }
+
+func settle(ctx context.Context, set *catalog.Set, directNames map[string]bool, seed func(*collector)) (*Result, error) {
+	var picks map[string]string
+	var history []map[string]string
+	hits := map[string]catalog.Hit{}
+	for round := 1; ; round++ {
+		col := newCollector(set, picks, hits)
+		seed(col)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		res, next, err := finalize(col.cands, directNames)
+		if err == nil {
+			err = col.err
+		}
+		changing := changedPicks(picks, next)
+		if len(changing) == 0 {
+			if err != nil {
+				return nil, err
+			}
+			return res, nil
+		}
+		cycled := slices.ContainsFunc(history, func(h map[string]string) bool { return maps.Equal(h, next) })
+		if cycled || round == maxSettleRounds {
+			return nil, &UnsettledError{Rounds: round, Names: changing, Err: err}
+		}
+		history = append(history, next)
+		picks = next
+	}
+}
+
+func changedPicks(prev, next map[string]string) []string {
+	var names []string
+	for name, v := range next {
+		if old, ok := prev[name]; !ok || old != v {
+			names = append(names, name)
+		}
+	}
+	for name := range prev {
+		if _, ok := next[name]; !ok {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 func edgeDemand(dep spec.Dep, pkg *spec.Package, catName, digest string) (demand, error) {
@@ -153,7 +280,11 @@ func Resolve(ctx context.Context, tools []Tool, set *catalog.Set) (*Result, erro
 		if err != nil {
 			return nil, err
 		}
-		if len(pkg.SupportedBy()) == 0 {
+		r, err := pkg.Recipe(version)
+		if err != nil {
+			return nil, err
+		}
+		if len(r.SupportedBy()) == 0 {
 			return nil, &UnsupportedPlatformError{Name: t.Key.Name, Version: version}
 		}
 		kind := demandFloating
@@ -166,38 +297,34 @@ func Resolve(ctx context.Context, tools []Tool, set *catalog.Set) (*Result, erro
 		}
 	}
 
-	col := newCollector(set)
-	for _, platform := range spec.SupportedPlatforms {
-		visited := map[string]bool{}
-		for _, r := range roots {
-			if !slices.Contains(r.pkg.SupportedBy(), platform) {
-				continue
-			}
-			if err := col.walk(ctx, r, platform, visited); err != nil {
-				return nil, err
+	return settle(ctx, set, directNames, func(col *collector) {
+		for _, platform := range spec.SupportedPlatforms {
+			visited := map[string]bool{}
+			for _, root := range roots {
+				r, err := col.recipe(root)
+				if err != nil {
+					col.fail(err)
+					continue
+				}
+				if slices.Contains(r.SupportedBy(), platform) {
+					col.walk(ctx, root, platform, visited)
+				}
 			}
 		}
-	}
-	return finalize(col.cands, directNames)
+	})
 }
 
-func Dependencies(ctx context.Context, pkg *spec.Package, deps []spec.Dep, set *catalog.Set) (*Result, error) {
-
-	rootPkg := &spec.Package{Name: pkg.Name, Platforms: pkg.Platforms, Deps: deps}
-	col := newCollector(set)
-	for _, platform := range spec.SupportedPlatforms {
-		if !slices.Contains(rootPkg.SupportedBy(), platform) {
-			continue
+func Dependencies(ctx context.Context, name string, platforms []spec.Platform, deps []spec.Dep, set *catalog.Set) (*Result, error) {
+	return settle(ctx, set, nil, func(col *collector) {
+		for _, platform := range spec.SupportedPlatforms {
+			if spec.PlatformsInclude(platforms, platform) {
+				col.walkDeps(ctx, deps, platform, map[string]bool{name: true})
+			}
 		}
-		visited := map[string]bool{}
-		if err := col.walkDeps(ctx, rootPkg, platform, visited); err != nil {
-			return nil, err
-		}
-	}
-	return finalize(col.cands, nil)
+	})
 }
 
-func finalize(cands map[string]*candidate, directNames map[string]bool) (*Result, error) {
+func finalize(cands map[string]*candidate, directNames map[string]bool) (*Result, map[string]string, error) {
 	names := make([]string, 0, len(cands))
 	for name := range cands {
 		names = append(names, name)
@@ -206,12 +333,19 @@ func finalize(cands map[string]*candidate, directNames map[string]bool) (*Result
 
 	entries := make([]project.LockEntry, 0, len(cands))
 	pkgs := make(map[string]*spec.Package, len(cands))
+	picks := make(map[string]string, len(cands))
+	var firstErr error
 	for _, name := range names {
 		cand := cands[name]
 		chosen, err := choose(name, cand.demands)
 		if err != nil {
-			return nil, err
+			if firstErr == nil {
+				firstErr = err
+			}
+			picks[name] = strongestVersion(cand.demands)
+			continue
 		}
+		picks[name] = chosen.version
 		platforms := make([]string, 0, len(cand.platforms))
 		for _, p := range spec.SupportedPlatforms {
 			if cand.platforms[p] {
@@ -225,7 +359,28 @@ func finalize(cands map[string]*candidate, directNames map[string]bool) (*Result
 		})
 		pkgs[name] = chosen.pkg
 	}
-	return &Result{Entries: entries, Pkgs: pkgs}, nil
+	return &Result{Entries: entries, Pkgs: pkgs}, picks, firstErr
+}
+
+func strongestVersion(demands []demand) string {
+	for _, kind := range []demandKind{demandPinned, demandExact} {
+		if i := slices.IndexFunc(demands, func(d demand) bool { return d.kind == kind }); i >= 0 {
+			return demands[i].version
+		}
+	}
+	best := ""
+	for _, d := range demands {
+		if d.kind != demandRanged {
+			continue
+		}
+		if v := selectHighest(d.pkg.Versions, d.compat); best == "" || spec.CompareVersions(v, best) > 0 {
+			best = v
+		}
+	}
+	if best != "" {
+		return best
+	}
+	return demands[0].version
 }
 
 func choose(name string, demands []demand) (demand, error) {

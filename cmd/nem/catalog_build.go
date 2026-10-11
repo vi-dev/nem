@@ -160,7 +160,7 @@ func batchTestFor(set *catalog.Set) func(
 			return nil
 		}
 		return func(ctx context.Context, p *spec.Package, v, artifactPath string) error {
-			deps, err := build.ResolveDeps(ctx, nemHome, set, p, p.Deps, store)
+			deps, err := build.ResolveDeps(ctx, nemHome, set, p.Name, p.Platforms, p.Deps, store)
 			if err != nil {
 				return err
 			}
