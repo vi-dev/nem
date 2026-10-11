@@ -27,8 +27,8 @@ var testPlat = spec.Platform{OS: "linux", Arch: "amd64"}
 
 func urlPkg(url, sha string) *spec.Package {
 	return &spec.Package{
-		Name:     "go",
-		Artifact: spec.Artifact{URL: url},
+		Name: "go",
+		Base: spec.Recipe{Artifact: spec.Artifact{URL: url}},
 		Versions: []spec.VersionEntry{{
 			Version: "v1.2.3",
 			Sha256:  map[string]string{testPlat.String(): sha},
@@ -39,7 +39,7 @@ func urlPkg(url, sha string) *spec.Package {
 func ociPkg(ociRef string) *spec.Package {
 	return &spec.Package{
 		Name:     "go",
-		Artifact: spec.Artifact{OCI: ociRef},
+		Base:     spec.Recipe{Artifact: spec.Artifact{OCI: ociRef}},
 		Versions: []spec.VersionEntry{{Version: "v1.2.3"}},
 	}
 }
@@ -302,7 +302,7 @@ func TestAcquireRegistrySuccessAcceptsWithoutUpstream(t *testing.T) {
 func TestAcquireMissingSha256Errors(t *testing.T) {
 	pkg := &spec.Package{
 		Name:     "go",
-		Artifact: spec.Artifact{URL: "https://example.invalid/x"},
+		Base:     spec.Recipe{Artifact: spec.Artifact{URL: "https://example.invalid/x"}},
 		Versions: []spec.VersionEntry{{Version: "v1.2.3", Sha256: map[string]string{}}},
 	}
 	dir := t.TempDir()

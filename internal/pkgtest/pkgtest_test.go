@@ -51,10 +51,13 @@ func installable(t *testing.T, steps ...spec.TestStep) (home.Home, *spec.Package
 	root := t.TempDir()
 	h := testx.HomeAt(root)
 	pkg := &spec.Package{
-		Name:    "tool",
-		Bins:    []string{"bin"},
-		Install: []spec.Action{{Extract: &spec.ExtractAction{}}},
-		Test:    steps,
+		Name:     "tool",
+		Versions: []spec.VersionEntry{{Version: "v1"}},
+		Base: spec.Recipe{
+			Bins:    []string{"bin"},
+			Install: []spec.Action{{Extract: &spec.ExtractAction{}}},
+			Test:    steps,
+		},
 	}
 	return h, pkg, tarFixture(t, t.TempDir())
 }
@@ -64,11 +67,14 @@ func installableWithLibs(t *testing.T, steps ...spec.TestStep) (home.Home, *spec
 	root := t.TempDir()
 	h := testx.HomeAt(root)
 	pkg := &spec.Package{
-		Name:    "tool",
-		Bins:    []string{"bin"},
-		Libs:    []string{"lib"},
-		Install: []spec.Action{{Extract: &spec.ExtractAction{}}},
-		Test:    steps,
+		Name:     "tool",
+		Versions: []spec.VersionEntry{{Version: "v1"}},
+		Base: spec.Recipe{
+			Bins:    []string{"bin"},
+			Libs:    []string{"lib"},
+			Install: []spec.Action{{Extract: &spec.ExtractAction{}}},
+			Test:    steps,
+		},
 	}
 	return h, pkg, tarFixture(t, t.TempDir())
 }
@@ -145,7 +151,7 @@ func otherPlatform() spec.Platform {
 
 func TestInstallAndRunSkipsAPackageUnsupportedHere(t *testing.T) {
 	h, pkg, artifact := installable(t, spec.TestStep{Run: "exit 1"})
-	pkg.Platforms = []spec.Platform{otherPlatform()}
+	pkg.Base.Platforms = []spec.Platform{otherPlatform()}
 	if err := runInstall(t, h, pkg, artifact); err != nil {
 		t.Fatalf("a package unsupported here must not be tested: %v", err)
 	}
@@ -393,7 +399,7 @@ set -e
 [ "$TOOL_HOME" = "$NEM_PREFIX" ]
 case "$TOOL_HOME" in *` + home.TestInstallInfix + `*) ;; *) exit 1 ;; esac
 `})
-	pkg.Env = []spec.EnvExport{{Name: "TOOL_HOME", Value: "{{.InstallDir}}"}}
+	pkg.Base.Env = []spec.EnvExport{{Name: "TOOL_HOME", Value: "{{.InstallDir}}"}}
 	if err := runInstall(t, h, pkg, artifact); err != nil {
 		t.Fatalf("environment assertions failed: %v", err)
 	}
@@ -404,7 +410,7 @@ func TestInstallAndRunSkipsAReservedPackageEnvExport(t *testing.T) {
 set -e
 case "$PATH" in "$NEM_PREFIX/bin":*) ;; *) exit 1 ;; esac
 `})
-	pkg.Env = []spec.EnvExport{{Name: "PATH", Value: "clobbered"}}
+	pkg.Base.Env = []spec.EnvExport{{Name: "PATH", Value: "clobbered"}}
 	out, err := runInstallOut(t, h, pkg, artifact)
 	if err != nil {
 		t.Fatalf("a reserved package env export must be skipped, not applied: %v", err)

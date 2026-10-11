@@ -284,7 +284,7 @@ func TestGitHubURL(t *testing.T) {
 }
 
 func TestUpstreamURLEmptyArtifactErrors(t *testing.T) {
-	p := &spec.Package{Name: "x", Artifact: spec.Artifact{}}
+	p := &spec.Package{Name: "x", Versions: []spec.VersionEntry{{Version: "v1"}}}
 	_, err := fetch.UpstreamURL(p, "v1", spec.Platform{OS: "linux", Arch: "amd64"})
 	if err == nil {
 		t.Fatal("want error for empty artifact")
@@ -296,11 +296,12 @@ func TestUpstreamURLEmptyArtifactErrors(t *testing.T) {
 
 func TestUpstreamURLGitHubViaAssetName(t *testing.T) {
 	p := &spec.Package{
-		Name: "go",
-		Artifact: spec.Artifact{GitHub: &spec.GitHubAsset{
+		Name:     "go",
+		Versions: []spec.VersionEntry{{Version: "1.26.5"}},
+		Base: spec.Recipe{Artifact: spec.Artifact{GitHub: &spec.GitHubAsset{
 			Repo:  "golang/go",
 			Asset: "go{{.Version}}.{{.OS}}-{{.Arch}}.tar.gz",
-		}},
+		}}},
 	}
 	got, err := fetch.UpstreamURL(p, "1.26.5", spec.Platform{OS: "linux", Arch: "amd64"})
 	if err != nil {
@@ -372,7 +373,8 @@ func TestDigestURLNotFound(t *testing.T) {
 func TestUpstreamURLPlainURL(t *testing.T) {
 	p := &spec.Package{
 		Name:     "go",
-		Artifact: spec.Artifact{URL: "https://go.dev/dl/go{{.Version}}.{{.OS}}-{{.Arch}}.tar.gz"},
+		Versions: []spec.VersionEntry{{Version: "1.26.5"}},
+		Base:     spec.Recipe{Artifact: spec.Artifact{URL: "https://go.dev/dl/go{{.Version}}.{{.OS}}-{{.Arch}}.tar.gz"}},
 	}
 	got, err := fetch.UpstreamURL(p, "1.26.5", spec.Platform{OS: "darwin", Arch: "arm64"})
 	if err != nil {

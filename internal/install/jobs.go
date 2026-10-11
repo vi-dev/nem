@@ -11,7 +11,7 @@ import (
 	"github.com/vi-dev/nem/internal/spec"
 )
 
-func Jobs(result *resolve.Result, set *catalog.Set, local *archive.Dir) []Job {
+func Jobs(result *resolve.Result, set *catalog.Set, local *archive.Dir) ([]Job, error) {
 	current := spec.Current().String()
 	versions := project.Versions(result.Entries)
 	var jobs []Job
@@ -19,17 +19,21 @@ func Jobs(result *resolve.Result, set *catalog.Set, local *archive.Dir) []Job {
 		if !slices.Contains(entry.Platforms, current) {
 			continue
 		}
+		pkg := result.Pkgs[entry.Name]
+		r, err := pkg.Recipe(entry.Version)
+		if err != nil {
+			return nil, err
+		}
 		var stores []archive.Store
 		if e, ok := set.Find(entry.Catalog); ok && e.Archives != nil {
 			stores = append(stores, e.Archives)
 		}
-		pkg := result.Pkgs[entry.Name]
 		job := Job{
 			Pkg:     pkg,
 			Version: entry.Version,
 			Catalog: entry.Catalog,
 			Source:  fetch.Source{Archives: stores},
-			Links:   Links(pkg, versions),
+			Links:   Links(r, versions),
 		}
 		if local != nil && local.HasVersion(entry.Name, entry.Version) {
 			job.Source.Archives = append([]archive.Store{local}, job.Source.Archives...)
@@ -37,5 +41,5 @@ func Jobs(result *resolve.Result, set *catalog.Set, local *archive.Dir) []Job {
 		}
 		jobs = append(jobs, job)
 	}
-	return jobs
+	return jobs, nil
 }

@@ -14,10 +14,10 @@ import (
 
 const DepsDir = ".nem-link-dependencies"
 
-func Links(pkg *spec.Package, versions map[string]string) map[string]string {
+func Links(r *spec.Recipe, versions map[string]string) map[string]string {
 	plat := spec.Current()
 	links := map[string]string{}
-	for _, d := range pkg.Deps {
+	for _, d := range r.Deps {
 		if d.Kind != spec.DepKindLink || !spec.PlatformsInclude(d.Platforms, plat) {
 			continue
 		}

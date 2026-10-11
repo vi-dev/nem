@@ -21,11 +21,36 @@ import (
 func copyToolPkg(name string) *spec.Package {
 	return &spec.Package{
 		Name:     name,
-		Artifact: spec.Artifact{OCI: ":{{.Version}}"},
-		Install: []spec.Action{{
-			Copy: &spec.CopyAction{Src: artifactToken, Dst: "bin/tool", Mode: 0o755},
-		}},
-		Bins: []string{"bin"},
+		Versions: []spec.VersionEntry{{Version: "v1.0.0"}, {Version: "1.0.0"}},
+		Base: spec.Recipe{
+			Artifact: spec.Artifact{OCI: ":{{.Version}}"},
+			Install: []spec.Action{{
+				Copy: &spec.CopyAction{Src: artifactToken, Dst: "bin/tool", Mode: 0o755},
+			}},
+			Bins: []string{"bin"},
+		},
+	}
+}
+
+func TestInstallWritesMetaFromTheCoveringRecipe(t *testing.T) {
+	h := testx.Home(t)
+	pkg := &spec.Package{
+		Name:     "tool",
+		Versions: []spec.VersionEntry{{Version: "2.0.0"}, {Version: "1.0.0"}},
+		Base:     spec.Recipe{Artifact: spec.Artifact{OCI: ":{{.Version}}"}, Install: []spec.Action{{Extract: &spec.ExtractAction{}}}, Bins: []string{"bin"}},
+		Frozen: []spec.Recipe{{Prefix: "1", Artifact: spec.Artifact{OCI: ":{{.Version}}"},
+			Install: []spec.Action{{Extract: &spec.ExtractAction{}}}, Bins: []string{"legacy-bin"}, Libs: []string{"lib"}}},
+	}
+	archivePath := filepath.Join(t.TempDir(), "tool.tar.gz")
+	if err := os.WriteFile(archivePath, testx.TarGz(t, map[string]string{"legacy-bin/tool": "x", "lib/libt.so": "y"}, 0o755), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Install(context.Background(), h, pkg, "1.0.0", "cat", archivePath, false, nil); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	meta, err := ReadMeta(h, "tool", "1.0.0")
+	if err != nil || meta.Bins[0] != "legacy-bin" || len(meta.Libs) != 1 {
+		t.Fatalf("meta must come from recipe@1: %+v, %v", meta, err)
 	}
 }
 
@@ -337,10 +362,13 @@ func TestRunInstallFailureRemovesArtifact(t *testing.T) {
 
 	pkg := &spec.Package{
 		Name:     "badinstall",
-		Artifact: spec.Artifact{OCI: ":{{.Version}}"},
-		Install: []spec.Action{{
-			Copy: &spec.CopyAction{Src: artifactToken, Dst: "../escape"},
-		}},
+		Versions: []spec.VersionEntry{{Version: "v1.0.0"}},
+		Base: spec.Recipe{
+			Artifact: spec.Artifact{OCI: ":{{.Version}}"},
+			Install: []spec.Action{{
+				Copy: &spec.CopyAction{Src: artifactToken, Dst: "../escape"},
+			}},
+		},
 	}
 
 	var artifactPath string
@@ -470,7 +498,7 @@ func TestRunReinstallReplacesExistingVersion(t *testing.T) {
 func TestRunReinstallsInstalledVersionWithOldLayout(t *testing.T) {
 	h := testx.Home(t)
 	pkg := copyToolPkg("tool")
-	pkg.Deps = []spec.Dep{{Name: "zlib", Kind: spec.DepKindLink}}
+	pkg.Base.Deps = []spec.Dep{{Name: "zlib", Kind: spec.DepKindLink}}
 	installDir, err := h.PackageDir("tool", "v1.0.0")
 	if err != nil {
 		t.Fatal(err)

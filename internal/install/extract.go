@@ -12,18 +12,20 @@ func extract(artifactPath string, root *os.Root, strip int, singleName string) e
 	return err
 }
 
-func singleFileName(pkg *spec.Package, version string, plat spec.Platform) string {
-	if pkg.Artifact.GitHub != nil {
-		name, err := pkg.AssetName(version, plat)
+func singleFileName(r *spec.Recipe, pkg *spec.Package, version string, plat spec.Platform) string {
+	scoped := *pkg
+	scoped.Artifact = r.Artifact
+	if r.Artifact.GitHub != nil {
+		name, err := scoped.AssetName(version, plat)
 		if err != nil {
 			return ""
 		}
 		return extractpkg.SingleNameFromRef(name)
 	}
-	if pkg.Artifact.URL == "" {
+	if r.Artifact.URL == "" {
 		return ""
 	}
-	raw, err := pkg.ArtifactURL(version, plat)
+	raw, err := scoped.ArtifactURL(version, plat)
 	if err != nil {
 		return ""
 	}

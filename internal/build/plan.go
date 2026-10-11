@@ -48,9 +48,13 @@ func ComputePlan(sels []Selection) (Plan, error) {
 		var deps []spec.Dep
 		var plats []spec.Platform
 		for _, s := range group {
-			deps = append(deps, s.Pkg.Deps...)
-			if s.Pkg.Build != nil {
-				deps = append(deps, s.Pkg.Build.Deps...)
+			r, err := s.Pkg.Recipe(s.Version)
+			if err != nil {
+				return Plan{}, err
+			}
+			deps = append(deps, r.Deps...)
+			if r.Build != nil {
+				deps = append(deps, r.Build.Deps...)
 			}
 			plats = append(plats, s.Platforms...)
 		}

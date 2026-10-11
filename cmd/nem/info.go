@@ -48,10 +48,11 @@ func runInfo(cmd *cobra.Command, arg string) error {
 	}
 	pkg, catalogName := hit.Pkg, hit.Entry.Name
 
+	r := pkg.LatestRecipe()
 	platforms := "all"
-	if len(pkg.Platforms) > 0 {
-		ss := make([]string, len(pkg.Platforms))
-		for i, p := range pkg.Platforms {
+	if len(r.Platforms) > 0 {
+		ss := make([]string, len(r.Platforms))
+		for i, p := range r.Platforms {
 			ss[i] = p.String()
 		}
 		platforms = strings.Join(ss, ", ")
@@ -68,7 +69,7 @@ func runInfo(cmd *cobra.Command, arg string) error {
 		{"homepage", pkg.Homepage},
 		{"license", pkg.License},
 		{"platforms", platforms},
-		{"bins", strings.Join(pkg.Bins, ", ")},
+		{"bins", strings.Join(r.Bins, ", ")},
 		{"versions", strings.Join(versions, ", ")},
 	}
 	for _, f := range fields {

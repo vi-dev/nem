@@ -88,3 +88,23 @@ func TestCatalogBuildPushFlagDryRunNamesTheTarget(t *testing.T) {
 		}
 	})
 }
+
+func TestBatchTestForSkipsPackagesWithoutTestSteps(t *testing.T) {
+	hook := batchTestFor(nil)
+	plain := &spec.Package{Name: "plain", Versions: []spec.VersionEntry{{Version: "1.0.0"}}}
+	if hook(plain, nil) != nil {
+		t.Fatal("a package without test steps must get no test hook")
+	}
+	frozen := &spec.Package{
+		Name:     "mixed",
+		Frozen:   []spec.Recipe{{Prefix: "1", Test: []spec.TestStep{{}}}},
+		Versions: []spec.VersionEntry{{Version: "2.0.0"}, {Version: "1.0.0"}},
+	}
+	test := hook(frozen, nil)
+	if test == nil {
+		t.Fatal("a package whose frozen recipe has test steps must get a test hook")
+	}
+	if err := test(context.Background(), frozen, "2.0.0", ""); err != nil {
+		t.Fatalf("a version without test steps must pass the hook: %v", err)
+	}
+}

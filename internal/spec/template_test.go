@@ -52,8 +52,8 @@ func TestAssetName(t *testing.T) {
 }
 
 func TestBuildSourceURL(t *testing.T) {
-	pkg := &Package{Build: &Build{}}
-	pkg.Build.Source.URL = "https://ex.com/src-{{.Version}}.tar.gz"
+	pkg := &Package{Base: Recipe{Build: &Build{}}}
+	pkg.Base.Build.Source.URL = "https://ex.com/src-{{.Version}}.tar.gz"
 	got, err := pkg.BuildSourceURL("v1.2.3", Platform{OS: "darwin", Arch: "arm64"})
 	if err != nil {
 		t.Fatalf("BuildSourceURL: %v", err)

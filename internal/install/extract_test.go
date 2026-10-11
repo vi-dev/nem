@@ -11,7 +11,6 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/vi-dev/nem/internal/install"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -101,7 +100,7 @@ func TestRunActionsExtractTarGzAppliesStrip(t *testing.T) {
 	}
 	staging, artifact := stagingFor(t, gzipBytes(t, buildTar(t, entries)))
 
-	if err := install.RunActions(extractPkg(1), staging, artifact, "v1", spec.Current()); err != nil {
+	if err := runActions(extractPkg(1), staging, artifact, "v1", spec.Current()); err != nil {
 		t.Fatalf("RunActions: %v", err)
 	}
 
@@ -144,8 +143,8 @@ func TestRunActionsExtractSingleFileNamedFromArtifact(t *testing.T) {
 			staging, artifact := stagingFor(t, tc.archive)
 
 			pkg := extractPkg(0)
-			pkg.Artifact = tc.artifact
-			if err := install.RunActions(pkg, staging, artifact, "v1", spec.Current()); err != nil {
+			pkg.Base.Artifact = tc.artifact
+			if err := runActions(pkg, staging, artifact, "v1", spec.Current()); err != nil {
 				t.Fatalf("RunActions: %v", err)
 			}
 
@@ -167,7 +166,7 @@ func TestRunActionsExtractSingleFileNamedFromArtifact(t *testing.T) {
 func TestRunActionsExtractSingleFileWithoutArtifactNameErrors(t *testing.T) {
 	staging, artifact := stagingFor(t, gzipBytes(t, []byte("just bytes")))
 
-	err := install.RunActions(extractPkg(0), staging, artifact, "v1", spec.Current())
+	err := runActions(extractPkg(0), staging, artifact, "v1", spec.Current())
 	if err == nil || !strings.Contains(err.Error(), "single file") {
 		t.Fatalf("error = %v, want single-file naming error", err)
 	}

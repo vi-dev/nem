@@ -156,17 +156,31 @@ var runPkgTest = pkgtest.InstallAndRun
 func batchTestFor(set *catalog.Set) func(
 	*spec.Package, *archive.Dir) func(context.Context, *spec.Package, string, string) error {
 	return func(pkg *spec.Package, store *archive.Dir) func(context.Context, *spec.Package, string, string) error {
-		if len(pkg.Test) == 0 {
+		if !hasTestSteps(pkg) {
 			return nil
 		}
 		return func(ctx context.Context, p *spec.Package, v, artifactPath string) error {
-			deps, err := build.ResolveDeps(ctx, nemHome, set, p.Name, p.Platforms, p.Deps, store)
+			r, err := p.Recipe(v)
+			if err != nil {
+				return err
+			}
+			if len(r.Test) == 0 {
+				return nil
+			}
+			deps, err := build.ResolveDeps(ctx, nemHome, set, p.Name, r.Platforms, r.Deps, store)
 			if err != nil {
 				return err
 			}
 			return runPkgTest(ctx, nemHome, deps, p, v, "", artifactPath)
 		}
 	}
+}
+
+func hasTestSteps(pkg *spec.Package) bool {
+	if len(pkg.Base.Test) > 0 {
+		return true
+	}
+	return slices.ContainsFunc(pkg.Frozen, func(r spec.Recipe) bool { return len(r.Test) > 0 })
 }
 
 func renderPlan(plan build.Plan) {

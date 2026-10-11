@@ -76,13 +76,21 @@ func runSync(cmd *cobra.Command, global bool) error {
 			}
 			return err
 		}
-		links := install.Links(hit.Pkg, versions)
-		fetches := !installed || install.NeedsRelayout(nemHome, entry.Name, entry.Version, links)
-		if fetches && entry.Digest != "" && hit.Digest != entry.Digest {
-			return &catalog.DigestMismatchError{
-				Name: entry.Name, Version: entry.Version,
-				Locked: entry.Digest, Current: hit.Digest,
+		mismatch := entry.Digest != "" && hit.Digest != entry.Digest
+		if !installed && mismatch {
+			return digestMismatch(entry, hit.Digest)
+		}
+		r, err := hit.Pkg.Recipe(entry.Version)
+		if err != nil {
+			if installed {
+				console.Debug("Skipping %s %s: %v", entry.Name, entry.Version, err)
+				continue
 			}
+			return err
+		}
+		links := install.Links(r, versions)
+		if mismatch && install.NeedsRelayout(nemHome, entry.Name, entry.Version, links) {
+			return digestMismatch(entry, hit.Digest)
 		}
 		src := fetch.Source{}
 		if hit.Entry.Archives != nil {
@@ -98,6 +106,13 @@ func runSync(cmd *cobra.Command, global bool) error {
 	}
 
 	return install.Run(cmd.Context(), nemHome, jobs)
+}
+
+func digestMismatch(entry project.LockEntry, current string) error {
+	return &catalog.DigestMismatchError{
+		Name: entry.Name, Version: entry.Version,
+		Locked: entry.Digest, Current: current,
+	}
 }
 
 func warnManifestDrift(manifestPath string, lock *project.Lockfile) {

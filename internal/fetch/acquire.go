@@ -62,7 +62,11 @@ var remoteByRef = func(ctx context.Context, ref string, plat spec.Platform, dir 
 }
 
 func Acquire(ctx context.Context, pkg *spec.Package, version string, plat spec.Platform, src Source, dir string, task report.Task) (string, error) {
-	if pkg.Artifact.OCI != "" {
+	r, err := pkg.Recipe(version)
+	if err != nil {
+		return "", err
+	}
+	if r.Artifact.OCI != "" {
 		return acquireOCI(ctx, pkg, version, plat, src, dir)
 	}
 
@@ -98,7 +102,11 @@ func Acquire(ctx context.Context, pkg *spec.Package, version string, plat spec.P
 var ErrNoArchiveStore = errors.New("relative oci ref requires a catalog archive store")
 
 func acquireOCI(ctx context.Context, pkg *spec.Package, version string, plat spec.Platform, src Source, dir string) (string, error) {
-	ref, err := templateOCIRef(pkg.Artifact.OCI, version, plat)
+	r, err := pkg.Recipe(version)
+	if err != nil {
+		return "", err
+	}
+	ref, err := templateOCIRef(r.Artifact.OCI, version, plat)
 	if err != nil {
 		return "", err
 	}

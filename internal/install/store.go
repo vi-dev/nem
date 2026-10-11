@@ -35,6 +35,10 @@ func Install(ctx context.Context, h home.Home, pkg *spec.Package, version, catal
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	r, err := pkg.Recipe(version)
+	if err != nil {
+		return fmt.Errorf("install %s@%s: %w", pkg.Name, version, err)
+	}
 
 	installDir, err := h.PackageDir(pkg.Name, version)
 	if err != nil {
@@ -64,10 +68,10 @@ func Install(ctx context.Context, h home.Home, pkg *spec.Package, version, catal
 		}
 	}()
 
-	if err := RunActions(pkg, staging, artifactPath, version, spec.Current()); err != nil {
+	if err := RunActions(pkg, r, staging, artifactPath, version, spec.Current()); err != nil {
 		return fmt.Errorf("install %s@%s: %w", pkg.Name, version, err)
 	}
-	if err := writeMeta(staging, pkg, version, catalog); err != nil {
+	if err := writeMeta(staging, pkg, r, version, catalog); err != nil {
 		return fmt.Errorf("install %s@%s: %w", pkg.Name, version, err)
 	}
 	if _, err := WriteLinks(staging, links); err != nil {
@@ -95,14 +99,14 @@ func commitExistsErr(name, version string) error {
 	return fmt.Errorf("commit %s@%s: install dir already exists", name, version)
 }
 
-func writeMeta(staging string, pkg *spec.Package, version, catalog string) error {
+func writeMeta(staging string, pkg *spec.Package, r *spec.Recipe, version, catalog string) error {
 	meta := Meta{
 		Package:     pkg.Name,
 		Version:     version,
 		Catalog:     catalog,
-		Bins:        pkg.Bins,
-		Libs:        pkg.Libs,
-		Env:         pkg.Env,
+		Bins:        r.Bins,
+		Libs:        r.Libs,
+		Env:         r.Env,
 		Layout:      LayoutVersion,
 		InstalledAt: time.Now().UTC(),
 	}

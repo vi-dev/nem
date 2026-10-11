@@ -135,14 +135,14 @@ func TestWriteLinksKeepsEveryLinkWhenValidationFails(t *testing.T) {
 
 func TestLinksFiltersKindAndPlatform(t *testing.T) {
 	other := spec.Platform{OS: "plan9", Arch: "mips"}
-	pkg := &spec.Package{Name: "gnupg", Deps: []spec.Dep{
+	r := &spec.Recipe{Deps: []spec.Dep{
 		{Name: "libgcrypt", Kind: spec.DepKindLink, Compat: "1"},
 		{Name: "pinentry", Kind: spec.DepKindRun},
 		{Name: "ncurses", Kind: spec.DepKindLink, Platforms: []spec.Platform{other}},
 		{Name: "zlib", Kind: spec.DepKindLink},
 	}}
 	versions := map[string]string{"libgcrypt": "1.12.3", "pinentry": "1.3.1", "ncurses": "6.6"}
-	got := Links(pkg, versions)
+	got := Links(r, versions)
 	if len(got) != 1 || got["libgcrypt"] != "1.12.3" {
 		t.Fatalf("Links = %v, want only libgcrypt 1.12.3 (run dep, other-platform dep, unresolved dep excluded)", got)
 	}

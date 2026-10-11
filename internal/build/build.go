@@ -36,9 +36,6 @@ type Options struct {
 func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package,
 	opts Options) error {
 	rep := report.FromContext(ctx)
-	if pkg.Build == nil {
-		return errors.New("package has no build section")
-	}
 	if err := pkg.Validate(); err != nil {
 		return err
 	}
@@ -47,9 +44,16 @@ func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package
 	if version == "" {
 		version = pkg.Versions[0].Version
 	}
+	r, err := pkg.Recipe(version)
+	if err != nil {
+		return err
+	}
+	if r.Build == nil {
+		return errors.New("package has no build section")
+	}
 
 	task := rep.Task(fmt.Sprintf("Building %s %s", pkg.Name, version))
-	err := buildPackage(ctx, h, set, pkg, version, opts, task)
+	err = buildPackage(ctx, h, set, pkg, r, version, opts, task)
 	switch {
 	case err == nil:
 		task.Done(fmt.Sprintf("Built %s %s", pkg.Name, version))
@@ -61,11 +65,11 @@ func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package
 	return err
 }
 
-func buildPackage(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package,
+func buildPackage(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package, r *spec.Recipe,
 	version string, opts Options, task report.Task) error {
 	rep := report.FromContext(ctx)
 	var steps []spec.BuildStep
-	for _, step := range pkg.Build.Steps {
+	for _, step := range r.Build.Steps {
 		if spec.PlatformsInclude(step.Platforms, spec.Current()) {
 			steps = append(steps, step)
 		}
@@ -100,10 +104,10 @@ func buildPackage(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.
 		return err
 	}
 
-	if len(pkg.Build.Deps) > 0 {
+	if len(r.Build.Deps) > 0 {
 		task.Segment("installing deps")
 	}
-	deps, err := ResolveDeps(ctx, h, set, pkg.Name, pkg.Platforms, pkg.Build.Deps, opts.LocalStore)
+	deps, err := ResolveDeps(ctx, h, set, pkg.Name, r.Platforms, r.Build.Deps, opts.LocalStore)
 	if err != nil {
 		return err
 	}
@@ -112,7 +116,7 @@ func buildPackage(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.
 	if err != nil {
 		return fmt.Errorf("package dir for %s@%s: %w", pkg.Name, version, err)
 	}
-	outputDir := filepath.Join(srcRoot, pkg.Build.Output)
+	outputDir := filepath.Join(srcRoot, r.Build.Output)
 	env := ComposeEnv(os.Environ(), deps, EnvContext{
 		Version: version, Platform: spec.Current(), Prefix: prefix, StagingDir: staging, OutputDir: outputDir,
 	})
@@ -131,7 +135,7 @@ func buildPackage(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.
 		}
 	}
 
-	if n := pkg.Build.Normalize; n == nil || *n {
+	if n := r.Build.Normalize; n == nil || *n {
 		task.Segment("normalizing")
 		if err := normalizeOutput(outputDir); err != nil {
 			return fmt.Errorf("normalize output: %w", err)
@@ -147,7 +151,7 @@ func buildPackage(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.
 	if len(vs) > 0 {
 		return conformanceError(vs)
 	}
-	warnUnlinkedDepRpaths(ctx, pkg, version, deps)
+	warnUnlinkedDepRpaths(ctx, pkg.Name, version, r, deps)
 
 	var data []byte
 	if opts.Test != nil || opts.LocalStore != nil {
@@ -226,7 +230,11 @@ func ResolveDeps(ctx context.Context, h home.Home, set *catalog.Set,
 
 func InstallResolvedDeps(ctx context.Context, h home.Home, set *catalog.Set,
 	result *resolve.Result, local *archive.Dir) ([]ResolvedDep, error) {
-	if err := install.Run(ctx, h, install.Jobs(result, set, local)); err != nil {
+	jobs, err := install.Jobs(result, set, local)
+	if err != nil {
+		return nil, err
+	}
+	if err := install.Run(ctx, h, jobs); err != nil {
 		return nil, err
 	}
 	current := spec.Current().String()
@@ -268,10 +276,10 @@ func writeTempArchive(h home.Home, name string, data []byte) (string, error) {
 	return f.Name(), nil
 }
 
-func warnUnlinkedDepRpaths(ctx context.Context, pkg *spec.Package, version string, deps []ResolvedDep) {
+func warnUnlinkedDepRpaths(ctx context.Context, pkgName, version string, r *spec.Recipe, deps []ResolvedDep) {
 	plat := spec.Current()
-	linked := make(map[string]bool, len(pkg.Deps))
-	for _, d := range pkg.Deps {
+	linked := make(map[string]bool, len(r.Deps))
+	for _, d := range r.Deps {
 		if d.Kind == spec.DepKindLink && spec.PlatformsInclude(d.Platforms, plat) {
 			linked[d.Name] = true
 		}
@@ -283,14 +291,14 @@ func warnUnlinkedDepRpaths(ctx context.Context, pkg *spec.Package, version strin
 		}
 	}
 	unlinked := map[string]bool{}
-	for _, d := range pkg.Build.Deps {
+	for _, d := range r.Build.Deps {
 		if d.Kind == spec.DepKindLink && spec.PlatformsInclude(d.Platforms, plat) && !linked[d.Name] && loaderPath[d.Name] {
 			unlinked[d.Name] = true
 		}
 	}
 	rep := report.FromContext(ctx)
 	for _, name := range slices.Sorted(maps.Keys(unlinked)) {
-		rep.Warn("%s %s: rpath links %s without a runtime link dependency", pkg.Name, version, name)
+		rep.Warn("%s %s: rpath links %s without a runtime link dependency", pkgName, version, name)
 	}
 }
 

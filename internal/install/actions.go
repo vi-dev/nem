@@ -12,16 +12,16 @@ import (
 
 const artifactToken = spec.ArtifactToken
 
-func RunActions(pkg *spec.Package, stagingDir, artifactPath, version string, platform spec.Platform) error {
+func RunActions(pkg *spec.Package, r *spec.Recipe, stagingDir, artifactPath, version string, platform spec.Platform) error {
 	root, err := os.OpenRoot(stagingDir)
 	if err != nil {
 		return fmt.Errorf("open staging dir: %w", err)
 	}
 	defer root.Close()
 
-	singleName := singleFileName(pkg, version, platform)
+	singleName := singleFileName(r, pkg, version, platform)
 	ran := 0
-	for i, a := range pkg.Install {
+	for i, a := range r.Install {
 		if !spec.PlatformsInclude(a.Platforms, platform) {
 			continue
 		}

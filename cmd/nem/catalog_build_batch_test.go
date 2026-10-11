@@ -292,7 +292,8 @@ func TestCatalogBuildBatchResolvesDepsFromTheTargetCatalog(t *testing.T) {
 func TestCatalogBuildFlagValidation(t *testing.T) {
 	nemHome := t.TempDir()
 	dir := writeLintFixture(t, map[string]string{
-		"blib": batchRecipe("blib", "https://example.com/blib.tar.gz", "", "make"),
+		"blib": strings.Replace(batchRecipe("blib", "https://example.com/blib.tar.gz", "", "make"),
+			"versions: [v1.0.0]", "versions: [v2.0.0, v1.0.0]", 1),
 	})
 	recipe := filepath.Join(dir, "pkgs", "blib", "pkg.yaml")
 

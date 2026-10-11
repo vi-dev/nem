@@ -611,7 +611,11 @@ cp "$NEM_OUTPUT/bin/app" "$NEM_OUTPUT/libexec/a/b/c/d/app"`
 	if err != nil {
 		t.Fatalf("resolve app: %v", err)
 	}
-	if err := install.Run(ctx, h, install.Jobs(result, sources, store)); err != nil {
+	jobs, err := install.Jobs(result, sources, store)
+	if err != nil {
+		t.Fatalf("jobs: %v", err)
+	}
+	if err := install.Run(ctx, h, jobs); err != nil {
 		t.Fatalf("install app: %v\n%s", err, out)
 	}
 	appDir, _ := h.PackageDir("app", "2.0.0")

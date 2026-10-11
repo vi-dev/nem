@@ -266,7 +266,11 @@ func runUse(cmd *cobra.Command, args []string, global bool) error {
 	}
 	release()
 
-	return install.Run(cmd.Context(), nemHome, install.Jobs(result, sources, nil))
+	jobs, err := install.Jobs(result, sources, nil)
+	if err != nil {
+		return err
+	}
+	return install.Run(cmd.Context(), nemHome, jobs)
 }
 
 func runUnuse(cmd *cobra.Command, args []string, global bool) error {
@@ -305,5 +309,9 @@ func runUnuse(cmd *cobra.Command, args []string, global bool) error {
 	}
 	release()
 
-	return install.Run(cmd.Context(), nemHome, install.Jobs(result, sources, nil))
+	jobs, err := install.Jobs(result, sources, nil)
+	if err != nil {
+		return err
+	}
+	return install.Run(cmd.Context(), nemHome, jobs)
 }

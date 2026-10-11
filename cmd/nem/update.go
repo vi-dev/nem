@@ -156,7 +156,11 @@ func runUpdate(cmd *cobra.Command, args []string, global, dryRun bool) error {
 		return nil
 	}
 
-	if err := install.Run(cmd.Context(), nemHome, install.Jobs(result, sources, nil)); err != nil {
+	jobs, err := install.Jobs(result, sources, nil)
+	if err != nil {
+		return err
+	}
+	if err := install.Run(cmd.Context(), nemHome, jobs); err != nil {
 		return err
 	}
 	if len(rows) == 0 {

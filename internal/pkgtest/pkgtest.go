@@ -23,13 +23,17 @@ func InstallAndRun(ctx context.Context, h home.Home, deps []build.ResolvedDep,
 	pkg *spec.Package, version, catalogName, artifactPath string) (err error) {
 	rep := report.FromContext(ctx)
 
+	r, recipeErr := pkg.Recipe(version)
+	if recipeErr != nil {
+		return recipeErr
+	}
 	plat := spec.Current()
-	if !spec.PlatformsInclude(pkg.Platforms, plat) {
+	if !spec.PlatformsInclude(r.Platforms, plat) {
 		return nil
 	}
 
 	var steps []spec.TestStep
-	for _, s := range pkg.Test {
+	for _, s := range r.Test {
 		if spec.PlatformsInclude(s.Platforms, plat) {
 			steps = append(steps, s)
 		}
@@ -60,12 +64,12 @@ func InstallAndRun(ctx context.Context, h home.Home, deps []build.ResolvedDep,
 	}
 	alias := *pkg
 	alias.Name = aliasName
-	if installErr := install.Install(ctx, h, &alias, version, catalogName, artifactPath, false, install.Links(pkg, versions)); installErr != nil {
+	if installErr := install.Install(ctx, h, &alias, version, catalogName, artifactPath, false, install.Links(r, versions)); installErr != nil {
 		return fmt.Errorf("test-install %s@%s: %w", pkg.Name, version, installErr)
 	}
 	prefix := filepath.Join(aliasDir, version)
 	if len(steps) == 0 {
-		if len(pkg.Test) > 0 {
+		if len(r.Test) > 0 {
 			rep.Info("No test of %s applies to %s; nothing asserted", pkg.Name, plat)
 			rep.Success("Installed %s %s (no test for %s)", pkg.Name, version, plat)
 		} else {
@@ -76,13 +80,13 @@ func InstallAndRun(ctx context.Context, h home.Home, deps []build.ResolvedDep,
 
 	self := build.ResolvedDep{
 		Name: alias.Name, Version: version, Prefix: prefix,
-		OnPath: true, OnLoaderPath: true, Bins: pkg.Bins, Libs: pkg.Libs,
+		OnPath: true, OnLoaderPath: true, Bins: r.Bins, Libs: r.Libs,
 	}
 	entries := append([]build.ResolvedDep{self}, deps...)
 	env := build.ComposeEnv(os.Environ(), entries,
 		build.EnvContext{Version: version, Platform: plat, Prefix: prefix, AbsRpath: true})
 
-	env = applyPackageEnv(pkg, prefix, version, plat, env, rep)
+	env = applyPackageEnv(r, pkg.Name, prefix, version, plat, env, rep)
 
 	if mkdirErr := os.MkdirAll(h.Tmp(), 0o755); mkdirErr != nil {
 		return fmt.Errorf("create tmp dir: %w", mkdirErr)
@@ -133,19 +137,19 @@ func removeUsageRow(h home.Home, key string) error {
 	return usage.Save(h, idx)
 }
 
-func applyPackageEnv(pkg *spec.Package, installDir, version string, plat spec.Platform, env []string, rep report.Reporter) []string {
+func applyPackageEnv(r *spec.Recipe, name, installDir, version string, plat spec.Platform, env []string, rep report.Reporter) []string {
 	vars := map[string]string{}
-	for _, export := range pkg.Env {
+	for _, export := range r.Env {
 		if !spec.PlatformsInclude(export.Platforms, plat) {
 			continue
 		}
 		if envx.IsReserved(export.Name) {
-			rep.Warn("reserved env var %q from %s skipped", export.Name, pkg.Name)
+			rep.Warn("reserved env var %q from %s skipped", export.Name, name)
 			continue
 		}
 		value, err := envx.RenderEnvTemplate(export.Value, installDir, version)
 		if err != nil {
-			rep.Warn("env %q from %s: %v", export.Name, pkg.Name, err)
+			rep.Warn("env %q from %s: %v", export.Name, name, err)
 			continue
 		}
 		vars[export.Name] = value

@@ -112,7 +112,11 @@ func testSummary(tested, failed, skipped int) string {
 }
 
 func runPackageTest(cmd *cobra.Command, sources *catalog.Set, pkg *spec.Package, version string) (bool, error) {
-	if plat := spec.Current(); !spec.PlatformsInclude(pkg.Platforms, plat) {
+	r, err := pkg.Recipe(version)
+	if err != nil {
+		return false, err
+	}
+	if plat := spec.Current(); !spec.PlatformsInclude(r.Platforms, plat) {
 		console.Info("%s does not support %s", pkg.Name, plat)
 		return false, nil
 	}
@@ -121,7 +125,10 @@ func runPackageTest(cmd *cobra.Command, sources *catalog.Set, pkg *spec.Package,
 	if err != nil {
 		return false, err
 	}
-	jobs := install.Jobs(result, sources, nil)
+	jobs, err := install.Jobs(result, sources, nil)
+	if err != nil {
+		return false, err
+	}
 	var root *install.Job
 	for i := range jobs {
 		if jobs[i].Pkg.Name == pkg.Name {

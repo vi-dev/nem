@@ -91,10 +91,11 @@ func (p *Package) ArtifactURL(version string, plat Platform) (string, error) {
 }
 
 func (p *Package) BuildSourceURL(version string, plat Platform) (string, error) {
-	if p.Build == nil {
+	r := p.selectRecipe(version)
+	if r.Build == nil {
 		return "", fmt.Errorf("package %s has no build section", p.Name)
 	}
-	return expand(p.Build.Source.URL, p.templateCtx(version, plat))
+	return expand(r.Build.Source.URL, p.templateCtx(version, plat))
 }
 
 func (p *Package) AssetName(version string, plat Platform) (string, error) {

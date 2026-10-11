@@ -39,10 +39,7 @@ func buildPkg(version string, steps ...spec.BuildStep) *spec.Package {
 	}
 	return &spec.Package{Schema: 2, Name: "tool",
 		Base:     base,
-		Artifact: base.Artifact,
-		Install:  base.Install,
 		Versions: []spec.VersionEntry{{Version: version}},
-		Build:    base.Build,
 	}
 }
 
@@ -51,7 +48,7 @@ func buildFixture(t *testing.T, srcFiles map[string]string, version string, step
 	h := testx.HomeAt(t.TempDir())
 	srv, _ := serve(t, makeTarGz(t, srcFiles))
 	pkg := buildPkg(version, steps...)
-	pkg.Build.Source.URL = srv.URL
+	pkg.Base.Build.Source.URL = srv.URL
 	return h, pkg
 }
 
@@ -120,7 +117,7 @@ func TestBuildRunsStepsAndVerifies(t *testing.T) {
 	srv, sha := serve(t, body)
 	h := testx.HomeAt(t.TempDir())
 	pkg := buildPkg("v1.0.0", spec.BuildStep{Run: "mkdir -p \"$NEM_OUTPUT/bin\" && echo \"$NEM_VERSION\" > \"$NEM_OUTPUT/bin/ver\""})
-	pkg.Build.Source.URL = srv.URL
+	pkg.Base.Build.Source.URL = srv.URL
 
 	data, out, err := runBuildCapture(t, h, pkg, Options{Version: "v1.0.0"})
 	if err != nil {
@@ -140,7 +137,7 @@ func TestBuildSkipsTOFURecordForVerifiedSource(t *testing.T) {
 	srv, sha := serve(t, body)
 	h := testx.HomeAt(t.TempDir())
 	pkg := buildPkg("v1.0.0", spec.BuildStep{Run: `mkdir -p "$NEM_OUTPUT"`})
-	pkg.Build.Source.URL = srv.URL
+	pkg.Base.Build.Source.URL = srv.URL
 	pkg.Versions[0].SourceSha256 = sha
 
 	out, err := runBuild(t, h, pkg, Options{Version: "v1.0.0"})
@@ -163,7 +160,7 @@ func TestBuildStepPWDMatchesTheNemPaths(t *testing.T) {
 mkdir -p "$NEM_OUTPUT"
 printf '%s\n%s\n' "$PWD" "$(dirname "$NEM_OUTPUT")" > "$NEM_OUTPUT/paths"
 `})
-	pkg.Build.Source.URL = srv.URL
+	pkg.Base.Build.Source.URL = srv.URL
 
 	data, out, err := runBuildCapture(t, h, pkg, Options{Version: "v1"})
 	if err != nil {
@@ -274,7 +271,7 @@ func TestBuildSourceDownloadReportsLiveByteProgress(t *testing.T) {
 
 	h := testx.HomeAt(t.TempDir())
 	pkg := buildPkg("v1.0.0", spec.BuildStep{Run: `mkdir -p "$NEM_OUTPUT"`})
-	pkg.Build.Source.URL = srv.URL
+	pkg.Base.Build.Source.URL = srv.URL
 
 	var b bytes.Buffer
 	ctx := report.NewContext(context.Background(), report.New(&b, &b, report.Options{IsTTY: true, Color: report.ColorNever}))
@@ -380,18 +377,18 @@ func TestBuildRestampsAlreadyInstalledBuildDep(t *testing.T) {
 
 	srv, _ := serve(t, makeTarGz(t, map[string]string{"src/README": "hi"}))
 	pkg := &spec.Package{Schema: 2, Name: "consumer",
-		Artifact: spec.Artifact{OCI: ":{{.Version}}"},
-		Install:  []spec.Action{{Extract: &spec.ExtractAction{}}},
 		Versions: []spec.VersionEntry{{Version: "v1.0.0"}},
-		Build: &spec.Build{
-			Output: "out",
-			Deps:   []spec.Dep{{Name: "dep", Version: "9.9.9"}},
-			Steps: []spec.BuildStep{
-				{Run: `mkdir -p "$NEM_OUTPUT/bin" && echo hi > "$NEM_OUTPUT/bin/consumer"`},
-			},
-		}}
-	pkg.Build.Source.URL = srv.URL
-	pkg.Base = spec.Recipe{Artifact: pkg.Artifact, Install: pkg.Install, Build: pkg.Build}
+		Base: spec.Recipe{
+			Artifact: spec.Artifact{OCI: ":{{.Version}}"},
+			Install:  []spec.Action{{Extract: &spec.ExtractAction{}}},
+			Build: &spec.Build{
+				Output: "out",
+				Deps:   []spec.Dep{{Name: "dep", Version: "9.9.9"}},
+				Steps: []spec.BuildStep{
+					{Run: `mkdir -p "$NEM_OUTPUT/bin" && echo hi > "$NEM_OUTPUT/bin/consumer"`},
+				},
+			}}}
+	pkg.Base.Build.Source.URL = srv.URL
 
 	var b bytes.Buffer
 	ctx := report.NewContext(context.Background(), report.New(&b, &b, report.Options{}))
@@ -581,7 +578,7 @@ func TestBuildContinuesWhenStagingSweepFails(t *testing.T) {
 }
 
 func TestWarnUnlinkedDepRpathsNamesEveryMissingLinkDep(t *testing.T) {
-	pkg := &spec.Package{Name: "skopeo",
+	r := &spec.Recipe{
 		Deps: []spec.Dep{
 			{Name: "gpgme", Kind: spec.DepKindLink},
 			{Name: "pinentry", Kind: spec.DepKindRun},
@@ -599,7 +596,7 @@ func TestWarnUnlinkedDepRpathsNamesEveryMissingLinkDep(t *testing.T) {
 		{Name: "pinentry", OnPath: true},
 	}
 	ctx, rep := testx.ReporterContext(context.Background())
-	warnUnlinkedDepRpaths(ctx, pkg, "1.20.0", deps)
+	warnUnlinkedDepRpaths(ctx, "skopeo", "1.20.0", r, deps)
 	want := []string{
 		"skopeo 1.20.0: rpath links libassuan without a runtime link dependency",
 		"skopeo 1.20.0: rpath links libgpg-error without a runtime link dependency",
@@ -610,7 +607,7 @@ func TestWarnUnlinkedDepRpathsNamesEveryMissingLinkDep(t *testing.T) {
 }
 
 func TestWarnUnlinkedDepRpathsIgnoresTransitiveDeps(t *testing.T) {
-	pkg := &spec.Package{Name: "git",
+	r := &spec.Recipe{
 		Deps: []spec.Dep{{Name: "libcurl", Kind: spec.DepKindLink}},
 		Build: &spec.Build{Deps: []spec.Dep{
 			{Name: "libcurl", Kind: spec.DepKindLink},
@@ -624,7 +621,7 @@ func TestWarnUnlinkedDepRpathsIgnoresTransitiveDeps(t *testing.T) {
 		{Name: "pkg-config", OnPath: true},
 	}
 	ctx, rep := testx.ReporterContext(context.Background())
-	warnUnlinkedDepRpaths(ctx, pkg, "2.52.0", deps)
+	warnUnlinkedDepRpaths(ctx, "git", "2.52.0", r, deps)
 	if got := rep.Warns(); len(got) != 0 {
 		t.Fatalf("warns = %q, want none: brotli and libidn2 are libcurl's, not git's", got)
 	}

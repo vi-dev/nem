@@ -17,24 +17,28 @@ func Select(ctx context.Context, t *Target, packages []string) ([]Selection, err
 		if err != nil {
 			return nil, err
 		}
-		sels = append(sels, Selection{Pkg: pkg, Version: version, Reason: "forced", Platforms: pkg.SupportedBy()})
+		sel, err := selection(pkg, version, "forced")
+		if err != nil {
+			return nil, err
+		}
+		sels = append(sels, sel)
 	}
 	return sels, nil
 }
 
 func SelectDeps(ctx context.Context, t *Target, configured *catalog.Set, roots []Selection) ([]Selection, error) {
 	names := map[string]bool{}
-	var pkgs []*spec.Package
+	var firsts []Selection
 	for _, r := range roots {
 		if names[r.Pkg.Name] {
 			continue
 		}
 		names[r.Pkg.Name] = true
-		pkgs = append(pkgs, r.Pkg)
+		firsts = append(firsts, r)
 	}
 	catalogs := configured.Prepend(t.Entry)
 	var sels []Selection
-	for _, root := range pkgs {
+	for _, root := range firsts {
 		deps, err := selectDependencies(ctx, t, root, catalogs)
 		if err != nil {
 			return nil, err
@@ -57,16 +61,26 @@ func SelectAll(ctx context.Context, t *Target) ([]Selection, error) {
 	}
 	var sels []Selection
 	for _, pkg := range pkgs {
-		if !buildable(pkg) || len(pkg.Versions) == 0 {
+		if len(pkg.Versions) == 0 || !buildable(pkg.LatestRecipe()) {
 			continue
 		}
-		sels = append(sels, Selection{Pkg: pkg, Version: pkg.Versions[0].Version, Reason: "latest", Platforms: pkg.SupportedBy()})
+		sel, err := selection(pkg, pkg.Versions[0].Version, "latest")
+		if err != nil {
+			return nil, err
+		}
+		sels = append(sels, sel)
 	}
 	return sels, nil
 }
 
-func buildable(pkg *spec.Package) bool {
-	return pkg.Artifact.OCI != "" && pkg.Build != nil
+func buildable(r *spec.Recipe) bool { return r.Artifact.OCI != "" && r.Build != nil }
+
+func selection(pkg *spec.Package, version, reason string) (Selection, error) {
+	r, err := pkg.Recipe(version)
+	if err != nil {
+		return Selection{}, err
+	}
+	return Selection{Pkg: pkg, Version: version, Reason: reason, Platforms: r.SupportedBy()}, nil
 }
 
 func selectPackage(ctx context.Context, t *Target, selector string) (*spec.Package, string, error) {
@@ -89,15 +103,19 @@ func selectPackage(ctx context.Context, t *Target, selector string) (*spec.Packa
 	return pkg, version, nil
 }
 
-func selectDependencies(ctx context.Context, t *Target, root *spec.Package, catalogs *catalog.Set) ([]Selection, error) {
-	deps := root.Deps
-	if root.Build != nil {
-		deps = append(append([]spec.Dep(nil), deps...), root.Build.Deps...)
+func selectDependencies(ctx context.Context, t *Target, root Selection, catalogs *catalog.Set) ([]Selection, error) {
+	r, err := root.Pkg.Recipe(root.Version)
+	if err != nil {
+		return nil, err
+	}
+	deps := r.Deps
+	if r.Build != nil {
+		deps = append(append([]spec.Dep(nil), deps...), r.Build.Deps...)
 	}
 	if len(deps) == 0 {
 		return nil, nil
 	}
-	resolvedDeps, err := resolve.Dependencies(ctx, root.Name, root.Platforms, deps, catalogs)
+	resolvedDeps, err := resolve.Dependencies(ctx, root.Pkg.Name, r.Platforms, deps, catalogs)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +127,15 @@ func selectDependencies(ctx context.Context, t *Target, root *spec.Package, cata
 			continue
 		}
 
-		if p := resolvedDeps.Pkgs[e.Name]; p == nil || p.Artifact.OCI == "" {
+		p := resolvedDeps.Pkgs[e.Name]
+		if p == nil {
+			continue
+		}
+		pr, err := p.Recipe(e.Version)
+		if err != nil {
+			return nil, err
+		}
+		if pr.Artifact.OCI == "" {
 			continue
 		}
 		pkg, _, err := t.Entry.Catalog.Package(ctx, e.Name)
@@ -119,7 +145,11 @@ func selectDependencies(ctx context.Context, t *Target, root *spec.Package, cata
 			}
 			return nil, err
 		}
-		if pkg.Build == nil {
+		cr, err := pkg.Recipe(e.Version)
+		if err != nil {
+			return nil, err
+		}
+		if cr.Build == nil {
 			continue
 		}
 		exists, err := t.ArchiveExists(ctx, e.Name, e.Version, plat)
@@ -129,7 +159,11 @@ func selectDependencies(ctx context.Context, t *Target, root *spec.Package, cata
 		if exists {
 			continue
 		}
-		sels = append(sels, Selection{Pkg: pkg, Version: e.Version, Reason: "dep of " + root.Name, Platforms: pkg.SupportedBy()})
+		sel, err := selection(pkg, e.Version, "dep of "+root.Pkg.Name)
+		if err != nil {
+			return nil, err
+		}
+		sels = append(sels, sel)
 	}
 	return sels, nil
 }
@@ -163,7 +197,7 @@ func SelectMissing(ctx context.Context, t *Target, scope []spec.Ref) ([]Selectio
 			return nil, MissingStats{}, err
 		}
 		for _, pkg := range pkgs {
-			if !buildable(pkg) {
+			if !buildable(pkg.LatestRecipe()) {
 				stats.Skipped++
 				continue
 			}
@@ -179,7 +213,7 @@ func SelectMissing(ctx context.Context, t *Target, scope []spec.Ref) ([]Selectio
 			}
 			return nil, MissingStats{}, err
 		}
-		if !buildable(pkg) {
+		if !buildable(pkg.LatestRecipe()) {
 			stats.Skipped++
 			continue
 		}
@@ -197,12 +231,19 @@ func SelectMissing(ctx context.Context, t *Target, scope []spec.Ref) ([]Selectio
 	var sels []Selection
 	for _, c := range candidates {
 		stats.Checked++
-		plats := c.pkg.SupportedBy()
 		for _, v := range c.versions {
 			if seen[c.pkg.Name+"@"+v] {
 				continue
 			}
 			seen[c.pkg.Name+"@"+v] = true
+			r, err := c.pkg.Recipe(v)
+			if err != nil {
+				return nil, MissingStats{}, err
+			}
+			if !buildable(r) {
+				continue
+			}
+			plats := r.SupportedBy()
 			have, err := t.ArchivePlatforms(ctx, c.pkg.Name, v)
 			if err != nil {
 				return nil, MissingStats{}, err

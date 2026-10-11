@@ -13,7 +13,11 @@ import (
 )
 
 func pkgWith(actions ...spec.Action) *spec.Package {
-	return &spec.Package{Name: "test", Install: actions}
+	return &spec.Package{Name: "test", Base: spec.Recipe{Install: actions}}
+}
+
+func runActions(pkg *spec.Package, staging, artifact, version string, plat spec.Platform) error {
+	return install.RunActions(pkg, &pkg.Base, staging, artifact, version, plat)
 }
 
 func writeFile(t *testing.T, path string, data []byte) {
@@ -44,7 +48,7 @@ func TestRunActionsCopyArtifactToken(t *testing.T) {
 	artifact := writeArtifact(t, tmp, []byte("artifact-bytes"))
 
 	pkg := pkgWith(spec.Action{Copy: &spec.CopyAction{Src: "{{.Artifact}}", Dst: "bin/tool"}})
-	if err := install.RunActions(pkg, staging, artifact, "v1", spec.Current()); err != nil {
+	if err := runActions(pkg, staging, artifact, "v1", spec.Current()); err != nil {
 		t.Fatalf("RunActions: %v", err)
 	}
 
@@ -72,7 +76,7 @@ func TestRunActionsCopyStagingRelative(t *testing.T) {
 	artifact := writeArtifact(t, tmp, []byte("unused"))
 
 	pkg := pkgWith(spec.Action{Copy: &spec.CopyAction{Src: "src.txt", Dst: "out/dst.txt", Mode: 0o600}})
-	if err := install.RunActions(pkg, staging, artifact, "v1", spec.Current()); err != nil {
+	if err := runActions(pkg, staging, artifact, "v1", spec.Current()); err != nil {
 		t.Fatalf("RunActions: %v", err)
 	}
 
@@ -102,7 +106,7 @@ func TestRunActionsCopyDstContainmentViolation(t *testing.T) {
 	artifact := writeArtifact(t, tmp, []byte("data"))
 
 	pkg := pkgWith(spec.Action{Copy: &spec.CopyAction{Src: "{{.Artifact}}", Dst: "../evil"}})
-	err := install.RunActions(pkg, staging, artifact, "v1", spec.Current())
+	err := runActions(pkg, staging, artifact, "v1", spec.Current())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -124,7 +128,7 @@ func TestRunActionsCopySrcContainmentViolation(t *testing.T) {
 	artifact := writeArtifact(t, tmp, []byte("data"))
 
 	pkg := pkgWith(spec.Action{Copy: &spec.CopyAction{Src: "../evil", Dst: "dst.txt"}})
-	err := install.RunActions(pkg, staging, artifact, "v1", spec.Current())
+	err := runActions(pkg, staging, artifact, "v1", spec.Current())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -140,7 +144,7 @@ func TestRunActionsMove(t *testing.T) {
 	artifact := writeArtifact(t, tmp, []byte("unused"))
 
 	pkg := pkgWith(spec.Action{Move: &spec.MoveAction{Src: "src.txt", Dst: "dst.txt"}})
-	if err := install.RunActions(pkg, staging, artifact, "v1", spec.Current()); err != nil {
+	if err := runActions(pkg, staging, artifact, "v1", spec.Current()); err != nil {
 		t.Fatalf("RunActions: %v", err)
 	}
 
@@ -163,7 +167,7 @@ func TestRunActionsMoveSrcContainmentViolation(t *testing.T) {
 	artifact := writeArtifact(t, tmp, []byte("unused"))
 
 	pkg := pkgWith(spec.Action{Move: &spec.MoveAction{Src: "../evil", Dst: "dst.txt"}})
-	err := install.RunActions(pkg, staging, artifact, "v1", spec.Current())
+	err := runActions(pkg, staging, artifact, "v1", spec.Current())
 	if err == nil || !strings.Contains(err.Error(), "escapes staging dir") {
 		t.Fatalf("error = %v, want containment error", err)
 	}
@@ -176,7 +180,7 @@ func TestRunActionsMoveDstContainmentViolation(t *testing.T) {
 	artifact := writeArtifact(t, tmp, []byte("unused"))
 
 	pkg := pkgWith(spec.Action{Move: &spec.MoveAction{Src: "src.txt", Dst: "../evil"}})
-	err := install.RunActions(pkg, staging, artifact, "v1", spec.Current())
+	err := runActions(pkg, staging, artifact, "v1", spec.Current())
 	if err == nil || !strings.Contains(err.Error(), "escapes staging dir") {
 		t.Fatalf("error = %v, want containment error", err)
 	}
@@ -192,7 +196,7 @@ func TestRunActionsMkdir(t *testing.T) {
 	artifact := writeArtifact(t, tmp, []byte("unused"))
 
 	pkg := pkgWith(spec.Action{Mkdir: "a/b/c"})
-	if err := install.RunActions(pkg, staging, artifact, "v1", spec.Current()); err != nil {
+	if err := runActions(pkg, staging, artifact, "v1", spec.Current()); err != nil {
 		t.Fatalf("RunActions: %v", err)
 	}
 	info, err := os.Stat(filepath.Join(staging, "a", "b", "c"))
@@ -213,7 +217,7 @@ func TestRunActionsMkdirContainmentViolation(t *testing.T) {
 	artifact := writeArtifact(t, tmp, []byte("unused"))
 
 	pkg := pkgWith(spec.Action{Mkdir: "../evil"})
-	err := install.RunActions(pkg, staging, artifact, "v1", spec.Current())
+	err := runActions(pkg, staging, artifact, "v1", spec.Current())
 	if err == nil || !strings.Contains(err.Error(), "escapes staging dir") {
 		t.Fatalf("error = %v, want containment error", err)
 	}
@@ -234,7 +238,7 @@ func TestRunActionsSkipsNonMatchingPlatform(t *testing.T) {
 		spec.Action{Mkdir: "linux-any", Platforms: []spec.Platform{{OS: "linux"}}},
 		spec.Action{Mkdir: "../evil", Platforms: []spec.Platform{{OS: "darwin", Arch: "arm64"}}},
 	)
-	if err := install.RunActions(pkg, staging, artifact, "v1", spec.Platform{OS: "linux", Arch: "amd64"}); err != nil {
+	if err := runActions(pkg, staging, artifact, "v1", spec.Platform{OS: "linux", Arch: "amd64"}); err != nil {
 		t.Fatalf("RunActions: %v", err)
 	}
 
@@ -256,7 +260,7 @@ func TestRunActionsErrorsWhenAllActionsFiltered(t *testing.T) {
 	artifact := writeArtifact(t, tmp, []byte("unused"))
 
 	pkg := pkgWith(spec.Action{Mkdir: "a", Platforms: []spec.Platform{{OS: "darwin"}}})
-	err := install.RunActions(pkg, staging, artifact, "v1", spec.Platform{OS: "linux", Arch: "amd64"})
+	err := runActions(pkg, staging, artifact, "v1", spec.Platform{OS: "linux", Arch: "amd64"})
 	if err == nil || !strings.Contains(err.Error(), "linux/amd64") {
 		t.Fatalf("want no-applicable-action error naming the platform, got %v", err)
 	}
@@ -275,7 +279,7 @@ func TestRunActionsSkipKeepsManifestIndexInErrors(t *testing.T) {
 		spec.Action{Mkdir: "skipped", Platforms: []spec.Platform{{OS: "darwin"}}},
 		spec.Action{Mkdir: "../evil"},
 	)
-	err := install.RunActions(pkg, staging, artifact, "v1", spec.Platform{OS: "linux", Arch: "amd64"})
+	err := runActions(pkg, staging, artifact, "v1", spec.Platform{OS: "linux", Arch: "amd64"})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -296,7 +300,7 @@ func TestRunActionsLoopWrapsFailingIndex(t *testing.T) {
 		spec.Action{Mkdir: "a"},
 		spec.Action{Mkdir: "../evil"},
 	)
-	err := install.RunActions(pkg, staging, artifact, "v1", spec.Current())
+	err := runActions(pkg, staging, artifact, "v1", spec.Current())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -315,7 +319,7 @@ func TestRunActionsExpandsTemplates(t *testing.T) {
 	artifact := writeArtifact(t, t.TempDir(), []byte("unused"))
 
 	pkg := pkgWith(spec.Action{Copy: &spec.CopyAction{Src: "d/tool-{{.Arch}}", Dst: "bin/tool-{{.Version}}", Mode: 0o755}})
-	if err := install.RunActions(pkg, staging, artifact, "9.9.9", plat); err != nil {
+	if err := runActions(pkg, staging, artifact, "9.9.9", plat); err != nil {
 		t.Fatalf("RunActions: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(staging, "bin", "tool-9.9.9")); err != nil {

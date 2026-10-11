@@ -152,7 +152,7 @@ func assertNoStrayStaging(t *testing.T, installDir string) {
 func TestInstallRecordsLibsInMeta(t *testing.T) {
 	h := testx.Home(t)
 	pkg := fixturePkg(t)
-	pkg.Libs = []string{"lib"}
+	pkg.Base.Libs = []string{"lib"}
 
 	if err := install.Install(context.Background(), h, pkg, "v1.0.0", "official", fixtureArtifact(t, t.TempDir()), false, nil); err != nil {
 		t.Fatalf("Install: %v", err)

@@ -541,3 +541,78 @@ func TestSyncColdSyncsUnsyncedOCICatalogBeforeLookup(t *testing.T) {
 		t.Fatalf("already-synced stores must not be re-synced, got calls %v", calls)
 	}
 }
+
+func TestSyncKeepsInstalledEntryWhoseVersionTheCatalogDropped(t *testing.T) {
+	nemHomeDir := t.TempDir()
+	h := testNemHome(nemHomeDir)
+	projDir := t.TempDir()
+	chdir(t, projDir)
+
+	if _, errb, err := runNem(t, nemHomeDir, "catalog", "add", "demo", "ghcr.io/x/y:v2"); err != nil {
+		t.Fatalf("catalog add: %v\n%s", err, errb)
+	}
+	syncedOCICatalogStore(t, h, "demo")
+
+	installDir, err := h.PackageDir("tool", "v0.9.0")
+	if err != nil {
+		t.Fatalf("PackageDir: %v", err)
+	}
+	writeMetaFile(t, installDir, "package: tool\nversion: v0.9.0\ncatalog: demo\nlayout: 2\n")
+	official, err := h.CatalogStore("official")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stubSyncEmptyCatalog(context.Background(), "", official, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	writeFile(t, filepath.Join(projDir, "nem.toml"), "[tools]\n")
+	writeLockFile(t, filepath.Join(projDir, "nem.lock"),
+		project.LockEntry{Name: "tool", Version: "v0.9.0", Catalog: "demo", Direct: true, Platforms: []string{spec.Current().String()}})
+
+	out, errb, err := runNem(t, nemHomeDir, "sync")
+	if err != nil {
+		t.Fatalf("sync: %v\nstdout: %s\nstderr: %s", err, out, errb)
+	}
+	if out != "" || errb != "" {
+		t.Fatalf("sync on an installed entry the catalog dropped must be silent: stdout=%q stderr=%q", out, errb)
+	}
+
+	_, errb, err = runNem(t, nemHomeDir, "--verbose", "sync")
+	if err != nil {
+		t.Fatalf("sync --verbose: %v\nstderr: %s", err, errb)
+	}
+	want := "DEBUG Skipping tool v0.9.0: "
+	if !strings.Contains(errb, want) {
+		t.Fatalf("stderr = %q, want a line starting %q", errb, want)
+	}
+}
+
+func TestSyncReportsDigestMismatchBeforeDroppedVersion(t *testing.T) {
+	nemHomeDir := t.TempDir()
+	h := testNemHome(nemHomeDir)
+	projDir := t.TempDir()
+	chdir(t, projDir)
+
+	if _, errb, err := runNem(t, nemHomeDir, "catalog", "add", "demo", "ghcr.io/x/y:v2"); err != nil {
+		t.Fatalf("catalog add: %v\n%s", err, errb)
+	}
+	syncedOCICatalogStore(t, h, "demo")
+
+	writeFile(t, filepath.Join(projDir, "nem.toml"), "[tools]\n")
+	writeLockFile(t, filepath.Join(projDir, "nem.lock"),
+		project.LockEntry{Name: "tool", Version: "v0.9.0", Catalog: "demo", Direct: true,
+			Platforms: []string{spec.Current().String()}, Digest: "sha256:bogus"})
+
+	_, errb, err := runNem(t, nemHomeDir, "sync")
+	if err == nil {
+		t.Fatal("want digest mismatch error")
+	}
+	var mismatch *catalog.DigestMismatchError
+	if !errors.As(err, &mismatch) {
+		t.Fatalf("want DigestMismatchError, got %v", err)
+	}
+	if !strings.Contains(errb, "Re-lock") {
+		t.Fatalf("stderr should carry the digest-mismatch hint: %q", errb)
+	}
+}

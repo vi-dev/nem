@@ -17,6 +17,7 @@ import (
 	"github.com/vi-dev/nem/internal/build"
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/spec"
+	"github.com/vi-dev/nem/internal/testx"
 )
 
 const selectPrebuiltPkg = `
@@ -597,5 +598,51 @@ func TestSelectMissingScopedToPackages(t *testing.T) {
 	_, _, err = build.SelectMissing(ctx, tgt, []spec.Ref{{Name: "ghost"}})
 	if _, ok := errors.AsType[*catalog.PackageNotFoundError](err); !ok {
 		t.Fatalf("err = %v, want PackageNotFoundError for an unknown package", err)
+	}
+}
+
+const selectBase = "schema: 3\nname: zb\nartifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\nversions: [2.0.0, 1.0.0]\nbuild:\n  source: {url: \"https://example.com/{{.Version}}.tar.gz\"}\n  output: out\n  steps: [{run: make}]\n"
+const selectFrozen = "artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\nplatforms: [linux/amd64]\nbuild:\n  source: {url: \"https://example.com/{{.Version}}.tar.gz\"}\n  output: out\n  steps: [{run: make-old}]\n"
+
+func TestSelectUsesTheCoveringRecipePlatforms(t *testing.T) {
+	dir := t.TempDir()
+	testx.WriteFile(t, filepath.Join(dir, "pkgs", "zb", "pkg.yaml"), selectBase)
+	testx.WriteFile(t, filepath.Join(dir, "pkgs", "zb", "recipe@1.yaml"), selectFrozen)
+	target, err := build.OpenTarget(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sels, err := build.Select(context.Background(), target, []string{"zb@1.0.0"})
+	if err != nil || len(sels) != 1 {
+		t.Fatalf("Select: %+v, %v", sels, err)
+	}
+	if len(sels[0].Platforms) != 1 || sels[0].Platforms[0].String() != "linux/amd64" {
+		t.Fatalf("1.0.0 must take recipe@1's platforms: %v", sels[0].Platforms)
+	}
+	latest, _ := build.Select(context.Background(), target, []string{"zb"})
+	if len(latest[0].Platforms) != len(spec.SupportedPlatforms) {
+		t.Fatalf("2.0.0 must take pkg.yaml's platforms: %v", latest[0].Platforms)
+	}
+}
+
+func TestSelectMissingSkipsVersionsWhoseRecipeIsNotBuildable(t *testing.T) {
+	dir := t.TempDir()
+	testx.WriteFile(t, filepath.Join(dir, "pkgs", "zb", "pkg.yaml"), selectBase)
+	testx.WriteFile(t, filepath.Join(dir, "pkgs", "zb", "recipe@1.yaml"), "artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n")
+	target, err := build.OpenTarget(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sels, _, err := build.SelectMissing(context.Background(), target, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range sels {
+		if s.Version == "1.0.0" {
+			t.Fatalf("1.0.0 has no build section in its recipe: %+v", sels)
+		}
+	}
+	if len(sels) == 0 {
+		t.Fatal("2.0.0 is missing on every platform and must be selected")
 	}
 }

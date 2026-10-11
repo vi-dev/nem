@@ -16,7 +16,7 @@ var (
 
 func sel(name string, plats []spec.Platform, deps ...spec.Dep) build.Selection {
 	return build.Selection{
-		Pkg:       &spec.Package{Schema: 2, Name: name, Deps: deps},
+		Pkg:       &spec.Package{Schema: 2, Name: name, Versions: []spec.VersionEntry{{Version: "v1"}}, Base: spec.Recipe{Deps: deps}},
 		Version:   "v1",
 		Reason:    "missing archive",
 		Platforms: plats,
@@ -92,7 +92,7 @@ func TestComputePlanCycle(t *testing.T) {
 }
 
 func TestComputePlanExpandsVersionsPerName(t *testing.T) {
-	aPkg := &spec.Package{Schema: 2, Name: "a"}
+	aPkg := &spec.Package{Schema: 2, Name: "a", Versions: []spec.VersionEntry{{Version: "v2"}, {Version: "v1"}}}
 	p, err := build.ComputePlan([]build.Selection{
 		selV(aPkg, "v2", []spec.Platform{linuxAmd}),
 		selV(aPkg, "v1", []spec.Platform{linuxAmd}),
@@ -133,7 +133,7 @@ func TestComputePlanExpandsVersionsPerName(t *testing.T) {
 }
 
 func TestComputePlanRejectsDuplicateNameVersion(t *testing.T) {
-	aPkg := &spec.Package{Schema: 2, Name: "a"}
+	aPkg := &spec.Package{Schema: 2, Name: "a", Versions: []spec.VersionEntry{{Version: "v2"}, {Version: "v1"}}}
 	_, err := build.ComputePlan([]build.Selection{
 		selV(aPkg, "v1", []spec.Platform{linuxAmd}),
 		selV(aPkg, "v1", []spec.Platform{darwin}),
@@ -147,7 +147,7 @@ func TestComputePlanRejectsDuplicateNameVersion(t *testing.T) {
 }
 
 func TestComputePlanUnionsPlatformsForEdges(t *testing.T) {
-	aPkg := &spec.Package{Schema: 2, Name: "a"}
+	aPkg := &spec.Package{Schema: 2, Name: "a", Versions: []spec.VersionEntry{{Version: "v2"}, {Version: "v1"}}}
 	p, err := build.ComputePlan([]build.Selection{
 		selV(aPkg, "v2", []spec.Platform{darwin}),
 		selV(aPkg, "v1", []spec.Platform{linuxAmd}),

@@ -13,9 +13,9 @@ import (
 
 func TestJobsRefFromSet(t *testing.T) {
 	current := spec.Current().String()
-	pkg := &spec.Package{Name: "tool"}
-	other := &spec.Package{Name: "other"}
-	stray := &spec.Package{Name: "stray"}
+	pkg := &spec.Package{Name: "tool", Versions: []spec.VersionEntry{{Version: "1.0.0"}}}
+	other := &spec.Package{Name: "other", Versions: []spec.VersionEntry{{Version: "3.0.0"}}}
+	stray := &spec.Package{Name: "stray", Versions: []spec.VersionEntry{{Version: "2.0.0"}}}
 	result := &resolve.Result{
 		Entries: []project.LockEntry{
 			{Name: "tool", Version: "1.0.0", Catalog: "extra", Platforms: []string{current}},
@@ -27,7 +27,10 @@ func TestJobsRefFromSet(t *testing.T) {
 	var store archive.Store = archive.Remote("example.com/cat:v1")
 	set := catalog.NewSet(catalog.Entry{Name: "extra", Ref: "example.com/cat:v1", Archives: store})
 
-	jobs := Jobs(result, set, nil)
+	jobs, err := Jobs(result, set, nil)
+	if err != nil {
+		t.Fatalf("Jobs: %v", err)
+	}
 	if len(jobs) != 2 {
 		t.Fatalf("want 2 jobs (other platform filtered), got %+v", jobs)
 	}
@@ -66,13 +69,16 @@ func TestJobsWiresLocalStore(t *testing.T) {
 			{Name: "curl", Version: "v2", Platforms: []string{spec.Current().String()}},
 		},
 		Pkgs: map[string]*spec.Package{
-			"libgomp": {Schema: 2, Name: "libgomp"},
-			"openssl": {Schema: 2, Name: "openssl"},
-			"zlib":    {Schema: 2, Name: "zlib"},
-			"curl":    {Schema: 2, Name: "curl"},
+			"libgomp": {Schema: 2, Name: "libgomp", Versions: []spec.VersionEntry{{Version: "v1"}}},
+			"openssl": {Schema: 2, Name: "openssl", Versions: []spec.VersionEntry{{Version: "v3"}}},
+			"zlib":    {Schema: 2, Name: "zlib", Versions: []spec.VersionEntry{{Version: "v1.3"}}},
+			"curl":    {Schema: 2, Name: "curl", Versions: []spec.VersionEntry{{Version: "v2"}}},
 		},
 	}
-	jobs := Jobs(res, catalog.NewSet(), store)
+	jobs, err := Jobs(res, catalog.NewSet(), store)
+	if err != nil {
+		t.Fatalf("Jobs: %v", err)
+	}
 	byName := map[string]Job{}
 	for _, j := range jobs {
 		byName[j.Pkg.Name] = j
@@ -108,10 +114,13 @@ func TestJobsPrependsLocalStoreBeforeCatalogArchives(t *testing.T) {
 		Entries: []project.LockEntry{
 			{Name: "tool", Version: "v1", Catalog: "extra", Platforms: []string{spec.Current().String()}},
 		},
-		Pkgs: map[string]*spec.Package{"tool": {Schema: 2, Name: "tool"}},
+		Pkgs: map[string]*spec.Package{"tool": {Schema: 2, Name: "tool", Versions: []spec.VersionEntry{{Version: "v1"}}}},
 	}
 
-	jobs := Jobs(res, set, local)
+	jobs, err := Jobs(res, set, local)
+	if err != nil {
+		t.Fatalf("Jobs: %v", err)
+	}
 	if len(jobs) != 1 {
 		t.Fatalf("want 1 job, got %+v", jobs)
 	}
@@ -126,19 +135,22 @@ func TestJobsPrependsLocalStoreBeforeCatalogArchives(t *testing.T) {
 
 func TestJobsFillsLinksFromResolvedVersions(t *testing.T) {
 	current := spec.Current().String()
-	app := &spec.Package{Name: "app", Deps: []spec.Dep{
+	app := &spec.Package{Name: "app", Versions: []spec.VersionEntry{{Version: "1.0.0"}}, Base: spec.Recipe{Deps: []spec.Dep{
 		{Name: "zlib", Kind: spec.DepKindLink, Compat: "1"},
 		{Name: "helper", Kind: spec.DepKindRun},
-	}}
+	}}}
 	result := &resolve.Result{
 		Entries: []project.LockEntry{
 			{Name: "app", Version: "1.0.0", Catalog: "cat", Platforms: []string{current}},
 			{Name: "zlib", Version: "1.3.2", Catalog: "cat", Platforms: []string{current}},
 			{Name: "helper", Version: "2.0.0", Catalog: "cat", Platforms: []string{current}},
 		},
-		Pkgs: map[string]*spec.Package{"app": app, "zlib": {Name: "zlib"}, "helper": {Name: "helper"}},
+		Pkgs: map[string]*spec.Package{"app": app, "zlib": {Name: "zlib", Versions: []spec.VersionEntry{{Version: "1.3.2"}}}, "helper": {Name: "helper", Versions: []spec.VersionEntry{{Version: "2.0.0"}}}},
 	}
-	jobs := Jobs(result, catalog.NewSet(), nil)
+	jobs, err := Jobs(result, catalog.NewSet(), nil)
+	if err != nil {
+		t.Fatalf("Jobs: %v", err)
+	}
 	var appJob *Job
 	for i := range jobs {
 		if jobs[i].Pkg.Name == "app" {
