@@ -262,7 +262,7 @@ func choose(name string, demands []demand) (demand, error) {
 func satisfies(v string, d demand) bool {
 	switch d.kind {
 	case demandRanged:
-		return matchesCompat(v, d.compat)
+		return spec.MatchesPrefix(v, d.compat)
 	case demandExact, demandPinned:
 		return v == d.version
 	case demandFloating:

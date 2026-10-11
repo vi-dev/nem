@@ -17,6 +17,8 @@ type Package struct {
 	Env              []EnvExport
 	Build            *Build
 	Test             []TestStep
+	Base             Recipe
+	Frozen           []Recipe
 }
 
 type DepKind string

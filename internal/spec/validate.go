@@ -17,19 +17,7 @@ var TagRE = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$`)
 var metaKeyRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
 
 func (p *Package) SupportedBy() []Platform {
-	if len(p.Platforms) == 0 {
-		return SupportedPlatforms
-	}
-	var out []Platform
-	for _, sup := range SupportedPlatforms {
-		for _, c := range p.Platforms {
-			if c.Matches(sup) {
-				out = append(out, sup)
-				break
-			}
-		}
-	}
-	return out
+	return (&Recipe{Platforms: p.Platforms}).SupportedBy()
 }
 
 func validateHTTPURL(s string) error {
@@ -44,50 +32,11 @@ func validateHTTPURL(s string) error {
 }
 
 func (p *Package) Validate() error {
-	if p.Schema != 2 {
-		return fmt.Errorf("schema must be 2, got %d", p.Schema)
+	if p.Schema != 2 && p.Schema != 3 {
+		return fmt.Errorf("schema must be 2 or 3, got %d", p.Schema)
 	}
 	if !NameRE.MatchString(p.Name) {
 		return fmt.Errorf("invalid name %q", p.Name)
-	}
-	fetchers := 0
-	if p.Artifact.URL != "" {
-		fetchers++
-	}
-	if p.Artifact.GitHub != nil {
-		fetchers++
-	}
-	if p.Artifact.OCI != "" {
-		fetchers++
-	}
-	if fetchers != 1 {
-		return errors.New("artifact must set exactly one of url, github, oci")
-	}
-	if len(p.Install) == 0 {
-		return errors.New("install is required and must be non-empty")
-	}
-	for i, a := range p.Install {
-		switch {
-		case a.Copy != nil:
-			if a.Copy.Src == "" {
-				return fmt.Errorf("install[%d]: copy requires src", i)
-			}
-			if a.Copy.Dst == "" {
-				return fmt.Errorf("install[%d]: copy requires dst", i)
-			}
-		case a.Move != nil:
-			if a.Move.Src == "" {
-				return fmt.Errorf("install[%d]: move requires src", i)
-			}
-			if a.Move.Dst == "" {
-				return fmt.Errorf("install[%d]: move requires dst", i)
-			}
-		case a.Extract == nil && a.Mkdir == "":
-			return fmt.Errorf("install[%d]: empty action", i)
-		}
-		if _, err := ExpandActionPaths(a, "v0", Platform{OS: "darwin", Arch: "arm64"}); err != nil {
-			return fmt.Errorf("install[%d]: %w", i, err)
-		}
 	}
 	if len(p.Versions) == 0 {
 		return errors.New("versions is required and must be non-empty")
@@ -107,18 +56,30 @@ func (p *Package) Validate() error {
 				return fmt.Errorf("versions[%d] (%s): meta %s must not be empty", i, v.Version, k)
 			}
 		}
-		if v.Sha256 == nil {
-			if p.Artifact.OCI == "" {
-				return fmt.Errorf("versions[%d] (%s): sha256 required for url/github artifacts", i, v.Version)
-			}
-			continue
-		}
-		for _, plat := range p.SupportedBy() {
-			if v.Sha256[plat.String()] == "" {
-				return fmt.Errorf("versions[%d] (%s): sha256 missing platform %s", i, v.Version, plat)
-			}
+	}
+	if err := p.Base.validate(p.coveredBy(&p.Base)); err != nil {
+		return err
+	}
+	for i := range p.Frozen {
+		f := &p.Frozen[i]
+		if err := f.validate(p.coveredBy(f)); err != nil {
+			return fmt.Errorf("%s: %w", RecipeFileName(f.Prefix), err)
 		}
 	}
+	return p.validateDiscovery()
+}
+
+func (p *Package) coveredBy(r *Recipe) []VersionEntry {
+	var out []VersionEntry
+	for _, v := range p.Versions {
+		if p.selectRecipe(v.Version) == r {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func (p *Package) validateDiscovery() error {
 	if d := p.VersionDiscovery; d != nil {
 		sources, filter := 0, ""
 		if d.GitHub != nil {
@@ -164,12 +125,68 @@ func (p *Package) Validate() error {
 			}
 		}
 	}
-	for _, e := range p.Env {
+	return nil
+}
+
+func (r *Recipe) validate(covered []VersionEntry) error {
+	fetchers := 0
+	if r.Artifact.URL != "" {
+		fetchers++
+	}
+	if r.Artifact.GitHub != nil {
+		fetchers++
+	}
+	if r.Artifact.OCI != "" {
+		fetchers++
+	}
+	if fetchers != 1 {
+		return errors.New("artifact must set exactly one of url, github, oci")
+	}
+	if len(r.Install) == 0 {
+		return errors.New("install is required and must be non-empty")
+	}
+	for i, a := range r.Install {
+		switch {
+		case a.Copy != nil:
+			if a.Copy.Src == "" {
+				return fmt.Errorf("install[%d]: copy requires src", i)
+			}
+			if a.Copy.Dst == "" {
+				return fmt.Errorf("install[%d]: copy requires dst", i)
+			}
+		case a.Move != nil:
+			if a.Move.Src == "" {
+				return fmt.Errorf("install[%d]: move requires src", i)
+			}
+			if a.Move.Dst == "" {
+				return fmt.Errorf("install[%d]: move requires dst", i)
+			}
+		case a.Extract == nil && a.Mkdir == "":
+			return fmt.Errorf("install[%d]: empty action", i)
+		}
+		if _, err := ExpandActionPaths(a, "v0", Platform{OS: "darwin", Arch: "arm64"}); err != nil {
+			return fmt.Errorf("install[%d]: %w", i, err)
+		}
+	}
+	for _, v := range covered {
+		if v.Sha256 == nil {
+			if r.Artifact.OCI == "" {
+				return fmt.Errorf("version %s: sha256 required for url/github artifacts", v.Version)
+			}
+			continue
+		}
+		for _, plat := range r.SupportedBy() {
+			if v.Sha256[plat.String()] == "" {
+				return fmt.Errorf("version %s: sha256 missing platform %s", v.Version, plat)
+			}
+		}
+	}
+	for _, e := range r.Env {
 		if !EnvNameRE.MatchString(e.Name) {
 			return fmt.Errorf("env export %q: invalid name", e.Name)
 		}
 	}
-	for _, d := range p.Deps {
+	for _, d := range r.Deps {
 		if !NameRE.MatchString(d.Name) {
 			return fmt.Errorf("dep %q: invalid name", d.Name)
 		}
@@ -180,12 +197,12 @@ func (p *Package) Validate() error {
 			return fmt.Errorf("dep %q: invalid compat %q", d.Name, d.Compat)
 		}
 	}
-	for i, s := range p.Test {
+	for i, s := range r.Test {
 		if strings.TrimSpace(s.Run) == "" {
 			return fmt.Errorf("test[%d]: run is required", i)
 		}
 	}
-	if b := p.Build; b != nil {
+	if b := r.Build; b != nil {
 		if b.Source.URL == "" {
 			return errors.New("build.source.url is required")
 		}

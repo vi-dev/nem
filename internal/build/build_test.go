@@ -32,11 +32,17 @@ import (
 )
 
 func buildPkg(version string, steps ...spec.BuildStep) *spec.Package {
-	return &spec.Package{Schema: 2, Name: "tool",
+	base := spec.Recipe{
 		Artifact: spec.Artifact{OCI: ":{{.Version}}"},
 		Install:  []spec.Action{{Extract: &spec.ExtractAction{}}},
-		Versions: []spec.VersionEntry{{Version: version}},
 		Build:    &spec.Build{Output: "out", Steps: steps},
+	}
+	return &spec.Package{Schema: 2, Name: "tool",
+		Base:     base,
+		Artifact: base.Artifact,
+		Install:  base.Install,
+		Versions: []spec.VersionEntry{{Version: version}},
+		Build:    base.Build,
 	}
 }
 
@@ -385,6 +391,7 @@ func TestBuildRestampsAlreadyInstalledBuildDep(t *testing.T) {
 			},
 		}}
 	pkg.Build.Source.URL = srv.URL
+	pkg.Base = spec.Recipe{Artifact: pkg.Artifact, Install: pkg.Install, Build: pkg.Build}
 
 	var b bytes.Buffer
 	ctx := report.NewContext(context.Background(), report.New(&b, &b, report.Options{}))

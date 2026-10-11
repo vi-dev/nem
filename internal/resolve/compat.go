@@ -29,27 +29,10 @@ func newCompatConflictError(name string, compats ...string) *CompatConflictError
 	return &CompatConflictError{Name: name, Compats: slices.Compact(sorted)}
 }
 
-func compatComponents(s string) []string {
-	return strings.Split(strings.TrimPrefix(s, "v"), ".")
-}
-
-func matchesCompat(version, compat string) bool {
-	vs, cs := compatComponents(version), compatComponents(compat)
-	if len(cs) > len(vs) {
-		return false
-	}
-	for i := range cs {
-		if vs[i] != cs[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func selectHighest(versions []spec.VersionEntry, compat string) string {
 	best := ""
 	for _, v := range versions {
-		if !matchesCompat(v.Version, compat) {
+		if !spec.MatchesPrefix(v.Version, compat) {
 			continue
 		}
 		if best == "" || spec.CompareVersions(v.Version, best) > 0 {

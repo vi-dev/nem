@@ -2,6 +2,9 @@ package spec
 
 import (
 	"fmt"
+	"maps"
+	"slices"
+	"sort"
 
 	"github.com/goccy/go-yaml"
 )
@@ -12,9 +15,10 @@ type rawPackage struct {
 	Description      string                       `yaml:"description"`
 	Homepage         string                       `yaml:"homepage"`
 	License          string                       `yaml:"license"`
+	VersionDiscovery *rawDiscovery                `yaml:"versionDiscovery"`
+	Versions         []yaml.RawMessage            `yaml:"versions"`
 	Platforms        []string                     `yaml:"platforms"`
 	Deps             []rawDep                     `yaml:"deps"`
-	VersionDiscovery *rawDiscovery                `yaml:"versionDiscovery"`
 	Artifact         rawArtifact                  `yaml:"artifact"`
 	Install          []map[string]yaml.RawMessage `yaml:"install"`
 	Bins             []string                     `yaml:"bins"`
@@ -22,7 +26,18 @@ type rawPackage struct {
 	Env              []rawEnv                     `yaml:"env"`
 	Build            *rawBuild                    `yaml:"build"`
 	Test             []rawTestStep                `yaml:"test"`
-	Versions         []yaml.RawMessage            `yaml:"versions"`
+}
+
+type rawRecipe struct {
+	Platforms []string                     `yaml:"platforms"`
+	Deps      []rawDep                     `yaml:"deps"`
+	Artifact  rawArtifact                  `yaml:"artifact"`
+	Install   []map[string]yaml.RawMessage `yaml:"install"`
+	Bins      []string                     `yaml:"bins"`
+	Libs      []string                     `yaml:"libs"`
+	Env       []rawEnv                     `yaml:"env"`
+	Build     *rawBuild                    `yaml:"build"`
+	Test      []rawTestStep                `yaml:"test"`
 }
 
 type rawDep struct {
@@ -78,29 +93,34 @@ type rawVersionEntry struct {
 	SourceSha256 string            `yaml:"sourceSha256"`
 }
 
+type Files struct {
+	Pkg     []byte
+	Recipes map[string][]byte
+}
+
+func (f Files) Names() []string {
+	return slices.Sorted(maps.Keys(f.Recipes))
+}
+
 func Parse(data []byte) (*Package, error) {
+	return ParseFiles(Files{Pkg: data})
+}
+
+func (r rawPackage) recipe() rawRecipe {
+	return rawRecipe{
+		Platforms: r.Platforms, Deps: r.Deps, Artifact: r.Artifact, Install: r.Install,
+		Bins: r.Bins, Libs: r.Libs, Env: r.Env, Build: r.Build, Test: r.Test,
+	}
+}
+
+func ParseFiles(f Files) (*Package, error) {
 	var raw rawPackage
-	if err := yaml.UnmarshalWithOptions(data, &raw, yaml.Strict()); err != nil {
-		return nil, fmt.Errorf("parse pkg.yaml: %w", err)
+	if err := yaml.UnmarshalWithOptions(f.Pkg, &raw, yaml.Strict()); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", PkgFileName, err)
 	}
 	p := &Package{
 		Schema: raw.Schema, Name: raw.Name, Description: raw.Description,
-		Homepage: raw.Homepage, License: raw.License, Bins: raw.Bins,
-	}
-	if len(p.Bins) == 0 {
-		p.Bins = []string{"bin"}
-	}
-	p.Libs = raw.Libs
-	var err error
-	if p.Platforms, err = parsePlatforms(raw.Platforms); err != nil {
-		return nil, err
-	}
-	for i, d := range raw.Deps {
-		dep, err := shapeDep(d)
-		if err != nil {
-			return nil, fmt.Errorf("deps[%d]: %w", i, err)
-		}
-		p.Deps = append(p.Deps, dep)
+		Homepage: raw.Homepage, License: raw.License,
 	}
 	if raw.VersionDiscovery != nil {
 		p.VersionDiscovery = &Discovery{
@@ -111,47 +131,6 @@ func Parse(data []byte) (*Package, error) {
 			OCI:    raw.VersionDiscovery.OCI,
 		}
 	}
-	p.Artifact = Artifact{URL: raw.Artifact.URL, GitHub: raw.Artifact.GitHub, OCI: raw.Artifact.OCI}
-	for i, m := range raw.Install {
-		act, err := shapeAction(m)
-		if err != nil {
-			return nil, fmt.Errorf("install[%d]: %w", i, err)
-		}
-		p.Install = append(p.Install, act)
-	}
-	for i, e := range raw.Env {
-		plats, err := parsePlatforms(e.Platforms)
-		if err != nil {
-			return nil, fmt.Errorf("env[%d]: %w", i, err)
-		}
-		p.Env = append(p.Env, EnvExport{Name: e.Name, Value: e.Value, Platforms: plats})
-	}
-	if raw.Build != nil {
-		b := &Build{Output: raw.Build.Output, Normalize: raw.Build.Normalize}
-		b.Source.URL = raw.Build.Source.URL
-		for i, d := range raw.Build.Deps {
-			dep, err := shapeDep(d)
-			if err != nil {
-				return nil, fmt.Errorf("build.deps[%d]: %w", i, err)
-			}
-			b.Deps = append(b.Deps, dep)
-		}
-		for i, s := range raw.Build.Steps {
-			plats, err := parsePlatforms(s.Platforms)
-			if err != nil {
-				return nil, fmt.Errorf("build.steps[%d]: %w", i, err)
-			}
-			b.Steps = append(b.Steps, BuildStep{Run: s.Run, Platforms: plats})
-		}
-		p.Build = b
-	}
-	for i, s := range raw.Test {
-		plats, err := parsePlatforms(s.Platforms)
-		if err != nil {
-			return nil, fmt.Errorf("test[%d]: %w", i, err)
-		}
-		p.Test = append(p.Test, TestStep{Run: s.Run, Platforms: plats})
-	}
 	for i, v := range raw.Versions {
 		entry, err := shapeVersion(v)
 		if err != nil {
@@ -159,7 +138,97 @@ func Parse(data []byte) (*Package, error) {
 		}
 		p.Versions = append(p.Versions, entry)
 	}
+	base, err := shapeRecipe(raw.recipe())
+	if err != nil {
+		return nil, err
+	}
+	p.Base = base
+	p.mirrorBase()
+	for _, name := range f.Names() {
+		prefix, ok := ParseRecipeFileName(name)
+		if !ok {
+			return nil, fmt.Errorf("recipe file %q: name must be recipe@<prefix>.yaml", name)
+		}
+		var rr rawRecipe
+		if err := yaml.UnmarshalWithOptions(f.Recipes[name], &rr, yaml.Strict()); err != nil {
+			return nil, fmt.Errorf("parse %s: %w", name, err)
+		}
+		r, err := shapeRecipe(rr)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		r.Prefix = prefix
+		p.Frozen = append(p.Frozen, r)
+	}
+	sort.SliceStable(p.Frozen, func(i, j int) bool {
+		return CompareVersions(p.Frozen[i].Prefix, p.Frozen[j].Prefix) < 0
+	})
 	return p, nil
+}
+
+func (p *Package) mirrorBase() {
+	p.Platforms, p.Deps, p.Artifact, p.Install = p.Base.Platforms, p.Base.Deps, p.Base.Artifact, p.Base.Install
+	p.Bins, p.Libs, p.Env, p.Build, p.Test = p.Base.Bins, p.Base.Libs, p.Base.Env, p.Base.Build, p.Base.Test
+}
+
+func shapeRecipe(raw rawRecipe) (Recipe, error) {
+	r := Recipe{Bins: raw.Bins, Libs: raw.Libs}
+	if len(r.Bins) == 0 {
+		r.Bins = []string{"bin"}
+	}
+	var err error
+	if r.Platforms, err = parsePlatforms(raw.Platforms); err != nil {
+		return Recipe{}, err
+	}
+	for i, d := range raw.Deps {
+		dep, err := shapeDep(d)
+		if err != nil {
+			return Recipe{}, fmt.Errorf("deps[%d]: %w", i, err)
+		}
+		r.Deps = append(r.Deps, dep)
+	}
+	r.Artifact = Artifact{URL: raw.Artifact.URL, GitHub: raw.Artifact.GitHub, OCI: raw.Artifact.OCI}
+	for i, m := range raw.Install {
+		act, err := shapeAction(m)
+		if err != nil {
+			return Recipe{}, fmt.Errorf("install[%d]: %w", i, err)
+		}
+		r.Install = append(r.Install, act)
+	}
+	for i, e := range raw.Env {
+		plats, err := parsePlatforms(e.Platforms)
+		if err != nil {
+			return Recipe{}, fmt.Errorf("env[%d]: %w", i, err)
+		}
+		r.Env = append(r.Env, EnvExport{Name: e.Name, Value: e.Value, Platforms: plats})
+	}
+	if raw.Build != nil {
+		b := &Build{Output: raw.Build.Output, Normalize: raw.Build.Normalize}
+		b.Source.URL = raw.Build.Source.URL
+		for i, d := range raw.Build.Deps {
+			dep, err := shapeDep(d)
+			if err != nil {
+				return Recipe{}, fmt.Errorf("build.deps[%d]: %w", i, err)
+			}
+			b.Deps = append(b.Deps, dep)
+		}
+		for i, s := range raw.Build.Steps {
+			plats, err := parsePlatforms(s.Platforms)
+			if err != nil {
+				return Recipe{}, fmt.Errorf("build.steps[%d]: %w", i, err)
+			}
+			b.Steps = append(b.Steps, BuildStep{Run: s.Run, Platforms: plats})
+		}
+		r.Build = b
+	}
+	for i, s := range raw.Test {
+		plats, err := parsePlatforms(s.Platforms)
+		if err != nil {
+			return Recipe{}, fmt.Errorf("test[%d]: %w", i, err)
+		}
+		r.Test = append(r.Test, TestStep{Run: s.Run, Platforms: plats})
+	}
+	return r, nil
 }
 
 func parsePlatforms(ss []string) ([]Platform, error) {
