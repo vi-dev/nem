@@ -1,6 +1,6 @@
 module github.com/vi-dev/nem
 
-go 1.27.1
+go 1.27.2
 
 retract [v0.0.0, v0.8.0]
 
