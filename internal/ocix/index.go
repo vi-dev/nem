@@ -10,6 +10,8 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content"
+
+	"github.com/vi-dev/nem/internal/spec"
 )
 
 type CatalogIndexEntry struct {
@@ -37,11 +39,11 @@ func AssembleCatalogIndex(entries []CatalogIndexEntry) ([]byte, ocispec.Descript
 		mans[i] = d
 	}
 	idx := ocispec.Index{
-		SchemaVersion: SchemaVersionInt,
+		SchemaVersion: OCISchemaVersion,
 		MediaType:     ocispec.MediaTypeImageIndex,
 		Manifests:     mans,
 		Annotations: map[string]string{
-			AnnotationSchemaVersion: SchemaVersion,
+			AnnotationSchemaVersion: CatalogSchema,
 		},
 	}
 	b, _ := json.Marshal(idx)
@@ -68,38 +70,56 @@ func FetchCatalogIndex(ctx context.Context, src oras.ReadOnlyTarget, ref string)
 }
 
 func validateCatalogIndexSchema(idx ocispec.Index) error {
-	if got := idx.Annotations[AnnotationSchemaVersion]; got != SchemaVersion {
-		return fmt.Errorf("unsupported catalog schema %q (want %s; a newer nem may be required)", got, SchemaVersion)
+	got := idx.Annotations[AnnotationSchemaVersion]
+	if got != CatalogSchema && got != CatalogSchemaV2 {
+		return fmt.Errorf("unsupported catalog schema %q (want %s; a newer nem may be required)", got, CatalogSchema)
 	}
 	return nil
 }
 
-func PackageManifest(pkgBytes []byte) ([]byte, ocispec.Descriptor, error) {
-	layer := content.NewDescriptorFromBytes(MediaTypePkg, pkgBytes)
+func packageLayers(files spec.Files) []ocispec.Descriptor {
+	layers := []ocispec.Descriptor{titled(content.NewDescriptorFromBytes(MediaTypePkg, files.Pkg), spec.PkgFileName)}
+	for _, name := range files.Names() {
+		layers = append(layers, titled(content.NewDescriptorFromBytes(MediaTypeRecipe, files.Recipes[name]), name))
+	}
+	return layers
+}
+
+func titled(d ocispec.Descriptor, title string) ocispec.Descriptor {
+	d.Annotations = map[string]string{AnnotationTitle: title}
+	return d
+}
+
+func PackageManifest(files spec.Files) ([]byte, ocispec.Descriptor, error) {
 	man := ocispec.Manifest{
-		SchemaVersion: SchemaVersionInt,
+		SchemaVersion: OCISchemaVersion,
 		MediaType:     ocispec.MediaTypeImageManifest,
 		ArtifactType:  MediaTypePkg,
 		Config:        ocispec.DescriptorEmptyJSON,
-		Layers:        []ocispec.Descriptor{layer},
+		Layers:        packageLayers(files),
 	}
 	manBytes, err := json.Marshal(man)
 	if err != nil {
 		return nil, ocispec.Descriptor{}, err
 	}
-	desc := content.NewDescriptorFromBytes(ocispec.MediaTypeImageManifest, manBytes)
-	return manBytes, desc, nil
+	return manBytes, content.NewDescriptorFromBytes(ocispec.MediaTypeImageManifest, manBytes), nil
 }
 
-func PushPackageManifest(ctx context.Context, target oras.Target, pkgBytes []byte) (ocispec.Descriptor, error) {
-	layer := content.NewDescriptorFromBytes(MediaTypePkg, pkgBytes)
-	if err := PushBlobIfAbsent(ctx, target, layer, bytes.NewReader(pkgBytes)); err != nil {
-		return ocispec.Descriptor{}, err
+func PushPackageManifest(ctx context.Context, target oras.Target, files spec.Files) (ocispec.Descriptor, error) {
+	blobs := map[string][]byte{spec.PkgFileName: files.Pkg}
+	for name, b := range files.Recipes {
+		blobs[name] = b
+	}
+	for _, layer := range packageLayers(files) {
+		data := blobs[layer.Annotations[AnnotationTitle]]
+		if err := PushBlobIfAbsent(ctx, target, layer, bytes.NewReader(data)); err != nil {
+			return ocispec.Descriptor{}, err
+		}
 	}
 	if err := PushEmptyConfig(ctx, target); err != nil {
 		return ocispec.Descriptor{}, err
 	}
-	manBytes, manDesc, err := PackageManifest(pkgBytes)
+	manBytes, manDesc, err := PackageManifest(files)
 	if err != nil {
 		return ocispec.Descriptor{}, err
 	}

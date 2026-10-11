@@ -10,6 +10,8 @@ import (
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/oci"
 	"oras.land/oras-go/v2/errdef"
+
+	"github.com/vi-dev/nem/internal/spec"
 )
 
 func TestPushIndexRoundTrip(t *testing.T) {
@@ -20,11 +22,11 @@ func TestPushIndexRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	goDesc, err := PushPackageManifest(ctx, s, []byte("schema: 2\nname: go\n"))
+	goDesc, err := PushPackageManifest(ctx, s, spec.Files{Pkg: []byte("schema: 2\nname: go\n")})
 	if err != nil {
 		t.Fatalf("PushPackageManifest go: %v", err)
 	}
-	kubectlDesc, err := PushPackageManifest(ctx, s, []byte("schema: 2\nname: kubectl\n"))
+	kubectlDesc, err := PushPackageManifest(ctx, s, spec.Files{Pkg: []byte("schema: 2\nname: kubectl\n")})
 	if err != nil {
 		t.Fatalf("PushPackageManifest kubectl: %v", err)
 	}
@@ -61,7 +63,7 @@ func TestPushIndexRoundTrip(t *testing.T) {
 	if err := validateCatalogIndexSchema(loaded); err != nil {
 		t.Fatalf("validateSchema on pushed index: %v", err)
 	}
-	if loaded.Annotations[AnnotationSchemaVersion] != SchemaVersion {
+	if loaded.Annotations[AnnotationSchemaVersion] != CatalogSchema {
 		t.Fatalf("loaded index schemaVersion annotation = %q", loaded.Annotations[AnnotationSchemaVersion])
 	}
 }

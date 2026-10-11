@@ -21,8 +21,8 @@ func newCatalogPublishCmd() *cobra.Command {
 			"move the given tags to it. Manifests whose content is unchanged are not pushed " +
 			"again unless --force. Archives built with nem catalog build --push and nem " +
 			"catalog fill live beside the index and are not touched.",
-		Example: "  nem catalog publish registry.example/nem/catalog .                        # publish a checkout under tag v2\n" +
-			"  nem catalog publish registry.example/nem/catalog --tag v2 --tag 2026.09   # several tags\n" +
+		Example: "  nem catalog publish registry.example/nem/catalog .                        # publish a checkout under tag v3\n" +
+			"  nem catalog publish registry.example/nem/catalog --tag v3 --tag 2026.09   # several tags\n" +
 			"  nem catalog publish registry.example/nem/catalog --dry-run                # the plan only",
 		Args: cobra.RangeArgs(1, 2),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -62,7 +62,7 @@ func newCatalogPublishCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringArrayVar(&tags, "tag", nil, "tag to move to the published index (repeatable; default v2)")
+	cmd.Flags().StringArrayVar(&tags, "tag", nil, "tag to move to the published index (repeatable; default v3)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report the publish plan without writing anything")
 	cmd.Flags().BoolVar(&force, "force", false, "push every package manifest even when unchanged")
 	return cmd

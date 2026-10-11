@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/vi-dev/nem/internal/spec"
 )
 
 const dirPkgYAML = `
@@ -170,5 +172,67 @@ func TestDirScannersSkipUnreadablePackages(t *testing.T) {
 	names, err := NewDir(root).PackageNames(context.Background())
 	if err != nil || !reflect.DeepEqual(names, []string{"go"}) {
 		t.Fatalf("names: %v, %v", names, err)
+	}
+}
+
+const dirRecipeYAML = `artifact:
+  oci: ":{{.Version}}"
+install:
+  - extract: {strip: 1}
+`
+
+func TestDirAssemblesFrozenRecipes(t *testing.T) {
+	root := writeDirCatalog(t, "go")
+	os.WriteFile(filepath.Join(root, "pkgs", "go", "recipe@1.yaml"), []byte(dirRecipeYAML), 0o644)
+	d := NewDir(root)
+	ctx := context.Background()
+	pkg, _, err := d.Package(ctx, "go")
+	if err != nil {
+		t.Fatalf("Package: %v", err)
+	}
+	r, err := pkg.Recipe("v1.0.0")
+	if err != nil || r.Prefix != "1" || r.Install[0].Extract.Strip != 1 {
+		t.Fatalf("Recipe(v1.0.0) = %+v, %v", r, err)
+	}
+	files, err := d.ReadFiles(ctx, "go")
+	if err != nil || string(files.Recipes["recipe@1.yaml"]) != dirRecipeYAML {
+		t.Fatalf("ReadFiles: %+v, %v", files, err)
+	}
+}
+
+func TestDirRejectsBadRecipeFileName(t *testing.T) {
+	root := writeDirCatalog(t, "go")
+	os.WriteFile(filepath.Join(root, "pkgs", "go", "recipe@v1.yaml"), []byte(dirRecipeYAML), 0o644)
+	_, _, err := NewDir(root).Package(context.Background(), "go")
+	if err == nil || !strings.Contains(err.Error(), "recipe@<prefix>.yaml") {
+		t.Fatalf("want filename load error, got %v", err)
+	}
+}
+
+func TestDirWriteFilesRoundTrip(t *testing.T) {
+	root := writeDirCatalog(t, "go")
+	d := NewDir(root)
+	ctx := context.Background()
+	files, _ := d.ReadFiles(ctx, "go")
+	files.Recipes = map[string][]byte{"recipe@1.yaml": []byte(dirRecipeYAML)}
+	if err := d.WriteFiles(ctx, "go", files); err != nil {
+		t.Fatalf("WriteFiles: %v", err)
+	}
+	again, err := d.ReadFiles(ctx, "go")
+	if err != nil || !reflect.DeepEqual(again, files) {
+		t.Fatalf("round trip: %+v vs %+v (%v)", again, files, err)
+	}
+	if err := d.WriteFiles(ctx, "go", spec.Files{Pkg: files.Pkg}); err != nil {
+		t.Fatalf("WriteFiles pkg only: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "pkgs", "go", "recipe@1.yaml")); err != nil {
+		t.Fatal("WriteFiles must never delete a recipe file")
+	}
+	if err := d.WriteFiles(ctx, "go", spec.Files{Recipes: map[string][]byte{"recipe@x.yaml": nil}}); err == nil {
+		t.Fatal("WriteFiles must reject a bad recipe filename")
+	}
+	var nf *PackageNotFoundError
+	if err := d.WriteFiles(ctx, "absent", files); !errors.As(err, &nf) {
+		t.Fatalf("absent package: %v", err)
 	}
 }

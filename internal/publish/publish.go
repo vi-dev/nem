@@ -39,7 +39,7 @@ func SetTargetOpener(f func(context.Context, string) (oras.Target, error)) (rest
 }
 
 type pkgEntry struct {
-	Bytes       []byte
+	Files       spec.Files
 	Name        string
 	Description string
 	Version     string
@@ -99,9 +99,9 @@ func Publish(ctx context.Context, cat, ref string, opts Options) (*Result, error
 func effectiveTags(optTags []string, now time.Time) []string {
 	base := optTags
 	if len(base) == 0 {
-		base = []string{"v2"}
+		base = []string{"v3"}
 	}
-	release := "v2." + now.UTC().Format("20060102T150405Z")
+	release := "v3." + now.UTC().Format("20060102T150405Z")
 	return append(append([]string(nil), base...), release)
 }
 
@@ -124,11 +124,11 @@ func enumerate(ctx context.Context, cat string) ([]pkgEntry, error) {
 	}
 	out := make([]pkgEntry, 0, len(names))
 	for _, name := range names {
-		data, err := entry.Catalog.ReadManifest(ctx, name)
+		files, err := entry.Catalog.ReadFiles(ctx, name)
 		if err != nil {
 			return nil, err
 		}
-		pkg, err := spec.Parse(data)
+		pkg, err := spec.ParseFiles(files)
 		if err != nil {
 			return nil, fmt.Errorf("parse %s: %w", name, err)
 		}
@@ -136,7 +136,7 @@ func enumerate(ctx context.Context, cat string) ([]pkgEntry, error) {
 		if len(pkg.Versions) > 0 {
 			version = pkg.Versions[0].Version
 		}
-		out = append(out, pkgEntry{Bytes: data, Name: pkg.Name, Description: pkg.Description, Version: version})
+		out = append(out, pkgEntry{Files: files, Name: pkg.Name, Description: pkg.Description, Version: version})
 	}
 	return out, nil
 }
@@ -178,7 +178,7 @@ func pushPackages(ctx context.Context, target oras.Target, entries []pkgEntry, f
 func pushOne(ctx context.Context, target oras.Target, e pkgEntry, force bool) (ocix.CatalogIndexEntry, bool, error) {
 	r := report.FromContext(ctx)
 
-	_, desc, err := ocix.PackageManifest(e.Bytes)
+	_, desc, err := ocix.PackageManifest(e.Files)
 	if err != nil {
 		return ocix.CatalogIndexEntry{}, false, fmt.Errorf("compute manifest descriptor for %s: %w", e.Name, err)
 	}
@@ -194,7 +194,7 @@ func pushOne(ctx context.Context, target oras.Target, e pkgEntry, force bool) (o
 		}
 	}
 
-	pushed, err := ocix.PushPackageManifest(ctx, target, e.Bytes)
+	pushed, err := ocix.PushPackageManifest(ctx, target, e.Files)
 	if err != nil {
 		return ocix.CatalogIndexEntry{}, false, fmt.Errorf("push %s: %w", e.Name, err)
 	}

@@ -16,6 +16,8 @@ import (
 	"oras.land/oras-go/v2/content/memory"
 	"oras.land/oras-go/v2/content/oci"
 	"oras.land/oras-go/v2/errdef"
+
+	"github.com/vi-dev/nem/internal/spec"
 )
 
 type TitledManifest struct {
@@ -60,16 +62,21 @@ func (s *Store) Digest() string { return s.digest }
 
 func (s *Store) Packages() []TitledManifest { return enumerateTitledManifests(s.idx) }
 
-func (s *Store) PkgBytes(ctx context.Context, name string) ([]byte, string, error) {
+func (s *Store) Files(ctx context.Context, name string) (spec.Files, string, error) {
 	m, ok := s.byName[name]
 	if !ok {
-		return nil, "", &PkgNotInIndexError{Name: name}
+		return spec.Files{}, "", &PkgNotInIndexError{Name: name}
 	}
-	data, err := FetchPkgBytes(ctx, s.target, m)
+	files, err := FetchFiles(ctx, s.target, m)
 	if err != nil {
-		return nil, "", fmt.Errorf("load pkg.yaml for %s: %w", name, err)
+		return spec.Files{}, "", fmt.Errorf("load %s for %s: %w", spec.PkgFileName, name, err)
 	}
-	return data, m.Digest.String(), nil
+	return files, m.Digest.String(), nil
+}
+
+func (s *Store) PkgBytes(ctx context.Context, name string) ([]byte, string, error) {
+	files, dig, err := s.Files(ctx, name)
+	return files.Pkg, dig, err
 }
 
 func (s *Store) CopyTo(ctx context.Context, dst oras.Target, dstRef string, progress ProgressFunc) (ocispec.Descriptor, error) {
@@ -171,23 +178,49 @@ func SyncLocalCatalog(ctx context.Context, src oras.ReadOnlyTarget, srcRef, stor
 	return OpenLocalStore(ctx, storePath)
 }
 
-func FetchPkgBytes(ctx context.Context, src oras.ReadOnlyTarget, man ocispec.Descriptor) ([]byte, error) {
+func FetchFiles(ctx context.Context, src oras.ReadOnlyTarget, man ocispec.Descriptor) (spec.Files, error) {
 	manData, err := content.FetchAll(ctx, src, man)
 	if err != nil {
-		return nil, fmt.Errorf("read manifest: %w", err)
+		return spec.Files{}, fmt.Errorf("read manifest: %w", err)
 	}
 	var m ocispec.Manifest
 	if err := json.Unmarshal(manData, &m); err != nil {
-		return nil, fmt.Errorf("parse manifest: %w", err)
+		return spec.Files{}, fmt.Errorf("parse manifest: %w", err)
 	}
+	var files spec.Files
 	for _, layer := range m.Layers {
-		if layer.MediaType == MediaTypePkg {
+		switch layer.MediaType {
+		case MediaTypePkg, MediaTypePkgV2:
 			data, err := content.FetchAll(ctx, src, layer)
 			if err != nil {
-				return nil, fmt.Errorf("read pkg.yaml layer: %w", err)
+				return spec.Files{}, fmt.Errorf("read %s layer: %w", spec.PkgFileName, err)
 			}
-			return data, nil
+			files.Pkg = data
+		case MediaTypeRecipe:
+			title := layer.Annotations[AnnotationTitle]
+			if _, ok := spec.ParseRecipeFileName(title); !ok {
+				return spec.Files{}, fmt.Errorf("recipe layer %s: title %q must be recipe@<prefix>.yaml", layer.Digest, title)
+			}
+			if _, dup := files.Recipes[title]; dup {
+				return spec.Files{}, fmt.Errorf("recipe layer %s: duplicate title %q", layer.Digest, title)
+			}
+			data, err := content.FetchAll(ctx, src, layer)
+			if err != nil {
+				return spec.Files{}, fmt.Errorf("read %s layer: %w", title, err)
+			}
+			if files.Recipes == nil {
+				files.Recipes = map[string][]byte{}
+			}
+			files.Recipes[title] = data
 		}
 	}
-	return nil, errors.New("manifest has no pkg.yaml layer")
+	if files.Pkg == nil {
+		return spec.Files{}, errors.New("manifest has no pkg.yaml layer")
+	}
+	return files, nil
+}
+
+func FetchPkgBytes(ctx context.Context, src oras.ReadOnlyTarget, man ocispec.Descriptor) ([]byte, error) {
+	files, err := FetchFiles(ctx, src, man)
+	return files.Pkg, err
 }

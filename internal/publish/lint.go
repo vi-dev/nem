@@ -31,7 +31,7 @@ func Lint(ctx context.Context, cat string, packages ...string) ([]Finding, error
 		return nil, err
 	}
 	if _, ok := entry.Catalog.(*catalog.File); ok {
-		return lintFile(cat, packages)
+		return lintFile(ctx, cat, packages)
 	}
 
 	names, err := entry.Catalog.PackageNames(ctx)
@@ -51,11 +51,11 @@ func Lint(ctx context.Context, cat string, packages ...string) ([]Finding, error
 		}
 		var findings []Finding
 		for _, name := range selected {
-			data, err := entry.Catalog.ReadManifest(ctx, name)
+			files, err := entry.Catalog.ReadFiles(ctx, name)
 			if err != nil {
 				return nil, err
 			}
-			findings = append(findings, lintPackage(name, data)...)
+			findings = append(findings, lintPackage(name, files)...)
 		}
 		sortFindings(findings)
 		return findings, nil
@@ -72,40 +72,44 @@ func Lint(ctx context.Context, cat string, packages ...string) ([]Finding, error
 	}
 	var findings []Finding
 	for _, name := range names {
-		data, err := entry.Catalog.ReadManifest(ctx, name)
+		files, err := entry.Catalog.ReadFiles(ctx, name)
 		if err != nil {
 			findings = append(findings, Finding{Pkg: name, Msg: err.Error()})
 			continue
 		}
-		findings = append(findings, lintPackage(name, data)...)
+		findings = append(findings, lintPackage(name, files)...)
 	}
 	sortFindings(findings)
 	return findings, nil
 }
 
-func lintFile(path string, packages []string) ([]Finding, error) {
+func lintFile(ctx context.Context, path string, packages []string) ([]Finding, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
+	declared := ""
+	if pkg, err := spec.Parse(data); err == nil {
+		declared = pkg.Name
+	}
 	if len(packages) > 0 {
-		declared := ""
-		if pkg, err := spec.Parse(data); err == nil {
-			declared = pkg.Name
-		}
 		for _, name := range packages {
 			if name != declared {
 				return nil, &catalog.PackageNotFoundError{Name: name}
 			}
 		}
 	}
-	findings := lintPackage("", data)
+	files, err := catalog.NewFile(path).ReadFiles(ctx, declared)
+	if err != nil {
+		return nil, err
+	}
+	findings := lintPackage("", files)
 	sortFindings(findings)
 	return findings, nil
 }
 
-func lintPackage(id string, data []byte) []Finding {
-	pkg, err := spec.Parse(data)
+func lintPackage(id string, files spec.Files) []Finding {
+	pkg, err := spec.ParseFiles(files)
 	if err != nil {
 		return []Finding{{Pkg: id, Msg: err.Error()}}
 	}
@@ -124,7 +128,49 @@ func lintPackage(id string, data []byte) []Finding {
 	findings = append(findings, lintReservedEnv(id, pkg)...)
 	findings = append(findings, lintVersionOrder(id, pkg)...)
 	findings = append(findings, lintTestSteps(id, pkg)...)
+	findings = append(findings, lintRecipes(id, pkg)...)
 	return findings
+}
+
+func lintRecipes(id string, pkg *spec.Package) []Finding {
+	var findings []Finding
+	covered := map[string]int{}
+	for _, v := range pkg.Versions {
+		r, err := pkg.Recipe(v.Version)
+		if err != nil {
+			continue
+		}
+		covered[r.Prefix]++
+	}
+	for _, f := range pkg.Frozen {
+		if covered[f.Prefix] == 0 {
+			findings = append(findings, Finding{Pkg: id,
+				Msg: fmt.Sprintf("%s covers no listed version; delete it", spec.RecipeFileName(f.Prefix))})
+		}
+	}
+	if len(pkg.Versions) > 0 {
+		if r := pkg.LatestRecipe(); r.Prefix != "" {
+			findings = append(findings, Finding{Pkg: id,
+				Msg: fmt.Sprintf("%s does not cover the latest version %s (%s does)",
+					spec.PkgFileName, pkg.Versions[0].Version, spec.RecipeFileName(r.Prefix))})
+		}
+	}
+	return findings
+}
+
+func recipeLabel(r *spec.Recipe) string {
+	if r.Prefix == "" {
+		return ""
+	}
+	return spec.RecipeFileName(r.Prefix) + ": "
+}
+
+func allRecipes(pkg *spec.Package) []*spec.Recipe {
+	recipes := []*spec.Recipe{&pkg.Base}
+	for i := range pkg.Frozen {
+		recipes = append(recipes, &pkg.Frozen[i])
+	}
+	return recipes
 }
 
 func lintVersionOrder(id string, pkg *spec.Package) []Finding {
@@ -142,27 +188,26 @@ func lintVersionOrder(id string, pkg *spec.Package) []Finding {
 }
 
 func lintTestSteps(id string, pkg *spec.Package) []Finding {
-	if len(pkg.Test) == 0 {
-		return nil
-	}
-	supported := pkg.SupportedBy()
 	var findings []Finding
-	for i, s := range pkg.Test {
-		if len(s.Platforms) == 0 {
-			continue
-		}
-		dead := true
-		for _, plat := range supported {
-			if spec.PlatformsInclude(s.Platforms, plat) {
-				dead = false
-				break
+	for _, r := range allRecipes(pkg) {
+		supported := r.SupportedBy()
+		for i, s := range r.Test {
+			if len(s.Platforms) == 0 {
+				continue
 			}
-		}
-		if dead {
-			findings = append(findings, Finding{
-				Pkg: id,
-				Msg: fmt.Sprintf("test[%d] applies to none of the package's platforms", i),
-			})
+			dead := true
+			for _, plat := range supported {
+				if spec.PlatformsInclude(s.Platforms, plat) {
+					dead = false
+					break
+				}
+			}
+			if dead {
+				findings = append(findings, Finding{
+					Pkg: id,
+					Msg: fmt.Sprintf("%stest[%d] applies to none of the package's platforms", recipeLabel(r), i),
+				})
+			}
 		}
 	}
 	return findings
@@ -171,15 +216,22 @@ func lintTestSteps(id string, pkg *spec.Package) []Finding {
 func lintTemplates(id string, pkg *spec.Package) []Finding {
 	var findings []Finding
 	for _, v := range pkg.Versions {
-		for _, plat := range pkg.SupportedBy() {
-			if _, err := pkg.ArtifactURL(v.Version, plat); err != nil {
+		r, err := pkg.Recipe(v.Version)
+		if err != nil {
+			continue
+		}
+		scoped := *pkg
+		scoped.Artifact = r.Artifact
+		scoped.Build = r.Build
+		for _, plat := range r.SupportedBy() {
+			if _, err := scoped.ArtifactURL(v.Version, plat); err != nil {
 				findings = append(findings, Finding{
 					Pkg: id,
 					Msg: fmt.Sprintf("artifact template for %s on %s: %v", v.Version, plat, err),
 				})
 			}
-			if pkg.Artifact.GitHub != nil {
-				if _, err := pkg.AssetName(v.Version, plat); err != nil {
+			if r.Artifact.GitHub != nil {
+				if _, err := scoped.AssetName(v.Version, plat); err != nil {
 					findings = append(findings, Finding{
 						Pkg: id,
 						Msg: fmt.Sprintf("asset template for %s on %s: %v", v.Version, plat, err),
@@ -193,12 +245,14 @@ func lintTemplates(id string, pkg *spec.Package) []Finding {
 
 func lintReservedEnv(id string, pkg *spec.Package) []Finding {
 	var findings []Finding
-	for _, e := range pkg.Env {
-		if envx.IsReserved(e.Name) {
-			findings = append(findings, Finding{
-				Pkg: id,
-				Msg: fmt.Sprintf("env %q is a reserved variable name", e.Name),
-			})
+	for _, r := range allRecipes(pkg) {
+		for _, e := range r.Env {
+			if envx.IsReserved(e.Name) {
+				findings = append(findings, Finding{
+					Pkg: id,
+					Msg: fmt.Sprintf("%senv %q is a reserved variable name", recipeLabel(r), e.Name),
+				})
+			}
 		}
 	}
 	return findings

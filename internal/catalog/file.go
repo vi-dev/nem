@@ -19,11 +19,11 @@ var (
 func NewFile(path string) *File { return &File{path: path} }
 
 func (f *File) read() (*spec.Package, error) {
-	data, err := os.ReadFile(f.path)
+	files, err := readPackageFiles(f.path)
 	if err != nil {
 		return nil, err
 	}
-	pkg, err := spec.Parse(data)
+	pkg, err := spec.ParseFiles(files)
 	if err != nil {
 		return nil, fmt.Errorf("load %s: %w", f.path, err)
 	}
@@ -31,6 +31,26 @@ func (f *File) read() (*spec.Package, error) {
 		return nil, fmt.Errorf("load %s: %w", f.path, err)
 	}
 	return pkg, nil
+}
+
+func (f *File) ReadFiles(_ context.Context, name string) (spec.Files, error) {
+	files, err := readPackageFiles(f.path)
+	if os.IsNotExist(err) {
+		return spec.Files{}, &PackageNotFoundError{Name: name}
+	}
+	if err != nil {
+		return spec.Files{}, err
+	}
+	return files, nil
+}
+
+func (f *File) WriteFiles(_ context.Context, name string, files spec.Files) error {
+	if _, err := os.Stat(f.path); os.IsNotExist(err) {
+		return &PackageNotFoundError{Name: name}
+	} else if err != nil {
+		return err
+	}
+	return writePackageFiles(f.path, files)
 }
 
 func (f *File) Package(_ context.Context, name string) (*spec.Package, string, error) {

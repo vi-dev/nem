@@ -23,6 +23,7 @@ import (
 type FakeEntry struct {
 	Name, Description, Latest string
 	YAML                      []byte
+	Recipes                   map[string][]byte
 }
 
 func PushFakeCatalog(t testing.TB, store oras.Target, entries []FakeEntry, schemaVersion string) ocispec.Descriptor {
@@ -52,16 +53,31 @@ func pushFakeCatalog(store oras.Target, entries []FakeEntry, schemaVersion strin
 	manifests := make([]ocispec.Descriptor, 0, len(entries))
 	for _, e := range entries {
 		layerDesc := content.NewDescriptorFromBytes(ocix.MediaTypePkg, e.YAML)
+		layerDesc.Annotations = map[string]string{ocix.AnnotationTitle: spec.PkgFileName}
 		if err := pushFakeBlob(ctx, store, layerDesc, e.YAML); err != nil {
 			return ocispec.Descriptor{}, err
 		}
+		layers := []ocispec.Descriptor{layerDesc}
+		recipeNames := make([]string, 0, len(e.Recipes))
+		for name := range e.Recipes {
+			recipeNames = append(recipeNames, name)
+		}
+		sort.Strings(recipeNames)
+		for _, name := range recipeNames {
+			rd := content.NewDescriptorFromBytes(ocix.MediaTypeRecipe, e.Recipes[name])
+			rd.Annotations = map[string]string{ocix.AnnotationTitle: name}
+			if err := pushFakeBlob(ctx, store, rd, e.Recipes[name]); err != nil {
+				return ocispec.Descriptor{}, err
+			}
+			layers = append(layers, rd)
+		}
 
 		manifest := ocispec.Manifest{
-			SchemaVersion: 2,
+			SchemaVersion: ocix.OCISchemaVersion,
 			MediaType:     ocispec.MediaTypeImageManifest,
 			ArtifactType:  ocix.MediaTypePkg,
 			Config:        emptyConfig,
-			Layers:        []ocispec.Descriptor{layerDesc},
+			Layers:        layers,
 		}
 		manifestBytes, err := json.Marshal(manifest)
 		if err != nil {
@@ -82,7 +98,7 @@ func pushFakeCatalog(store oras.Target, entries []FakeEntry, schemaVersion strin
 	}
 
 	idx := ocispec.Index{
-		SchemaVersion: 2,
+		SchemaVersion: ocix.OCISchemaVersion,
 		MediaType:     ocispec.MediaTypeImageIndex,
 		Manifests:     manifests,
 		Annotations: map[string]string{

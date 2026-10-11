@@ -116,14 +116,29 @@ func (s *OCI) ReadManifest(ctx context.Context, name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, _, err := store.PkgBytes(ctx, name)
+	files, _, err := store.Files(ctx, name)
 	if _, ok := errors.AsType[*ocix.PkgNotInIndexError](err); ok {
 		return nil, &PackageNotFoundError{Name: name}
 	}
 	if err != nil {
 		return nil, err
 	}
-	return data, nil
+	return files.Pkg, nil
+}
+
+func (s *OCI) ReadFiles(ctx context.Context, name string) (spec.Files, error) {
+	store, err := s.openStore(ctx)
+	if err != nil {
+		return spec.Files{}, err
+	}
+	files, _, err := store.Files(ctx, name)
+	if _, ok := errors.AsType[*ocix.PkgNotInIndexError](err); ok {
+		return spec.Files{}, &PackageNotFoundError{Name: name}
+	}
+	if err != nil {
+		return spec.Files{}, err
+	}
+	return files, nil
 }
 
 func (s *OCI) Versions(ctx context.Context, name string) ([]string, error) {
@@ -135,14 +150,14 @@ func (s *OCI) Versions(ctx context.Context, name string) ([]string, error) {
 }
 
 func loadFromStore(ctx context.Context, store *ocix.Store, catalogName, name string) (*spec.Package, string, error) {
-	data, dig, err := store.PkgBytes(ctx, name)
+	files, dig, err := store.Files(ctx, name)
 	if _, ok := errors.AsType[*ocix.PkgNotInIndexError](err); ok {
 		return nil, "", &PackageNotFoundError{Name: name}
 	}
 	if err != nil {
 		return nil, "", err
 	}
-	pkg, err := spec.Parse(data)
+	pkg, err := spec.ParseFiles(files)
 	if err != nil {
 		return nil, "", fmt.Errorf("catalog %s: %w", catalogName, err)
 	}

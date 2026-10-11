@@ -14,6 +14,7 @@ type Catalog interface {
 	Package(ctx context.Context, name string) (*spec.Package, string, error)
 	PackageNames(ctx context.Context) ([]string, error)
 	ReadManifest(ctx context.Context, name string) ([]byte, error)
+	ReadFiles(ctx context.Context, name string) (spec.Files, error)
 }
 
 func versionsOf(pkg *spec.Package) []string {

@@ -24,25 +24,42 @@ func (d *Dir) manifestPath(name string) string {
 	return filepath.Join(d.root, manifestDir, name, "pkg.yaml")
 }
 
-func (d *Dir) Package(_ context.Context, name string) (*spec.Package, string, error) {
-	data, err := os.ReadFile(d.manifestPath(name))
+func (d *Dir) ReadFiles(_ context.Context, name string) (spec.Files, error) {
+	if !spec.NameRE.MatchString(name) {
+		return spec.Files{}, fmt.Errorf("invalid package name %q", name)
+	}
+	files, err := readPackageFiles(d.manifestPath(name))
 	if os.IsNotExist(err) {
-		return nil, "", &PackageNotFoundError{Name: name}
+		return spec.Files{}, &PackageNotFoundError{Name: name}
 	}
 	if err != nil {
-		return nil, "", fmt.Errorf("read %s: %w", d.manifestPath(name), err)
+		return spec.Files{}, fmt.Errorf("read %s: %w", d.manifestPath(name), err)
 	}
-	pkg, err := spec.Parse(data)
+	return files, nil
+}
+
+func (d *Dir) Package(ctx context.Context, name string) (*spec.Package, string, error) {
+	files, err := d.ReadFiles(ctx, name)
 	if err != nil {
-		return nil, "", fmt.Errorf("load %s: %w", d.manifestPath(name), err)
+		return nil, "", err
 	}
-	if err := pkg.Validate(); err != nil {
-		return nil, "", fmt.Errorf("load %s: %w", d.manifestPath(name), err)
-	}
-	if pkg.Name != name {
-		return nil, "", fmt.Errorf("load %s: manifest declares name %q, want %q", d.manifestPath(name), pkg.Name, name)
+	pkg, err := loadPackageFiles(files, name, d.manifestPath(name))
+	if err != nil {
+		return nil, "", err
 	}
 	return pkg, "", nil
+}
+
+func (d *Dir) WriteFiles(_ context.Context, name string, files spec.Files) error {
+	if !spec.NameRE.MatchString(name) {
+		return fmt.Errorf("invalid package name %q", name)
+	}
+	if _, err := os.Stat(d.manifestPath(name)); os.IsNotExist(err) {
+		return &PackageNotFoundError{Name: name}
+	} else if err != nil {
+		return err
+	}
+	return writePackageFiles(d.manifestPath(name), files)
 }
 
 func (d *Dir) Versions(ctx context.Context, name string) ([]string, error) {

@@ -39,9 +39,9 @@ func stubSyncEmptyCatalog(ctx context.Context, _, storePath string, _ ocix.Progr
 		return err
 	}
 	idx := ocispec.Index{
-		SchemaVersion: 2,
+		SchemaVersion: ocix.OCISchemaVersion,
 		MediaType:     ocispec.MediaTypeImageIndex,
-		Annotations:   map[string]string{ocix.AnnotationSchemaVersion: ocix.SchemaVersion},
+		Annotations:   map[string]string{ocix.AnnotationSchemaVersion: ocix.CatalogSchema},
 	}
 	data, err := json.Marshal(idx)
 	if err != nil {

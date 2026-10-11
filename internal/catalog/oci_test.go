@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"oras.land/oras-go/v2/content/memory"
@@ -78,7 +79,7 @@ versions:
 func newPulledStore(t *testing.T, entries []ocixtest.FakeEntry) *ocix.Store {
 	t.Helper()
 	mem := memory.New()
-	ocixtest.PushFakeCatalog(t, mem, entries, ocix.SchemaVersion)
+	ocixtest.PushFakeCatalog(t, mem, entries, ocix.CatalogSchema)
 	store, err := ocix.OpenStoreInMemory(context.Background(), mem, "v2", nil)
 	if err != nil {
 		t.Fatalf("OpenStoreInMemory: %v", err)
@@ -185,5 +186,20 @@ func TestOCILoadValidateFailure(t *testing.T) {
 	const wantPrefix = "catalog ghcr.io/org/cat:v2: package badpkg:"
 	if got := err.Error(); len(got) < len(wantPrefix) || got[:len(wantPrefix)] != wantPrefix {
 		t.Fatalf("error = %q, want it to start with %q", got, wantPrefix)
+	}
+}
+
+func TestOCIPackageAssemblesRecipeLayers(t *testing.T) {
+	store := memory.New()
+	y := []byte(strings.ReplaceAll(dirPkgYAML, "%NAME%", "go"))
+	ocixtest.PushFakeCatalog(t, store, []ocixtest.FakeEntry{{Name: "go", YAML: y,
+		Recipes: map[string][]byte{"recipe@1.yaml": []byte(dirRecipeYAML)}}}, ocix.CatalogSchema)
+	s, err := ocix.OpenStore(context.Background(), store, "v2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, dig, err := NewOCI("cat", s).Package(context.Background(), "go")
+	if err != nil || dig == "" || len(pkg.Frozen) != 1 || pkg.Frozen[0].Prefix != "1" {
+		t.Fatalf("Package: %+v, %q, %v", pkg, dig, err)
 	}
 }

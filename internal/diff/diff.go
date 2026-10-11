@@ -122,21 +122,21 @@ type side struct {
 }
 
 func loadSide(ctx context.Context, entry catalog.Entry, name string) (*side, error) {
-	data, err := entry.Catalog.ReadManifest(ctx, name)
+	files, err := entry.Catalog.ReadFiles(ctx, name)
 	if _, ok := errors.AsType[*catalog.PackageNotFoundError](err); ok {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	pkg, err := spec.Parse(data)
+	pkg, err := spec.ParseFiles(files)
 	if err != nil {
 		return nil, fmt.Errorf("%s: package %s: %w", entry.Name, name, err)
 	}
 	if pkg.Name != name {
 		return nil, fmt.Errorf("%s: package %s: manifest declares name %q", entry.Name, name, pkg.Name)
 	}
-	_, desc, err := ocix.PackageManifest(data)
+	_, desc, err := ocix.PackageManifest(files)
 	if err != nil {
 		return nil, fmt.Errorf("%s: package %s: %w", entry.Name, name, err)
 	}
@@ -160,19 +160,19 @@ func diffOne(ctx context.Context, base, target catalog.Entry, name string) (Chan
 		return Change{}, false, nil
 	case t == nil:
 		c.Status = StatusNew
-		c.Build = b.pkg.Build != nil
+		c.Build = b.pkg.LatestRecipe().Build != nil
 		c.Base = latest(b.pkg)
 		c.Diff = versionsOf(b.pkg)
 	case b == nil:
 		c.Status = StatusRemoved
-		c.Build = t.pkg.Build != nil
+		c.Build = t.pkg.LatestRecipe().Build != nil
 		c.Target = latest(t.pkg)
 	default:
 		c.Status = StatusUpdated
-		c.Build = b.pkg.Build != nil
+		c.Build = b.pkg.LatestRecipe().Build != nil
 		c.Base = latest(b.pkg)
 		c.Target = latest(t.pkg)
-		c.Diff = addedOrLatest(b.pkg, t.pkg)
+		c.Diff = changedVersions(b.pkg, t.pkg)
 	}
 	return c, true, nil
 }
@@ -192,15 +192,21 @@ func versionsOf(pkg *spec.Package) []string {
 	return out
 }
 
-func addedOrLatest(base, target *spec.Package) []string {
-	var added []string
+func changedVersions(base, target *spec.Package) []string {
+	var out []string
 	for _, v := range base.Versions {
 		if !target.HasEqualVersion(v.Version) {
-			added = append(added, v.Version)
+			out = append(out, v.Version)
+			continue
+		}
+		br, berr := base.Recipe(v.Version)
+		tr, terr := target.Recipe(v.Version)
+		if berr != nil || terr != nil || !br.Equal(tr) {
+			out = append(out, v.Version)
 		}
 	}
-	if len(added) == 0 && len(base.Versions) > 0 {
-		added = append(added, base.Versions[0].Version)
+	if len(out) == 0 && len(base.Versions) > 0 {
+		out = append(out, base.Versions[0].Version)
 	}
-	return added
+	return out
 }

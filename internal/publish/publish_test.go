@@ -108,7 +108,7 @@ func TestPublishHappyPathAndIdempotency(t *testing.T) {
 	}
 
 	assertTagResolves(t, store, "v2")
-	assertTagResolves(t, store, "v2.20260102T030405Z")
+	assertTagResolves(t, store, "v3.20260102T030405Z")
 
 	blobsAfterFirst := countBlobs(t, storeDir)
 
@@ -120,7 +120,7 @@ func TestPublishHappyPathAndIdempotency(t *testing.T) {
 		t.Fatalf("re-publish pushed new blobs: %d → %d", blobsAfterFirst, got)
 	}
 	assertTagResolves(t, store, "v2")
-	assertTagResolves(t, store, "v2.20260102T030405Z")
+	assertTagResolves(t, store, "v3.20260102T030405Z")
 }
 
 func TestPublishRejectsEmptyCatalog(t *testing.T) {
@@ -154,7 +154,7 @@ func TestPublishReportsResult(t *testing.T) {
 	if len(res.Packages) != 1 || res.Packages[0].Name != "go" || !res.Packages[0].Pushed {
 		t.Fatalf("packages = %+v", res.Packages)
 	}
-	if want := []string{"v2", "v2.20260102T030405Z"}; !slices.Equal(res.Tags, want) {
+	if want := []string{"v2", "v3.20260102T030405Z"}; !slices.Equal(res.Tags, want) {
 		t.Fatalf("tags = %v, want %v", res.Tags, want)
 	}
 
@@ -212,7 +212,7 @@ func TestPublishForceDisablesSkip(t *testing.T) {
 	}
 }
 
-func TestPublishDefaultsTagsToV2(t *testing.T) {
+func TestPublishDefaultsTagsToV3(t *testing.T) {
 	ctx, _ := testx.ReporterContext(context.Background())
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
 	store, _ := newStore(t)
@@ -223,8 +223,8 @@ func TestPublishDefaultsTagsToV2(t *testing.T) {
 	if _, err := Publish(ctx, dir, "example.com/cat", Options{}); err != nil {
 		t.Fatal(err)
 	}
-	assertTagResolves(t, store, "v2")
-	assertTagResolves(t, store, "v2.20260304T050607Z")
+	assertTagResolves(t, store, "v3")
+	assertTagResolves(t, store, "v3.20260304T050607Z")
 }
 
 func TestPublishRejectsTaggedRef(t *testing.T) {
@@ -255,7 +255,7 @@ func TestPublishSingleFile(t *testing.T) {
 	if _, err := Publish(ctx, filepath.Join(dir, "pkgs", "go", "pkg.yaml"), "example.com/cat", Options{}); err != nil {
 		t.Fatal(err)
 	}
-	assertTagResolves(t, store, "v2")
+	assertTagResolves(t, store, "v3")
 }
 
 func TestPublishTargetOpenFailureLeavesTagsUntouched(t *testing.T) {
@@ -297,9 +297,9 @@ func TestPublishMidPushFailureLeavesTagsUntouched(t *testing.T) {
 		}
 	}()
 
-	indexA, err := store.Resolve(ctx, "v2")
+	indexA, err := store.Resolve(ctx, "v3")
 	if err != nil {
-		t.Fatalf("resolve v2 after initial publish: %v", err)
+		t.Fatalf("resolve v3 after initial publish: %v", err)
 	}
 
 	changedGoPkg := strings.Replace(validGoPkg,
@@ -318,15 +318,50 @@ func TestPublishMidPushFailureLeavesTagsUntouched(t *testing.T) {
 		t.Fatal("expected the mid-push manifest failure to surface")
 	}
 
-	indexAfter, err := store.Resolve(ctx, "v2")
+	indexAfter, err := store.Resolve(ctx, "v3")
 	if err != nil {
-		t.Fatalf("resolve v2 after failed publish: %v", err)
+		t.Fatalf("resolve v3 after failed publish: %v", err)
 	}
 	if indexAfter.Digest != indexA.Digest {
-		t.Fatalf("tag v2 moved despite a mid-push failure: %s -> %s", indexA.Digest, indexAfter.Digest)
+		t.Fatalf("tag v3 moved despite a mid-push failure: %s -> %s", indexA.Digest, indexAfter.Digest)
 	}
 
-	if _, err := store.Resolve(ctx, "v2.20260203T040506Z"); !errors.Is(err, errdef.ErrNotFound) {
+	if _, err := store.Resolve(ctx, "v3.20260203T040506Z"); !errors.Is(err, errdef.ErrNotFound) {
 		t.Fatalf("the failed publish's release tag must never be created, got %v", err)
+	}
+}
+
+func TestPublishPushesFrozenRecipeLayers(t *testing.T) {
+	ctx, _ := testx.ReporterContext(context.Background())
+	dir := t.TempDir()
+	testx.WriteFile(t, filepath.Join(dir, "pkgs", "tool", "pkg.yaml"), "schema: 3\nname: tool\nartifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\nversions: [2.0.0, 1.0.0]\n")
+	testx.WriteFile(t, filepath.Join(dir, "pkgs", "tool", "recipe@1.yaml"), "artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {strip: 1}}]\n")
+	store, _ := newStore(t)
+	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
+
+	res, err := Publish(ctx, dir, "example.com/cat", Options{})
+	if err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if res.Pushed != 1 || res.Tags[0] != "v3" || !strings.HasPrefix(res.Tags[1], "v3.") {
+		t.Fatalf("result: %+v", res)
+	}
+	s, err := ocix.OpenStore(ctx, store, "v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, _, err := s.Files(ctx, "tool")
+	if err != nil || len(files.Recipes) != 1 || !strings.Contains(string(files.Recipes["recipe@1.yaml"]), "strip: 1") {
+		t.Fatalf("files: %+v, %v", files, err)
+	}
+
+	again, err := Publish(ctx, dir, "example.com/cat", Options{})
+	if err != nil || again.Unchanged != 1 {
+		t.Fatalf("second publish must be unchanged: %+v, %v", again, err)
+	}
+	testx.WriteFile(t, filepath.Join(dir, "pkgs", "tool", "recipe@1.yaml"), "artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {strip: 2}}]\n")
+	third, err := Publish(ctx, dir, "example.com/cat", Options{})
+	if err != nil || third.Pushed != 1 {
+		t.Fatalf("a recipe-only edit must change the package digest: %+v, %v", third, err)
 	}
 }

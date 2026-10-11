@@ -6,12 +6,15 @@ import (
 )
 
 const (
-	MediaTypePkg = "application/vnd.nem.pkg.v2+yaml"
+	MediaTypePkg    = "application/vnd.nem.pkg.v3+yaml"
+	MediaTypePkgV2  = "application/vnd.nem.pkg.v2+yaml"
+	MediaTypeRecipe = "application/vnd.nem.recipe.v3+yaml"
 
 	AnnotationSchemaVersion = "org.vi-dev.nem.catalog.schemaVersion"
 
-	SchemaVersion    = "2"
-	SchemaVersionInt = 2
+	CatalogSchema    = "3"
+	CatalogSchemaV2  = "2"
+	OCISchemaVersion = 2
 
 	AnnotationTitle = "org.opencontainers.image.title"
 

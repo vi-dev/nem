@@ -12,6 +12,7 @@ import (
 
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/ocix/ocixtest"
+	"github.com/vi-dev/nem/internal/spec"
 )
 
 func TestAssembleIndexAnnotationsAndOrder(t *testing.T) {
@@ -31,7 +32,7 @@ func TestAssembleIndexAnnotationsAndOrder(t *testing.T) {
 	if idx.MediaType != ocispec.MediaTypeImageIndex {
 		t.Fatalf("index mediaType = %q", idx.MediaType)
 	}
-	if idx.Annotations[ocix.AnnotationSchemaVersion] != ocix.SchemaVersion {
+	if idx.Annotations[ocix.AnnotationSchemaVersion] != ocix.CatalogSchema {
 		t.Fatalf("schemaVersion annotation = %q", idx.Annotations[ocix.AnnotationSchemaVersion])
 	}
 
@@ -74,7 +75,7 @@ func TestPushPackageManifestDeterministicAndShaped(t *testing.T) {
 	if err := ocix.PushEmptyConfig(ctx, s1); err != nil {
 		t.Fatalf("PushEmptyConfig: %v", err)
 	}
-	d1, err := ocix.PushPackageManifest(ctx, s1, pkgBytes)
+	d1, err := ocix.PushPackageManifest(ctx, s1, spec.Files{Pkg: pkgBytes})
 	if err != nil {
 		t.Fatalf("PushPackageManifest: %v", err)
 	}
@@ -83,7 +84,7 @@ func TestPushPackageManifestDeterministicAndShaped(t *testing.T) {
 	if err := ocix.PushEmptyConfig(ctx, s2); err != nil {
 		t.Fatal(err)
 	}
-	d2, err := ocix.PushPackageManifest(ctx, s2, pkgBytes)
+	d2, err := ocix.PushPackageManifest(ctx, s2, spec.Files{Pkg: pkgBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,13 +110,13 @@ func TestPushPackageManifestDeterministicAndShaped(t *testing.T) {
 	if len(m.Annotations) != 0 {
 		t.Fatalf("manifest JSON must be annotation-free, got %v", m.Annotations)
 	}
-	if m.SchemaVersion != 2 {
+	if m.SchemaVersion != ocix.OCISchemaVersion {
 		t.Fatalf("manifest schemaVersion = %d, want 2", m.SchemaVersion)
 	}
 	if m.ArtifactType != ocix.MediaTypePkg {
 		t.Fatalf("artifactType = %q, want %q", m.ArtifactType, ocix.MediaTypePkg)
 	}
-	if len(m.Layers) != 1 || m.Layers[0].MediaType != ocix.MediaTypePkg {
+	if len(m.Layers) != 1 || m.Layers[0].MediaType != ocix.MediaTypePkg || m.Layers[0].Annotations[ocix.AnnotationTitle] != spec.PkgFileName {
 		t.Fatalf("layers = %+v", m.Layers)
 	}
 }
@@ -130,11 +131,11 @@ func TestPackageManifestDescriptorMatchesPush(t *testing.T) {
 	if err := ocix.PushEmptyConfig(ctx, s); err != nil {
 		t.Fatal(err)
 	}
-	pushed, err := ocix.PushPackageManifest(ctx, s, pkgBytes)
+	pushed, err := ocix.PushPackageManifest(ctx, s, spec.Files{Pkg: pkgBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, computed, err := ocix.PackageManifest(pkgBytes)
+	_, computed, err := ocix.PackageManifest(spec.Files{Pkg: pkgBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +151,7 @@ func TestFetchIndexReturnsParsedIndex(t *testing.T) {
 	}
 	ocixtest.PushFakeCatalog(t, store, []ocixtest.FakeEntry{
 		{Name: "atool", Description: "A tool", Latest: "1.0.0", YAML: []byte("name: atool")},
-	}, ocix.SchemaVersion)
+	}, ocix.CatalogSchema)
 
 	idx, desc, err := ocix.FetchCatalogIndex(context.Background(), store, "v2")
 	if err != nil {

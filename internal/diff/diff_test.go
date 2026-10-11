@@ -319,3 +319,61 @@ func TestCompareFailsWholeCommandOnUnparseableManifest(t *testing.T) {
 		t.Fatal("Compare succeeded on an unparseable manifest, want failure")
 	}
 }
+
+const diffFrozenBase = `schema: 3
+name: gpgme
+artifact: {oci: ":{{.Version}}"}
+install: [{extract: {}}]
+versions: [2.2.0, 2.1.2, 1.24.3, 1.24.2]
+build: {source: {url: "https://x/{{.Version}}.tar"}, output: out, steps: [{run: "new"}]}
+`
+
+const diffFrozenRecipe = `artifact: {oci: ":{{.Version}}"}
+install: [{extract: {}}]
+build: {source: {url: "https://x/{{.Version}}.tar"}, output: out, steps: [{run: "old"}]}
+`
+
+func writeFrozenFixture(t *testing.T, pkg string, recipes map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	testx.WriteFile(t, filepath.Join(dir, "pkgs", "gpgme", "pkg.yaml"), pkg)
+	for name, body := range recipes {
+		testx.WriteFile(t, filepath.Join(dir, "pkgs", "gpgme", name), body)
+	}
+	return dir
+}
+
+func TestDiffAttributesRecipeEditsToCoveredVersions(t *testing.T) {
+	target := writeFrozenFixture(t, strings.Replace(diffFrozenBase, `run: "new"`, `run: "old"`, 1), nil)
+	base := writeFrozenFixture(t, diffFrozenBase, map[string]string{"recipe@1.yaml": diffFrozenRecipe})
+	res := compare(t, base, target)
+	if len(res.Changes) != 1 || strings.Join(res.Changes[0].Diff, ",") != "2.2.0,2.1.2" {
+		t.Fatalf("freeze + edit base must attribute to 2.x only: %+v", res.Changes)
+	}
+
+	edited := writeFrozenFixture(t, strings.Replace(diffFrozenBase, `run: "new"`, `run: "old"`, 1),
+		map[string]string{"recipe@1.yaml": strings.Replace(diffFrozenRecipe, `run: "old"`, `run: "older"`, 1)})
+	res = compare(t, edited, target)
+	if strings.Join(res.Changes[0].Diff, ",") != "1.24.3,1.24.2" {
+		t.Fatalf("frozen-only edit must attribute to 1.x: %+v", res.Changes)
+	}
+}
+
+func TestDiffByteIdenticalRenameIsIdentityOnly(t *testing.T) {
+	old := strings.Replace(diffFrozenBase, `run: "new"`, `run: "old"`, 1)
+	target := writeFrozenFixture(t, old, map[string]string{"recipe@1.yaml": diffFrozenRecipe})
+	base := writeFrozenFixture(t, old, map[string]string{"recipe@1.24.yaml": diffFrozenRecipe})
+	res := compare(t, base, target)
+	if len(res.Changes) != 1 || res.Changes[0].Status != StatusUpdated || strings.Join(res.Changes[0].Diff, ",") != "2.2.0" {
+		t.Fatalf("rename must fall back to base latest: %+v", res.Changes)
+	}
+}
+
+func TestDiffNewVersionUnderBase(t *testing.T) {
+	target := writeFrozenFixture(t, diffFrozenBase, map[string]string{"recipe@1.yaml": diffFrozenRecipe})
+	base := writeFrozenFixture(t, strings.Replace(diffFrozenBase, "[2.2.0,", "[2.3.0, 2.2.0,", 1), map[string]string{"recipe@1.yaml": diffFrozenRecipe})
+	res := compare(t, base, target)
+	if strings.Join(res.Changes[0].Diff, ",") != "2.3.0" || !res.Changes[0].Build {
+		t.Fatalf("added version only: %+v", res.Changes)
+	}
+}

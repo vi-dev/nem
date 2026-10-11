@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/vi-dev/nem/internal/testx"
 )
 
 const validGoPkg = `
@@ -308,5 +310,52 @@ func TestLintFileCatalogLintsBytes(t *testing.T) {
 		if strings.Contains(f.Msg, "does not match its directory") {
 			t.Fatalf("file catalogs have no directory convention: %v", findings)
 		}
+	}
+}
+
+func lintDir(t *testing.T, files map[string]string) []Finding {
+	t.Helper()
+	dir := t.TempDir()
+	for path, body := range files {
+		testx.WriteFile(t, filepath.Join(dir, "pkgs", path), body)
+	}
+	findings, err := Lint(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("Lint: %v", err)
+	}
+	return findings
+}
+
+const lintBase = "schema: 3\nname: tool\nartifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\nversions: [2.2.0, 1.24.3]\n"
+const lintRecipe = "artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n"
+
+func TestLintFrozenRecipeCoveringNothing(t *testing.T) {
+	got := lintDir(t, map[string]string{"tool/pkg.yaml": lintBase, "tool/recipe@3.yaml": lintRecipe})
+	if len(got) != 1 || got[0].String() != "tool: recipe@3.yaml covers no listed version; delete it" {
+		t.Fatalf("findings: %v", got)
+	}
+	shadowed := lintDir(t, map[string]string{"tool/pkg.yaml": lintBase, "tool/recipe@1.yaml": lintRecipe, "tool/recipe@1.24.yaml": lintRecipe})
+	if len(shadowed) != 1 || !strings.Contains(shadowed[0].Msg, "recipe@1.yaml covers no listed version") {
+		t.Fatalf("fully shadowed file must be reported: %v", shadowed)
+	}
+}
+
+func TestLintBaseMustCoverLatest(t *testing.T) {
+	got := lintDir(t, map[string]string{"tool/pkg.yaml": lintBase, "tool/recipe@2.yaml": lintRecipe})
+	if len(got) != 1 || got[0].Msg != "pkg.yaml does not cover the latest version 2.2.0 (recipe@2.yaml does)" {
+		t.Fatalf("findings: %v", got)
+	}
+}
+
+func TestLintCleanWithFrozenRecipe(t *testing.T) {
+	if got := lintDir(t, map[string]string{"tool/pkg.yaml": lintBase, "tool/recipe@1.yaml": lintRecipe}); len(got) != 0 {
+		t.Fatalf("findings: %v", got)
+	}
+}
+
+func TestLintBadRecipeFileNameIsAFinding(t *testing.T) {
+	got := lintDir(t, map[string]string{"tool/pkg.yaml": lintBase, "tool/recipe@v1.yaml": lintRecipe})
+	if len(got) != 1 || !strings.Contains(got[0].Msg, "recipe@<prefix>.yaml") {
+		t.Fatalf("findings: %v", got)
 	}
 }
