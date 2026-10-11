@@ -17,8 +17,8 @@ func newCatalogMirrorCmd() *cobra.Command {
 			"byte for byte, so that <dst> can be consumed as a catalog on its own. Re-running " +
 			"skips what is already present. Archives the source never published are not " +
 			"created; nem catalog fill adds them.",
-		Example: "  nem catalog mirror ghcr.io/vi-dev/nem-catalog:v2 registry.corp.example/nem/catalog:v2             # copy\n" +
-			"  nem catalog mirror ghcr.io/vi-dev/nem-catalog:v2 registry.corp.example/nem/catalog:v2 --dry-run   # the plan only",
+		Example: "  nem catalog mirror ghcr.io/vi-dev/nem-catalog:v3 registry.corp.example/nem/catalog:v3             # copy\n" +
+			"  nem catalog mirror ghcr.io/vi-dev/nem-catalog:v3 registry.corp.example/nem/catalog:v3 --dry-run   # the plan only",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {

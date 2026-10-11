@@ -52,13 +52,25 @@ gives them the new digest, which is what pinning is for.
 
 ## Moving to the v3 catalog
 
-After upgrading nem, the official catalog is read from the `v3` tag; a
-saved configuration that still names `v2` is moved to `v3` the next time
-nem opens it. Every package manifest digest changes with the new tag, so a
-project whose committed `nem.lock` was pinned against `v2` digests gets a
-digest mismatch from `nem sync` and must run `nem lock` once, then commit
-the new lockfile. The `v2` tag is frozen at its last publish and receives
-no new versions.
+A new install reads the official catalog from the `v3` tag. An existing
+install keeps whatever `~/.nem/config.yaml` names, so a configuration
+saved before the upgrade stays on `v2`, which is frozen at its last
+publish and receives no new versions. nem never moves it for you; moving
+is an explicit step:
+
+```sh
+nem catalog remove official                              # drop the v2 entry
+nem catalog add official ghcr.io/vi-dev/nem-catalog:v3  # add v3 under the same name
+nem catalog update official                              # sync it right away
+```
+
+`nem catalog add` does not sync an oci catalog; `nem use` and `nem lock`
+do that when they need it, and `nem catalog update` does it at once.
+
+Every package manifest digest changes with the new tag, so a project
+whose committed `nem.lock` was pinned against `v2` digests gets a digest
+mismatch from `nem sync` after the move. Run `nem lock` once, then commit
+the new lockfile.
 
 ## Scoped fills
 
