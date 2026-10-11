@@ -391,3 +391,21 @@ func TestCatalogBuildMissingScopesToSelectedPackages(t *testing.T) {
 		t.Fatalf("zdup plan versions = %v, want just the pinned version:\n%s", got, out)
 	}
 }
+
+func TestCatalogBuildPackageAtVersionUsesFrozenRecipe(t *testing.T) {
+	dir := writeLintFixture(t, map[string]string{"zfr": twoVersionRecipe("zfr")})
+	elsewhere := otherPlatform(t)
+	testx.WriteFile(t, filepath.Join(dir, "pkgs", "zfr", "recipe@1.yaml"),
+		"artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\nplatforms: ["+elsewhere.String()+"]\n"+
+			"build:\n  source: {url: \"https://example.com/zfr-{{.Version}}.tar.gz\"}\n  output: out\n  steps:\n    - run: make\n")
+	out, errb, err := runNem(t, t.TempDir(), "catalog", "build", dir, "--package", "zfr@1.0.0", "--dry-run")
+	if err != nil {
+		t.Fatalf("build --dry-run: %v\n%s", err, errb)
+	}
+	if got := planVersions(out, "zfr"); len(got) != 1 || got[0] != "1.0.0" {
+		t.Fatalf("plan versions = %v\n%s", got, out)
+	}
+	if !strings.Contains(out, elsewhere.String()) || strings.Contains(out, spec.Current().String()) {
+		t.Fatalf("1.0.0 must plan recipe@1's platform only:\n%s", out)
+	}
+}

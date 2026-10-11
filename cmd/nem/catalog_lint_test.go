@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/vi-dev/nem/internal/testx"
 )
 
 const lintFixtureGoPkg = `
@@ -211,5 +213,18 @@ func TestCatalogLintFileCatalogReportsBrokenManifest(t *testing.T) {
 	_, errb, err := runNem(t, nemHome, "catalog", "lint", recipe)
 	if err == nil {
 		t.Fatalf("a broken manifest must produce findings and exit 1:\n%s", errb)
+	}
+}
+
+func TestCatalogLintReportsFrozenRecipeCoveringNothing(t *testing.T) {
+	dir := writeLintFixture(t, map[string]string{"tool": "schema: 3\nname: tool\nartifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\nversions: [2.0.0]\n"})
+	testx.WriteFile(t, filepath.Join(dir, "pkgs", "tool", "recipe@1.yaml"), "artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n")
+	_, errb, err := runNem(t, t.TempDir(), "catalog", "lint", dir)
+	var exit *ExitError
+	if !errors.As(err, &exit) || exit.Code != 1 {
+		t.Fatalf("want exit 1, got %v", err)
+	}
+	if !strings.Contains(errb, "tool: recipe@1.yaml covers no listed version; delete it") {
+		t.Fatalf("stderr: %s", errb)
 	}
 }
