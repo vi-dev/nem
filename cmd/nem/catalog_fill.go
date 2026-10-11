@@ -19,9 +19,9 @@ func newCatalogFillCmd() *cobra.Command {
 			"<ref>, so that consumers no longer reach upstream. It needs push access to <ref>; " +
 			"run it against your own mirror. Re-running heals missing or stale archives and " +
 			"skips the rest.",
-		Example: "  nem catalog fill registry.corp.example/nem/catalog:v2                     # every package\n" +
-			"  nem catalog fill registry.corp.example/nem/catalog:v2 --package kubectl   # one package\n" +
-			"  nem catalog fill registry.corp.example/nem/catalog:v2 --dry-run           # the plan only",
+		Example: "  nem catalog fill registry.corp.example/nem/catalog:v3                     # every package\n" +
+			"  nem catalog fill registry.corp.example/nem/catalog:v3 --package kubectl   # one package\n" +
+			"  nem catalog fill registry.corp.example/nem/catalog:v3 --dry-run           # the plan only",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
