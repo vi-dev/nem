@@ -19,7 +19,7 @@ import (
 	"github.com/vi-dev/nem/internal/ocix/ocixtest"
 )
 
-func TestSyncAndLoad(t *testing.T) {
+func TestUpdateAndLoad(t *testing.T) {
 	ctx := context.Background()
 	srcDir := t.TempDir()
 	src, err := oci.New(srcDir)
@@ -34,9 +34,9 @@ func TestSyncAndLoad(t *testing.T) {
 	}, "2")
 
 	storePath := filepath.Join(t.TempDir(), "store")
-	s, err := ocix.SyncLocalCatalog(ctx, src, "v2", storePath, nil)
+	s, err := ocix.UpdateLocalCatalog(ctx, src, "v2", storePath, nil)
 	if err != nil {
-		t.Fatalf("SyncFrom: %v", err)
+		t.Fatalf("UpdateLocalCatalog: %v", err)
 	}
 	if !strings.HasPrefix(s.Digest(), "sha256:") {
 		t.Fatalf("index digest: %q", s.Digest())
@@ -66,33 +66,33 @@ func TestSyncAndLoad(t *testing.T) {
 	}
 }
 
-func TestSyncRejectsWrongSchema(t *testing.T) {
+func TestUpdateRejectsWrongSchema(t *testing.T) {
 	ctx := context.Background()
 	storePath := filepath.Join(t.TempDir(), "store")
 
 	good, _ := oci.New(t.TempDir())
 	ocixtest.PushFakeCatalog(t, good, []ocixtest.FakeEntry{{Name: "go", YAML: []byte("x")}}, "2")
-	if _, err := ocix.SyncLocalCatalog(ctx, good, "v2", storePath, nil); err != nil {
-		t.Fatalf("seed sync: %v", err)
+	if _, err := ocix.UpdateLocalCatalog(ctx, good, "v2", storePath, nil); err != nil {
+		t.Fatalf("seed update: %v", err)
 	}
 
 	bad, _ := oci.New(t.TempDir())
 	ocixtest.PushFakeCatalog(t, bad, []ocixtest.FakeEntry{{Name: "go", YAML: []byte("x")}}, "9")
-	_, err := ocix.SyncLocalCatalog(ctx, bad, "v2", storePath, nil)
+	_, err := ocix.UpdateLocalCatalog(ctx, bad, "v2", storePath, nil)
 	if err == nil || !strings.Contains(err.Error(), "schema") {
 		t.Fatalf("want schema error, got %v", err)
 	}
 
 	s, err := ocix.OpenLocalStore(ctx, storePath)
 	if err != nil || len(s.Index().Manifests) != 1 {
-		t.Fatalf("good mirror clobbered by bad-schema sync attempt: %v", err)
+		t.Fatalf("good mirror clobbered by bad-schema update attempt: %v", err)
 	}
 }
 
-func TestOpenStoreUnsynced(t *testing.T) {
+func TestOpenStoreNeverUpdated(t *testing.T) {
 	_, err := ocix.OpenLocalStore(context.Background(), filepath.Join(t.TempDir(), "nope"))
-	if !errors.Is(err, ocix.ErrNotSynced) {
-		t.Fatalf("want ErrNotSynced, got %v", err)
+	if !errors.Is(err, ocix.ErrNotUpdated) {
+		t.Fatalf("want ErrNotUpdated, got %v", err)
 	}
 }
 
@@ -114,7 +114,7 @@ func (m *movingResolveTarget) Resolve(ctx context.Context, ref string) (ocispec.
 	return m.rest, nil
 }
 
-func TestSyncFromDetectsMovingTag(t *testing.T) {
+func TestUpdateDetectsMovingTag(t *testing.T) {
 	ctx := context.Background()
 	store, err := oci.New(t.TempDir())
 	if err != nil {
@@ -128,24 +128,24 @@ func TestSyncFromDetectsMovingTag(t *testing.T) {
 
 	moving := &movingResolveTarget{ReadOnlyTarget: store, ref: "v2", first: oldDesc, rest: newDesc}
 	storePath := filepath.Join(t.TempDir(), "store")
-	_, err = ocix.SyncLocalCatalog(ctx, moving, "v2", storePath, nil)
-	if err == nil || !strings.Contains(err.Error(), "catalog changed during sync; retry") {
-		t.Fatalf("SyncFrom error = %v, want a catalog-changed-during-sync error", err)
+	_, err = ocix.UpdateLocalCatalog(ctx, moving, "v2", storePath, nil)
+	if err == nil || !strings.Contains(err.Error(), "catalog changed during update; retry") {
+		t.Fatalf("UpdateLocalCatalog error = %v, want a catalog-changed-during-update error", err)
 	}
 }
 
-func TestSyncIsIdempotent(t *testing.T) {
+func TestUpdateIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	src, _ := oci.New(t.TempDir())
 	ocixtest.PushFakeCatalog(t, src, []ocixtest.FakeEntry{{Name: "go", YAML: []byte("y")}}, "2")
 	storePath := filepath.Join(t.TempDir(), "store")
-	s1, err := ocix.SyncLocalCatalog(ctx, src, "v2", storePath, nil)
+	s1, err := ocix.UpdateLocalCatalog(ctx, src, "v2", storePath, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s2, err := ocix.SyncLocalCatalog(ctx, src, "v2", storePath, nil)
+	s2, err := ocix.UpdateLocalCatalog(ctx, src, "v2", storePath, nil)
 	if err != nil || s1.Digest() != s2.Digest() {
-		t.Fatalf("resync: %q vs %q, %v", s1.Digest(), s2.Digest(), err)
+		t.Fatalf("second update: %q vs %q, %v", s1.Digest(), s2.Digest(), err)
 	}
 }
 
@@ -239,8 +239,8 @@ func TestOpenLocalStoreNeverWritesToBrokenStore(t *testing.T) {
 	}
 
 	_, err := ocix.OpenLocalStore(context.Background(), storePath)
-	if !errors.Is(err, ocix.ErrNotSynced) {
-		t.Fatalf("want ErrNotSynced, got %v", err)
+	if !errors.Is(err, ocix.ErrNotUpdated) {
+		t.Fatalf("want ErrNotUpdated, got %v", err)
 	}
 
 	entries, err := os.ReadDir(storePath)
@@ -264,7 +264,7 @@ func BenchmarkOpenLocalStore(b *testing.B) {
 	}
 	ocixtest.PushFakeCatalog(b, src, fakeCatalogEntries(300), ocix.CatalogSchema)
 	storePath := filepath.Join(b.TempDir(), "store")
-	if _, err := ocix.SyncLocalCatalog(ctx, src, "v2", storePath, nil); err != nil {
+	if _, err := ocix.UpdateLocalCatalog(ctx, src, "v2", storePath, nil); err != nil {
 		b.Fatal(err)
 	}
 	b.ResetTimer()

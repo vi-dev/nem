@@ -44,9 +44,9 @@ lists the versions each row adds, which is enough to drive a scoped
 ## After a refresh
 
 Developers see the new versions after `nem catalog update`. A store that
-was never synced is synced by the next `nem use` or `nem sync`, but a stale
-one is not; `nem update` warns when a catalog was last synced more than a
-week ago.
+was never updated is updated by the next `nem use`, `nem lock`, `nem sync`,
+or `nem update`, but a stale one is not; `nem update` warns when a catalog
+was last updated more than a week ago.
 Consumers who pinned the catalog by digest see nothing until someone
 gives them the new digest, which is what pinning is for.
 
@@ -61,11 +61,12 @@ is an explicit step:
 ```sh
 nem catalog remove official                              # drop the v2 entry
 nem catalog add official ghcr.io/vi-dev/nem-catalog:v3  # add v3 under the same name
-nem catalog update official                              # sync it right away
+nem catalog update official                              # update it right away
 ```
 
-`nem catalog add` does not sync an oci catalog; `nem use` and `nem lock`
-do that when they need it, and `nem catalog update` does it at once.
+`nem catalog add` does not update an oci catalog; `nem use`, `nem lock`,
+`nem sync`, and `nem update` do that the first time they need it, and
+`nem catalog update` does it at once.
 
 Every package manifest digest changes with the new tag, so a project
 whose committed `nem.lock` was pinned against `v2` digests gets a digest

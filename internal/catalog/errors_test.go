@@ -11,7 +11,7 @@ func TestPackageNotFoundErrorRendersWithoutCatalogs(t *testing.T) {
 		t.Fatalf("want clean rendering with no catalog list, got %q", got)
 	}
 	err = &PackageNotFoundError{Name: "jq", Catalogs: []string{"a", "b"}}
-	if got := err.Error(); !strings.Contains(got, "in catalog(s) a, b") {
+	if got := err.Error(); !strings.Contains(got, "in catalogs a, b") {
 		t.Fatalf("want catalog list preserved when present, got %q", got)
 	}
 }

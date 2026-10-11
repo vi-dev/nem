@@ -27,7 +27,7 @@ const (
 	syncConcurrency = 32
 )
 
-var ErrNotSynced = errors.New("catalog store not synced")
+var ErrNotUpdated = errors.New("catalog store never updated")
 
 type PkgNotInIndexError struct{ Name string }
 

@@ -73,8 +73,8 @@ func TestUnicodeGlyphsWhenColored(t *testing.T) {
 
 func TestHintSuppressedByQuiet(t *testing.T) {
 	c, _, errb := newTest(Options{Color: ColorNever})
-	c.Hint("Run `nem catalog update dev` to sync it")
-	if !strings.Contains(errb.String(), "  hint: Run `nem catalog update dev` to sync it\n") {
+	c.Hint("Run `nem catalog update dev`")
+	if !strings.Contains(errb.String(), "  hint: Run `nem catalog update dev`\n") {
 		t.Errorf("hint line wrong: %q", errb.String())
 	}
 
@@ -334,7 +334,7 @@ func TestLiveSingleTaskShowsLabelAndSegment(t *testing.T) {
 
 func TestLiveProgressAloneRendersNothingUntilStatusIsSet(t *testing.T) {
 	c, _, errb := newLiveTest(Options{IsTTY: true, Color: ColorNever})
-	tk := c.Task("Syncing catalog")
+	tk := c.Task("Updating catalog")
 	tk.Progress(3, 10, Items)
 	c.repaint()
 
@@ -347,7 +347,7 @@ func TestLiveProgressAloneRendersNothingUntilStatusIsSet(t *testing.T) {
 	if got := errb.String(); !strings.Contains(got, "copying 3/10") {
 		t.Fatalf("Status set after Progress must render the count alongside it: %q", got)
 	}
-	tk.Done("Synced catalog")
+	tk.Done("Updated catalog")
 }
 
 func TestLiveDiscardShrinksBlockWithNoCompletionLine(t *testing.T) {

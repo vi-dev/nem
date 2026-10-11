@@ -138,7 +138,7 @@ func TestCompleteUnuseNoManifestIsSilent(t *testing.T) {
 	}
 }
 
-func seedSyncedCatalog(t *testing.T, nemHomeDir, catalogName string, entries []ocixtest.FakeEntry) {
+func seedUpdatedCatalog(t *testing.T, nemHomeDir, catalogName string, entries []ocixtest.FakeEntry) {
 	t.Helper()
 	src, err := oci.New(t.TempDir())
 	if err != nil {
@@ -146,7 +146,7 @@ func seedSyncedCatalog(t *testing.T, nemHomeDir, catalogName string, entries []o
 	}
 	ocixtest.PushFakeCatalog(t, src, entries, ocix.CatalogSchema)
 	storePath := filepath.Join(nemHomeDir, "catalogs", catalogName, "store")
-	if _, err := ocix.SyncLocalCatalog(context.Background(), src, "v2", storePath, nil); err != nil {
+	if _, err := ocix.UpdateLocalCatalog(context.Background(), src, "v2", storePath, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -178,7 +178,7 @@ versions:
 
 func TestCompleteUsePackagesAndVersions(t *testing.T) {
 	nemHomeDir := t.TempDir()
-	seedSyncedCatalog(t, nemHomeDir, "official", []ocixtest.FakeEntry{
+	seedUpdatedCatalog(t, nemHomeDir, "official", []ocixtest.FakeEntry{
 		{Name: "go", Description: "Go toolchain", Latest: "v1.2.0", YAML: []byte(fmt.Sprintf(completionPkgYAML, "go"))},
 		{Name: "node", Description: "Node.js", Latest: "v22.0.0", YAML: []byte(fmt.Sprintf(completionPkgYAML, "node"))},
 	})
@@ -219,11 +219,11 @@ func TestCompleteUsePackagesAndVersions(t *testing.T) {
 	}
 }
 
-func TestCompleteUseUnsyncedCatalogIsSilent(t *testing.T) {
+func TestCompleteUseNeverUpdatedCatalogIsSilent(t *testing.T) {
 	nemHomeDir := t.TempDir()
 	out := runNemComplete(t, nemHomeDir, "use", "")
 	if !strings.HasPrefix(out, ":") {
-		t.Errorf("unsynced catalog must yield no suggestions and no error:\n%s", out)
+		t.Errorf("never-updated catalog must yield no suggestions and no error:\n%s", out)
 	}
 }
 
@@ -244,7 +244,7 @@ func TestCompleteUseDirCatalogListsNamesWithoutParsing(t *testing.T) {
 
 func TestCompleteInfoAndSearch(t *testing.T) {
 	nemHomeDir := t.TempDir()
-	seedSyncedCatalog(t, nemHomeDir, "official", []ocixtest.FakeEntry{
+	seedUpdatedCatalog(t, nemHomeDir, "official", []ocixtest.FakeEntry{
 		{Name: "go", Description: "Go toolchain", Latest: "v1.2.0", YAML: []byte(fmt.Sprintf(completionPkgYAML, "go"))},
 	})
 	for _, cmd := range []string{"info", "search"} {
@@ -309,7 +309,7 @@ func TestCompletePathFilters(t *testing.T) {
 
 func TestCompleteUseDedupesNamesAcrossCatalogs(t *testing.T) {
 	nemHomeDir := t.TempDir()
-	seedSyncedCatalog(t, nemHomeDir, "official", []ocixtest.FakeEntry{
+	seedUpdatedCatalog(t, nemHomeDir, "official", []ocixtest.FakeEntry{
 		{Name: "go", Description: "Go toolchain", Latest: "v1.2.0", YAML: []byte(fmt.Sprintf(completionPkgYAML, "go"))},
 	})
 	catDir := t.TempDir()
@@ -453,7 +453,7 @@ func TestCompleteCatalogLintPackageFlag(t *testing.T) {
 
 func TestCompleteSearchIgnoresCatalogGrammar(t *testing.T) {
 	nemHomeDir := t.TempDir()
-	seedSyncedCatalog(t, nemHomeDir, "official", []ocixtest.FakeEntry{
+	seedUpdatedCatalog(t, nemHomeDir, "official", []ocixtest.FakeEntry{
 		{Name: "go", Description: "Go toolchain", Latest: "v1.2.0", YAML: []byte(fmt.Sprintf(completionPkgYAML, "go"))},
 	})
 

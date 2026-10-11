@@ -90,15 +90,15 @@ func TestCatalogAddRejectsTaglessOCIRef(t *testing.T) {
 	}
 }
 
-func TestCatalogUpdateSyncsOCI(t *testing.T) {
+func TestCatalogUpdatePullsOCI(t *testing.T) {
 	nemHome := t.TempDir()
-	var synced []string
-	orig := syncCatalog
-	syncCatalog = func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) (string, error) {
-		synced = append(synced, ref+"|"+storePath)
+	var updated []string
+	orig := updateCatalog
+	updateCatalog = func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) (string, error) {
+		updated = append(updated, ref+"|"+storePath)
 		return "sha256:fake", nil
 	}
-	defer func() { syncCatalog = orig }()
+	defer func() { updateCatalog = orig }()
 
 	dir := t.TempDir()
 	if _, _, err := runNem(t, nemHome, "catalog", "add", "dev", dir); err != nil {
@@ -108,10 +108,10 @@ func TestCatalogUpdateSyncsOCI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("update: %v\n%s", err, errb)
 	}
-	if len(synced) != 1 || !strings.Contains(synced[0], config.OfficialRef) {
-		t.Fatalf("synced: %v", synced)
+	if len(updated) != 1 || !strings.Contains(updated[0], config.OfficialRef) {
+		t.Fatalf("updated: %v", updated)
 	}
-	if !strings.Contains(errb, "Synced catalog official") {
+	if !strings.Contains(errb, "Updated catalog official") {
 		t.Fatalf("narration: %q", errb)
 	}
 
@@ -165,7 +165,7 @@ func TestCatalogUpdateHonorsConfiguredHostTrust(t *testing.T) {
 	if err != nil {
 		t.Fatalf("update over configured-CA TLS: %v\nstderr: %s", err, errb)
 	}
-	if !strings.Contains(errb, "Synced catalog trusted") {
+	if !strings.Contains(errb, "Updated catalog trusted") {
 		t.Fatalf("narration: %q", errb)
 	}
 }
@@ -179,19 +179,19 @@ func TestCatalogUpdateSkipsDisabled(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	var synced []string
-	orig := syncCatalog
-	syncCatalog = func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) (string, error) {
-		synced = append(synced, ref)
+	var updated []string
+	orig := updateCatalog
+	updateCatalog = func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) (string, error) {
+		updated = append(updated, ref)
 		return "", nil
 	}
-	defer func() { syncCatalog = orig }()
+	defer func() { updateCatalog = orig }()
 
 	if _, _, err := runNem(t, dir, "catalog", "update"); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	if !slices.Equal(synced, []string{"ghcr.io/x/on:v2"}) {
-		t.Fatalf("update should sync only enabled catalogs, synced %v", synced)
+	if !slices.Equal(updated, []string{"ghcr.io/x/on:v2"}) {
+		t.Fatalf("update should pull only enabled catalogs, pulled %v", updated)
 	}
 }
 

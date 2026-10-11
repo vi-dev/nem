@@ -179,7 +179,7 @@ func TestCleanUnusedPadsTheWindowByTheStampDebounce(t *testing.T) {
 	}
 }
 
-func TestCleanAllLeavesSyncedCatalogStoreOnDisk(t *testing.T) {
+func TestCleanAllLeavesUpdatedCatalogStoreOnDisk(t *testing.T) {
 	root := t.TempDir()
 	store := filepath.Join(root, "catalogs", "official", "store")
 	if err := os.MkdirAll(filepath.Join(store, "blobs", "sha256"), 0o755); err != nil {

@@ -36,16 +36,16 @@ what each command copies and skips.
 ```shell
 nem catalog add corp registry.corp.example/nem/catalog:v3   # the mirrored catalog
 nem catalog disable official                                # nothing tries to reach ghcr.io
-nem catalog update                                          # sync the store
+nem catalog update                                          # update the store
 nem use kubectl                                             # from your registry
 nem sync                                                    # on every other machine
 ```
 
 A registry with a private CA or without TLS needs a `hosts:` entry in
 [config.yaml](../../reference/config-yaml/) before the `add`. A fresh
-machine does not need the `update`: `nem sync` syncs a store that was never
-synced before installing, and `nem use` does the same; `update` is what
-refreshes a store that already exists. See
+machine does not need the `update`: `nem sync` updates a store that was
+never updated before installing, and `nem use` does the same; `update` is
+what refreshes a store that already exists. See
 [Packages](../../using/packages/#sharing).
 
 ## Keeping it current

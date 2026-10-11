@@ -179,7 +179,7 @@ func TestSearchDedupesByNameKeepingFirstCatalog(t *testing.T) {
 	}
 }
 
-func TestSearchSkipsUnsyncedCatalogWithWarning(t *testing.T) {
+func TestSearchSkipsNeverUpdatedCatalogWithWarning(t *testing.T) {
 	nemHomeDir := t.TempDir()
 	catalogRoot := writeSearchDirCatalog(t, map[string]string{"tool": "a fine tool"})
 
@@ -191,11 +191,11 @@ func TestSearchSkipsUnsyncedCatalogWithWarning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("search: %v\nstderr: %s", err, errb)
 	}
-	if !strings.Contains(errb, "official") || !strings.Contains(errb, "not synced") {
-		t.Fatalf("expected unsynced-catalog warning:\n%s", errb)
+	if !strings.Contains(errb, "official") || !strings.Contains(errb, "Catalog official never updated — run `nem catalog update official`") {
+		t.Fatalf("expected never-updated-catalog warning:\n%s", errb)
 	}
 	if !strings.Contains(out, "tool") {
-		t.Fatalf("dir catalog results missing despite unsynced oci catalog:\n%s", out)
+		t.Fatalf("dir catalog results missing despite never-updated oci catalog:\n%s", out)
 	}
 }
 

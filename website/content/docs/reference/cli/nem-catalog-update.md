@@ -3,9 +3,9 @@ title: nem catalog update
 weight: 20
 ---
 
-Sync oci catalogs from their remote.
+Update oci catalogs from their remote.
 
-Pull the current index of each oci catalog from its registry into NEM_HOME so that resolution sees new packages and versions. Without a name, every enabled oci catalog is synced. dir catalogs are read live and need no sync.
+Pull the current index of each oci catalog from its registry into NEM_HOME so that resolution sees new packages and versions. Without a name, every enabled oci catalog is updated. dir catalogs are read live and need no update.
 
 ## Usage
 

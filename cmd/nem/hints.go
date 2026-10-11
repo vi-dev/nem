@@ -16,7 +16,7 @@ import (
 )
 
 func hintFor(err error) string {
-	if errors.Is(err, ocix.ErrNotSynced) {
+	if errors.Is(err, ocix.ErrNotUpdated) {
 		return "Run `nem catalog update`"
 	}
 	if _, ok := errors.AsType[*catalog.NotFoundError](err); ok {

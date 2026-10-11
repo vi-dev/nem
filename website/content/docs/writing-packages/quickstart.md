@@ -68,7 +68,7 @@ nem catalog list                         # local, type dir, after official
 ```
 
 A path makes it a `dir` catalog. It is read straight from disk, so every
-edit shows up at once; there is nothing to sync.
+edit shows up at once; there is nothing to update.
 
 ### Use the package
 
@@ -79,7 +79,7 @@ nem which jq                             # …/packages/jq/1.8.2/bin/jq
 ```
 
 The `local:` prefix pins the package to your catalog, and `nem.toml`
-records it that way. On a fresh machine the first `nem use` also syncs the
+records it that way. On a fresh machine the first `nem use` also updates the
 official catalog, which takes a moment.
 
 ### Test it

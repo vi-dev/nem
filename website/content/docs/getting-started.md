@@ -141,7 +141,7 @@ nem sync              # install what nem.lock pins
 
 `nem sync` installs everything the lockfile pins that is missing on their
 machine — same versions, same digests. A catalog store that was never
-synced is synced first; a stale one is not, which is what `nem catalog
+updated is updated first; a stale one is not, which is what `nem catalog
 update` is for.
 
 {{% /steps %}}

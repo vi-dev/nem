@@ -82,7 +82,7 @@ official` instead of the `reorder`. Then, in any project:
 nem use jq                                                  # resolves from corp, installs from your registry
 ```
 
-The first `nem use` syncs the new catalog. Archives resolve from your
+The first `nem use` updates the new catalog. Archives resolve from your
 registry automatically, because their location is derived from the
 catalog reference.
 

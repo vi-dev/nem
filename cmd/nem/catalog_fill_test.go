@@ -139,7 +139,7 @@ func TestCatalogFillCmdUnknownPkgErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("unknown --package name must error")
 	}
-	if !strings.Contains(errb, "nonexistent not found in catalog(s) example.com/cat:v2") {
+	if !strings.Contains(errb, "nonexistent not found in catalog example.com/cat:v2") {
 		t.Fatalf("stderr missing the unknown package error:\n%s", errb)
 	}
 }

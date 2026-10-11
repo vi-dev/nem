@@ -44,7 +44,7 @@ survive it.
 ## `hosts:`
 
 Per-host connection settings, applied when nem talks to an OCI registry:
-catalog syncs, archives, mirror, fill, and publish. They do not apply to
+catalog updates, archives, mirror, fill, and publish. They do not apply to
 artifact downloads from upstream URLs, which use nem's default client, so
 a `ca` entry does not cover the hosts in `artifact.url`.
 

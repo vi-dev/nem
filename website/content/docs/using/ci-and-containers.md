@@ -55,8 +55,8 @@ nem exec -- kubectl apply -f manifests/   # each step in the composed environmen
 nem exec -- go test ./...
 ```
 
-The catalog store starts empty on a fresh runner; `nem sync` syncs it before
-looking anything up. A restored but stale store is not re-synced, so a
+The catalog store starts empty on a fresh runner; `nem sync` updates it before
+looking anything up. A restored but stale store is not updated again, so a
 pipeline that caches the store runs `nem catalog update` when it needs
 newer manifests.
 

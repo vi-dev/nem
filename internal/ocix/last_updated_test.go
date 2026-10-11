@@ -7,10 +7,10 @@ import (
 	"time"
 )
 
-func TestLastSynced(t *testing.T) {
+func TestLastUpdated(t *testing.T) {
 	store := t.TempDir()
-	if _, err := LastSynced(store); err == nil {
-		t.Fatal("want error for a never-synced store")
+	if _, err := LastUpdated(store); err == nil {
+		t.Fatal("want error for a never-updated store")
 	}
 
 	path := filepath.Join(store, "index.json")
@@ -22,11 +22,11 @@ func TestLastSynced(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ts, err := LastSynced(store)
+	ts, err := LastUpdated(store)
 	if err != nil {
-		t.Fatalf("LastSynced: %v", err)
+		t.Fatalf("LastUpdated: %v", err)
 	}
 	if d := ts.Sub(old); d < -time.Second || d > time.Second {
-		t.Fatalf("LastSynced = %v, want ~%v", ts, old)
+		t.Fatalf("LastUpdated = %v, want ~%v", ts, old)
 	}
 }

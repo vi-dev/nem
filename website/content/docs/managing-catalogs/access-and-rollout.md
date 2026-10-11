@@ -44,7 +44,7 @@ such as `localhost:5000` default to plain HTTP without an entry.
 ```shell
 nem catalog add corp registry.example/nem/catalog:v3   # appended after the catalogs already configured
 nem catalog reorder corp official                      # if the corporate catalog should win
-nem catalog update                                     # sync it
+nem catalog update                                     # update it
 ```
 
 `add` appends, so a catalog that should take precedence over `official`

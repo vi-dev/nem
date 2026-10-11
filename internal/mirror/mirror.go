@@ -53,7 +53,7 @@ func Run(ctx context.Context, opts Options) (Summary, error) {
 		return Summary{}, err
 	}
 
-	store, err := syncCatalog(ctx, opts)
+	store, err := copyCatalog(ctx, opts)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -91,7 +91,7 @@ type aggregator struct {
 	copied, failed atomic.Int64
 }
 
-func syncCatalog(ctx context.Context, opts Options) (*ocix.Store, error) {
+func copyCatalog(ctx context.Context, opts Options) (*ocix.Store, error) {
 	store, err := pullCatalog(ctx, opts.SrcRef)
 	if err != nil {
 		return nil, err

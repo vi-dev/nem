@@ -5,7 +5,7 @@ weight: 17
 
 Remove a catalog.
 
-Delete a catalog from config.yaml. Packages already installed from it stay under NEM_HOME, but projects whose lockfile pins packages from it cannot sync them until the catalog is added back.
+Delete a catalog from config.yaml. Packages already installed from it stay under NEM_HOME, but projects whose lockfile pins packages from it cannot install them until the catalog is added back.
 
 ## Usage
 

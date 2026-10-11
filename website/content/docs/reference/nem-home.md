@@ -31,14 +31,14 @@ needs root.
 │   ├── <name>/<version>-*.tmp/      # an install in progress
 │   └── <name>-NEMTEST-*/            # a `catalog test` install in progress
 └── catalogs/
-    └── <name>/store/                # synced copy of an oci catalog
+    └── <name>/store/                # local copy of an oci catalog
 ```
 
 - **`config.yaml`** — see [config.yaml](../config-yaml/).
 - **`nem.toml` / `nem.lock`** — the global twins of the project files; see
   [nem.toml](../nem-toml/) and [nem.lock](../nem-lock/).
 - **`lock`** — a flock held while nem writes manifests, lockfiles, or the
-  config, syncs a catalog, installs or relinks packages, runs `nem clean`,
+  config, updates a catalog, installs or relinks packages, runs `nem clean`,
   or runs `nem catalog test`. The file itself is never deleted.
 - **`usage.json`** — a stamp per installed version, refreshed when an
   environment is composed (`nem env` on a directory change, `nem exec`),
@@ -61,7 +61,7 @@ needs root.
   place when the install succeeds.
 - **`packages/<name>-NEMTEST-*/`** — the throwaway alias that
   `nem catalog test` installs into, removed when the test finishes.
-- **`catalogs/<name>/store/`** — the synced copy of an `oci` catalog's
+- **`catalogs/<name>/store/`** — the local copy of an `oci` catalog's
   index and package manifests; `dir` catalogs have nothing here, since
   they're read straight from their configured path.
 

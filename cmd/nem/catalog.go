@@ -17,12 +17,12 @@ import (
 	"github.com/vi-dev/nem/internal/spec"
 )
 
-var syncCatalog = func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) (string, error) {
+var updateCatalog = func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) (string, error) {
 	src, srcRef, err := ocix.RemoteCatalog(ref)
 	if err != nil {
 		return "", err
 	}
-	store, err := ocix.SyncLocalCatalog(ctx, src, srcRef, storePath, progress)
+	store, err := ocix.UpdateLocalCatalog(ctx, src, srcRef, storePath, progress)
 	if err != nil {
 		return "", err
 	}
@@ -65,8 +65,8 @@ func newCatalogAddCmd() *cobra.Command {
 		Annotations: guide("Catalogs", "/docs/using/catalogs"),
 		Long: "Append a catalog to config.yaml under <name>, after the ones already configured. " +
 			"<ref> is an OCI reference or a local directory; the type is detected from it " +
-			"unless --type says otherwise. nem use and nem lock sync a new oci catalog when " +
-			"they need it; nem catalog update syncs it right away.",
+			"unless --type says otherwise. nem use, lock, sync, and update pull a new oci catalog " +
+			"the first time they need it; nem catalog update pulls it right away.",
 		Example: "  nem catalog add corp registry.example/nem/catalog:v3             # an OCI catalog\n" +
 			"  nem catalog add corp registry.example/nem/catalog@sha256:0123...  # pinned to a digest\n" +
 			"  nem catalog add local ./my-catalog                                # a directory",
@@ -115,7 +115,7 @@ func newCatalogAddCmd() *cobra.Command {
 			}
 			console.Success("Added catalog %s", name)
 			if entryType == "oci" {
-				console.Hint("Run `nem catalog update " + name + "` to sync it")
+				console.Hint("Run `nem catalog update " + name + "`")
 			}
 			return nil
 		},
@@ -165,7 +165,7 @@ func newCatalogRemoveCmd() *cobra.Command {
 		Short:       "Remove a catalog",
 		Annotations: guide("Catalogs", "/docs/using/catalogs"),
 		Long: "Delete a catalog from config.yaml. Packages already installed from it stay under " +
-			"NEM_HOME, but projects whose lockfile pins packages from it cannot sync them " +
+			"NEM_HOME, but projects whose lockfile pins packages from it cannot install them " +
 			"until the catalog is added back.",
 		Example:           "  nem catalog remove corp      # forget it",
 		Args:              cobra.ExactArgs(1),
@@ -207,11 +207,11 @@ func newCatalogUpdateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:         "update [name]",
 		Aliases:     []string{"up"},
-		Short:       "Sync oci catalogs from their remote",
+		Short:       "Update oci catalogs from their remote",
 		Annotations: guide("Catalogs", "/docs/using/catalogs"),
 		Long: "Pull the current index of each oci catalog from its registry into NEM_HOME so " +
 			"that resolution sees new packages and versions. Without a name, every enabled " +
-			"oci catalog is synced. dir catalogs are read live and need no sync.",
+			"oci catalog is updated. dir catalogs are read live and need no update.",
 		Example: "  nem catalog update           # every enabled oci catalog\n" +
 			"  nem catalog update official  # one catalog",
 		Args:              cobra.MaximumNArgs(1),
@@ -233,14 +233,14 @@ func newCatalogUpdateCmd() *cobra.Command {
 					return fmt.Errorf("catalog %s is not configured", name)
 				}
 				if entry.Type == "dir" {
-					console.Warn("Catalog %s is a dir catalog (nothing to sync)", name)
+					console.Warn("Catalog %s is a dir catalog (nothing to update)", name)
 					return nil
 				}
 				if entry.Disabled {
-					console.Warn("Catalog %s is disabled (nothing to sync)", name)
+					console.Warn("Catalog %s is disabled (nothing to update)", name)
 					return nil
 				}
-				return syncOne(cmd.Context(), *entry)
+				return updateOne(cmd.Context(), *entry)
 			}
 			for _, e := range cfg.Catalogs {
 				if e.Disabled {
@@ -249,7 +249,7 @@ func newCatalogUpdateCmd() *cobra.Command {
 				if e.Type != "oci" {
 					continue
 				}
-				if err := syncOne(cmd.Context(), e); err != nil {
+				if err := updateOne(cmd.Context(), e); err != nil {
 					return err
 				}
 			}
@@ -258,19 +258,19 @@ func newCatalogUpdateCmd() *cobra.Command {
 	}
 }
 
-func syncOne(ctx context.Context, e config.CatalogEntry) error {
+func updateOne(ctx context.Context, e config.CatalogEntry) error {
 	store, err := nemHome.CatalogStore(e.Name)
 	if err != nil {
 		return err
 	}
 	labels := report.TaskLabels{
-		Run:     "Syncing catalog " + e.Name,
-		Segment: "copying",
-		Done:    "Synced catalog " + e.Name,
-		Fail:    "Failed to sync catalog " + e.Name,
+		Run:     "Updating catalog " + e.Name,
+		Segment: "pulling manifest",
+		Done:    "Updated catalog " + e.Name,
+		Fail:    "Failed to update catalog " + e.Name,
 	}
 	return report.RunTask(ctx, labels, func(count report.ProgressFunc) error {
-		_, err := syncCatalog(ctx, e.Ref, store, count)
+		_, err := updateCatalog(ctx, e.Ref, store, count)
 		return err
 	})
 }

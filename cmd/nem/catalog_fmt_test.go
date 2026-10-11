@@ -84,7 +84,7 @@ func TestCatalogFmtScopedToPackage(t *testing.T) {
 	}
 
 	_, errb, err = runNem(t, nemHome, "catalog", "fmt", dir, "--package", "nosuch")
-	if err == nil || !strings.Contains(errb, "nosuch not found in catalog(s) "+dir) {
+	if err == nil || !strings.Contains(errb, "nosuch not found in catalog "+dir) {
 		t.Fatalf("err = %v, stderr = %q; want PackageNotFoundError naming the catalog", err, errb)
 	}
 }

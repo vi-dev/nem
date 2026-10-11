@@ -20,12 +20,12 @@ import (
 	"github.com/vi-dev/nem/internal/resolve"
 )
 
-var syncCatalogStore = func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) error {
+var updateCatalogStore = func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) error {
 	src, srcRef, err := ocix.RemoteCatalog(ref)
 	if err != nil {
 		return err
 	}
-	_, err = ocix.SyncLocalCatalog(ctx, src, srcRef, storePath, progress)
+	_, err = ocix.UpdateLocalCatalog(ctx, src, srcRef, storePath, progress)
 	return err
 }
 
@@ -169,7 +169,7 @@ func writeLock(manifest *project.Manifest, result *resolve.Result) error {
 	return project.WriteLock(lf)
 }
 
-func autoSyncUnsyncedCatalogs(ctx context.Context, cfg *config.Config, set *catalog.Set) error {
+func updateNeverUpdatedCatalogs(ctx context.Context, cfg *config.Config, set *catalog.Set) error {
 	for _, n := range set.Entries() {
 		src, ok := n.Catalog.(mirrorOpener)
 		if !ok {
@@ -179,7 +179,7 @@ func autoSyncUnsyncedCatalogs(ctx context.Context, cfg *config.Config, set *cata
 		if err == nil {
 			continue
 		}
-		if !errors.Is(err, ocix.ErrNotSynced) {
+		if !errors.Is(err, ocix.ErrNotUpdated) {
 			return err
 		}
 		e := cfg.Find(n.Name)
@@ -191,15 +191,15 @@ func autoSyncUnsyncedCatalogs(ctx context.Context, cfg *config.Config, set *cata
 			return err
 		}
 		labels := report.TaskLabels{
-			Run:     "Syncing catalog " + n.Name,
-			Segment: "copying",
-			Done:    "Synced catalog " + n.Name,
-			Fail:    "Failed to sync catalog " + n.Name,
+			Run:     "Updating catalog " + n.Name,
+			Segment: "pulling manifest",
+			Done:    "Updated catalog " + n.Name,
+			Fail:    "Failed to update catalog " + n.Name,
 		}
 		if err := report.RunTask(ctx, labels, func(count report.ProgressFunc) error {
-			return syncCatalogStore(ctx, e.Ref, store, count)
+			return updateCatalogStore(ctx, e.Ref, store, count)
 		}); err != nil {
-			console.Warn("Could not sync catalog %s: %v", n.Name, err)
+			console.Warn("Resolving without catalog %s: %v", n.Name, err)
 			continue
 		}
 	}
@@ -207,7 +207,7 @@ func autoSyncUnsyncedCatalogs(ctx context.Context, cfg *config.Config, set *cata
 }
 
 func resolveManifest(cmd *cobra.Command, manifest *project.Manifest, cfg *config.Config, set *catalog.Set) (*resolve.Result, error) {
-	if err := autoSyncUnsyncedCatalogs(cmd.Context(), cfg, set); err != nil {
+	if err := updateNeverUpdatedCatalogs(cmd.Context(), cfg, set); err != nil {
 		return nil, err
 	}
 	return resolve.Resolve(cmd.Context(), manifestTools(manifest), set)

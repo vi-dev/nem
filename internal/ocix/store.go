@@ -95,7 +95,7 @@ func (t *localTarget) Resolve(_ context.Context, ref string) (ocispec.Descriptor
 func openLocalTarget(storePath string) (*localTarget, error) {
 	data, err := os.ReadFile(filepath.Join(storePath, ocispec.ImageIndexFile))
 	if os.IsNotExist(err) {
-		return nil, ErrNotSynced
+		return nil, ErrNotUpdated
 	}
 	if err != nil {
 		return nil, fmt.Errorf("open catalog store %s: %w", storePath, err)
@@ -114,7 +114,7 @@ func openLocalTarget(storePath string) (*localTarget, error) {
 	return &localTarget{ReadOnlyStorage: storage, tags: tags}, nil
 }
 
-func LastSynced(storePath string) (time.Time, error) {
+func LastUpdated(storePath string) (time.Time, error) {
 	fi, err := os.Stat(filepath.Join(storePath, ocispec.ImageIndexFile))
 	if err != nil {
 		return time.Time{}, err
@@ -130,7 +130,7 @@ func OpenLocalStore(ctx context.Context, storePath string) (*Store, error) {
 	idx, desc, err := FetchCatalogIndex(ctx, target, LocalTag)
 	if err != nil {
 		if errors.Is(err, errdef.ErrNotFound) {
-			return nil, ErrNotSynced
+			return nil, ErrNotUpdated
 		}
 		return nil, err
 	}
@@ -153,7 +153,7 @@ func OpenStoreInMemory(ctx context.Context, src oras.ReadOnlyTarget, ref string,
 	return OpenStore(ctx, mem, LocalTag)
 }
 
-func SyncLocalCatalog(ctx context.Context, src oras.ReadOnlyTarget, srcRef, storePath string, progress ProgressFunc) (*Store, error) {
+func UpdateLocalCatalog(ctx context.Context, src oras.ReadOnlyTarget, srcRef, storePath string, progress ProgressFunc) (*Store, error) {
 	_, srcDesc, err := FetchCatalogIndex(ctx, src, srcRef)
 	if err != nil {
 		return nil, err
@@ -165,10 +165,10 @@ func SyncLocalCatalog(ctx context.Context, src oras.ReadOnlyTarget, srcRef, stor
 	}
 	destDesc, err := CopyIndexClosureWithProgress(ctx, src, srcRef, dst, LocalTag, progress)
 	if err != nil {
-		return nil, fmt.Errorf("sync catalog: %w", err)
+		return nil, fmt.Errorf("update catalog: %w", err)
 	}
 	if destDesc.Digest != srcDesc.Digest {
-		return nil, errors.New("catalog changed during sync; retry")
+		return nil, errors.New("catalog changed during update; retry")
 	}
 	return OpenLocalStore(ctx, storePath)
 }

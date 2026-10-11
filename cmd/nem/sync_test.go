@@ -263,8 +263,8 @@ func syncedOCICatalogStore(t *testing.T, h home.Home, name string) {
 		Name: "tool", Description: "a test tool", Latest: "v1.0.0",
 		YAML: []byte(syncToolYAML),
 	}}, "2")
-	if _, err := ocix.SyncLocalCatalog(context.Background(), src, "v2", storePath, nil); err != nil {
-		t.Fatalf("SyncFrom: %v", err)
+	if _, err := ocix.UpdateLocalCatalog(context.Background(), src, "v2", storePath, nil); err != nil {
+		t.Fatalf("UpdateLocalCatalog: %v", err)
 	}
 }
 
@@ -317,7 +317,7 @@ func TestSyncSkipsInstalledEntryWithUnavailableCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := stubSyncEmptyCatalog(context.Background(), "", official, nil); err != nil {
+	if err := stubUpdateEmptyCatalog(context.Background(), "", official, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -520,16 +520,16 @@ func TestSyncColdSyncsUnsyncedOCICatalogBeforeLookup(t *testing.T) {
 		project.LockEntry{Name: "tool", Version: "v1.0.0", Catalog: "demo", Direct: true, Platforms: []string{spec.Current().String()}})
 
 	var calls []string
-	testx.Swap(t, &syncCatalogStore, fakeOCICatalogSync(t, &calls, otherPlatform(t)))
+	testx.Swap(t, &updateCatalogStore, fakeOCICatalogUpdate(t, &calls, otherPlatform(t)))
 
 	_, errb, err := runNem(t, nemHomeDir, "sync")
 	if err != nil {
 		t.Fatalf("sync: %v\n%s", err, errb)
 	}
 	if want := "ghcr.io/x/y:v2|" + store; !slices.Contains(calls, want) {
-		t.Fatalf("syncCatalogStore not called for the unsynced demo catalog: %v", calls)
+		t.Fatalf("updateCatalogStore not called for the never-updated demo catalog: %v", calls)
 	}
-	if !strings.Contains(errb, "Synced catalog demo") {
+	if !strings.Contains(errb, "Updated catalog demo") {
 		t.Fatalf("stderr = %q, want the sync task outcome", errb)
 	}
 
@@ -538,7 +538,7 @@ func TestSyncColdSyncsUnsyncedOCICatalogBeforeLookup(t *testing.T) {
 		t.Fatalf("second sync: %v\n%s", err, errb)
 	}
 	if len(calls) != 0 {
-		t.Fatalf("already-synced stores must not be re-synced, got calls %v", calls)
+		t.Fatalf("already-updated stores must not be updated again, got calls %v", calls)
 	}
 }
 
@@ -562,7 +562,7 @@ func TestSyncKeepsInstalledEntryWhoseVersionTheCatalogDropped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := stubSyncEmptyCatalog(context.Background(), "", official, nil); err != nil {
+	if err := stubUpdateEmptyCatalog(context.Background(), "", official, nil); err != nil {
 		t.Fatal(err)
 	}
 

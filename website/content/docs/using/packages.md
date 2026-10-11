@@ -41,8 +41,8 @@ nem update [<pkg>...]
 `nem update` (alias `up`) re-resolves declared packages — all, or just the
 ones named — to their catalog's latest, exactly as if you re-ran `nem use`
 for each. `-g` targets the global manifest; `--dry-run` reports the plan
-without writing anything. A catalog that was never synced is synced first;
-one last synced more than a week ago earns a warning to run
+without writing anything. A catalog that was never updated is updated first;
+one last updated more than a week ago earns a warning to run
 `nem catalog update`. Each
 package settles on the first entry its dependents allow; a pick below a
 declared version aborts the whole update, and conflicting declarations fail
@@ -90,8 +90,8 @@ nem sync              # install what nem.lock pins
 
 `nem sync` installs exactly what the lockfile pins and warns if `nem.toml`
 has drifted from `nem.lock`, for example a declared package the lock doesn't
-cover yet. It reads package manifests from the local catalog store, syncing
-a store that was never synced first; a stale store needs `nem catalog update`.
+cover yet. It reads package manifests from the local catalog store, updating
+a store that was never updated first; a stale store needs `nem catalog update`.
 
 ```
 WARN nem.toml declares tree@2.3.2, which nem.lock does not cover — run `nem lock`

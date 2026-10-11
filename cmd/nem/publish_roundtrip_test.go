@@ -52,8 +52,8 @@ func TestPublishToUseRoundTrip(t *testing.T) {
 		t.Fatalf("catalog add: %v\n%s", err, errb)
 	}
 
-	testx.Swap(t, &syncCatalogStore, func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) error {
-		_, err := ocix.SyncLocalCatalog(ctx, shared, "v2", storePath, progress)
+	testx.Swap(t, &updateCatalogStore, func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) error {
+		_, err := ocix.UpdateLocalCatalog(ctx, shared, "v2", storePath, progress)
 		return err
 	})
 

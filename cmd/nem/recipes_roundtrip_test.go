@@ -20,7 +20,7 @@ import (
 	"github.com/vi-dev/nem/internal/testx"
 )
 
-func TestFrozenRecipeSurvivesPublishSyncAndUse(t *testing.T) {
+func TestFrozenRecipeSurvivesPublishUpdateAndUse(t *testing.T) {
 	ctx := context.Background()
 	shared, err := oci.New(t.TempDir())
 	if err != nil {
@@ -65,8 +65,8 @@ func TestFrozenRecipeSurvivesPublishSyncAndUse(t *testing.T) {
 	if _, errb, err := runNem(t, home, "catalog", "add", "team", "example.com/cat:v3"); err != nil {
 		t.Fatalf("catalog add: %v\n%s", err, errb)
 	}
-	testx.Swap(t, &syncCatalogStore, func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) error {
-		_, err := ocix.SyncLocalCatalog(ctx, shared, "v3", storePath, progress)
+	testx.Swap(t, &updateCatalogStore, func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) error {
+		_, err := ocix.UpdateLocalCatalog(ctx, shared, "v3", storePath, progress)
 		return err
 	})
 	defer archive.SetRepoOpener(func(string) (oras.Target, error) { return memory.New(), nil })()

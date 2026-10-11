@@ -35,7 +35,7 @@ nem catalog lint .                                      # validate a checkout
 | [list](../nem-catalog-list/) | List configured catalogs |
 | [remove](../nem-catalog-remove/) | Remove a catalog |
 | [reorder](../nem-catalog-reorder/) | Reorder catalog precedence |
-| [update](../nem-catalog-update/) | Sync oci catalogs from their remote |
+| [update](../nem-catalog-update/) | Update oci catalogs from their remote |
 
 ### Catalog maintenance
 

@@ -36,8 +36,8 @@ func TestRunStagesCatalogAndReadsSrcIndexOnce(t *testing.T) {
 	stagingOnly := &testx.CountingTarget{ReadOnlyTarget: srcStore}
 	wireCatalog(t, stagingOnly, srcTag, memory.New(), "v2")
 	stagingCtx, _ := testx.ReporterContext(context.Background())
-	if _, err := syncCatalog(stagingCtx, opts); err != nil {
-		t.Fatalf("syncCatalog: %v", err)
+	if _, err := copyCatalog(stagingCtx, opts); err != nil {
+		t.Fatalf("copyCatalog: %v", err)
 	}
 	wantResolves, wantFetches := stagingOnly.Resolves.Load(), stagingOnly.Fetches.Load()
 	if wantFetches == 0 {

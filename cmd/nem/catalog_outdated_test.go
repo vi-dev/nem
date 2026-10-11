@@ -156,7 +156,7 @@ func TestCatalogOutdatedPackageFilter(t *testing.T) {
 	}
 
 	_, errOut, err = runNem(t, nemHome, "catalog", "outdated", dir, "--package", "nope")
-	if err == nil || !strings.Contains(errOut, "nope not found in catalog(s) "+dir) {
+	if err == nil || !strings.Contains(errOut, "nope not found in catalog "+dir) {
 		t.Fatalf("err = %v, stderr = %q; want PackageNotFoundError naming the catalog", err, errOut)
 	}
 }

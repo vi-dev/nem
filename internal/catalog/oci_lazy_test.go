@@ -32,7 +32,7 @@ func localOCI(name, storePath string) *OCI {
 	})
 }
 
-func syncedStore(t *testing.T) string {
+func updatedStore(t *testing.T) string {
 	t.Helper()
 	src, err := oci.New(t.TempDir())
 	if err != nil {
@@ -43,14 +43,14 @@ func syncedStore(t *testing.T) string {
 		YAML: []byte(ociGoYAML),
 	}}, "2")
 	storePath := filepath.Join(t.TempDir(), "store")
-	if _, err := ocix.SyncLocalCatalog(context.Background(), src, "v2", storePath, nil); err != nil {
+	if _, err := ocix.UpdateLocalCatalog(context.Background(), src, "v2", storePath, nil); err != nil {
 		t.Fatal(err)
 	}
 	return storePath
 }
 
 func TestLazyOCILoadAndVersions(t *testing.T) {
-	s := localOCI("official", syncedStore(t))
+	s := localOCI("official", updatedStore(t))
 	ctx := context.Background()
 	pkg, dig, err := s.Package(ctx, "go")
 	if err != nil || pkg.Name != "go" || dig == "" {
@@ -86,7 +86,7 @@ func BenchmarkLazyOCIResolvePattern(b *testing.B) {
 	}
 	ocixtest.PushFakeCatalog(b, src, entries, "2")
 	storePath := filepath.Join(b.TempDir(), "store")
-	if _, err := ocix.SyncLocalCatalog(context.Background(), src, "v2", storePath, nil); err != nil {
+	if _, err := ocix.UpdateLocalCatalog(context.Background(), src, "v2", storePath, nil); err != nil {
 		b.Fatal(err)
 	}
 	ctx := context.Background()
@@ -108,11 +108,11 @@ func TestLazyOCIRetriesAfterFailedOpen(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "store")
 	s := localOCI("official", storePath)
 
-	if _, err := s.Summaries(ctx); !errors.Is(err, ocix.ErrNotSynced) {
-		t.Fatalf("first Summaries: want ErrNotSynced, got %v", err)
+	if _, err := s.Summaries(ctx); !errors.Is(err, ocix.ErrNotUpdated) {
+		t.Fatalf("first Summaries: want ErrNotUpdated, got %v", err)
 	}
-	if _, _, err := s.Package(ctx, "go"); !errors.Is(err, ocix.ErrNotSynced) {
-		t.Fatalf("first Load: want ErrNotSynced, got %v", err)
+	if _, _, err := s.Package(ctx, "go"); !errors.Is(err, ocix.ErrNotUpdated) {
+		t.Fatalf("first Load: want ErrNotUpdated, got %v", err)
 	}
 
 	src, err := oci.New(t.TempDir())
@@ -123,7 +123,7 @@ func TestLazyOCIRetriesAfterFailedOpen(t *testing.T) {
 		Name: "go", Description: "The Go programming language", Latest: "v1.26.5",
 		YAML: []byte(ociGoYAML),
 	}}, "2")
-	if _, err := ocix.SyncLocalCatalog(ctx, src, "v2", storePath, nil); err != nil {
+	if _, err := ocix.UpdateLocalCatalog(ctx, src, "v2", storePath, nil); err != nil {
 		t.Fatal(err)
 	}
 

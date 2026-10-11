@@ -98,20 +98,20 @@ func (s stubCatalog) ReadFiles(context.Context, string) (spec.Files, error) {
 	return spec.Files{}, s.err
 }
 
-func TestSetSummariesDedupAndUnsynced(t *testing.T) {
+func TestSetSummariesDedupAndNeverUpdated(t *testing.T) {
 	a := writeDirCatalog(t, "shared", "only-a")
 	b := writeDirCatalog(t, "shared", "only-b")
 	s := NewSet(
 		Entry{Name: "a", Catalog: NewDir(a)},
-		Entry{Name: "stale", Catalog: stubCatalog{err: ocix.ErrNotSynced}},
+		Entry{Name: "stale", Catalog: stubCatalog{err: ocix.ErrNotUpdated}},
 		Entry{Name: "b", Catalog: NewDir(b)},
 	)
-	hits, unsynced, err := s.Summaries(context.Background())
+	hits, neverUpdated, err := s.Summaries(context.Background())
 	if err != nil {
 		t.Fatalf("Summaries: %v", err)
 	}
-	if !slices.Equal(unsynced, []string{"stale"}) {
-		t.Fatalf("unsynced: %v", unsynced)
+	if !slices.Equal(neverUpdated, []string{"stale"}) {
+		t.Fatalf("neverUpdated: %v", neverUpdated)
 	}
 	got := map[string]string{}
 	for _, h := range hits {

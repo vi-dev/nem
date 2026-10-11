@@ -56,7 +56,7 @@ Every `nem` command, grouped as in `nem --help`. Every command also accepts `--c
 | [nem catalog list](nem-catalog-list/) | List configured catalogs |
 | [nem catalog remove](nem-catalog-remove/) | Remove a catalog |
 | [nem catalog reorder](nem-catalog-reorder/) | Reorder catalog precedence |
-| [nem catalog update](nem-catalog-update/) | Sync oci catalogs from their remote |
+| [nem catalog update](nem-catalog-update/) | Update oci catalogs from their remote |
 
 ### Catalog maintenance
 

@@ -41,12 +41,12 @@ func runSearch(cmd *cobra.Command, query string) error {
 		return err
 	}
 
-	hits, unsynced, err := set.Summaries(cmd.Context())
+	hits, neverUpdated, err := set.Summaries(cmd.Context())
 	if err != nil {
 		return err
 	}
-	for _, name := range unsynced {
-		console.Warn("Catalog %s is not synced (run nem catalog update)", name)
+	for _, name := range neverUpdated {
+		console.Warn("Catalog %s never updated — run `nem catalog update %s`", name, name)
 	}
 
 	q := strings.ToLower(query)

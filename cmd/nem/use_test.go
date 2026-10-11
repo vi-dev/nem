@@ -33,7 +33,7 @@ import (
 	"github.com/vi-dev/nem/internal/testx"
 )
 
-func stubSyncEmptyCatalog(ctx context.Context, _, storePath string, _ ocix.ProgressFunc) error {
+func stubUpdateEmptyCatalog(ctx context.Context, _, storePath string, _ ocix.ProgressFunc) error {
 	dst, err := oci.New(storePath)
 	if err != nil {
 		return err
@@ -55,7 +55,7 @@ func stubSyncEmptyCatalog(ctx context.Context, _, storePath string, _ ocix.Progr
 }
 
 func TestMain(m *testing.M) {
-	syncCatalogStore = stubSyncEmptyCatalog
+	updateCatalogStore = stubUpdateEmptyCatalog
 	os.Exit(m.Run())
 }
 
@@ -252,7 +252,7 @@ func otherPlatform(t *testing.T) spec.Platform {
 	return spec.Platform{}
 }
 
-func fakeOCICatalogSync(t *testing.T, calls *[]string, plat spec.Platform) func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) error {
+func fakeOCICatalogUpdate(t *testing.T, calls *[]string, plat spec.Platform) func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) error {
 	t.Helper()
 	yaml := fmt.Sprintf(`
 schema: 2
@@ -275,12 +275,12 @@ versions:
 			Name: "tool", Description: "a test tool", Latest: "v1.0.0",
 			YAML: []byte(yaml),
 		}}, "2")
-		_, err = ocix.SyncLocalCatalog(ctx, src, "v2", storePath, progress)
+		_, err = ocix.UpdateLocalCatalog(ctx, src, "v2", storePath, progress)
 		return err
 	}
 }
 
-func TestUseColdAutoSyncsUnsyncedOCICatalogBeforeResolve(t *testing.T) {
+func TestUseColdAutoUpdatesNeverUpdatedOCICatalogBeforeResolve(t *testing.T) {
 	nemHomeDir := t.TempDir()
 	h := testNemHome(nemHomeDir)
 	projDir := t.TempDir()
@@ -298,7 +298,7 @@ func TestUseColdAutoSyncsUnsyncedOCICatalogBeforeResolve(t *testing.T) {
 	}
 
 	var calls []string
-	testx.Swap(t, &syncCatalogStore, fakeOCICatalogSync(t, &calls, otherPlatform(t)))
+	testx.Swap(t, &updateCatalogStore, fakeOCICatalogUpdate(t, &calls, otherPlatform(t)))
 
 	_, errb, err := runNem(t, nemHomeDir, "use", "demo:tool")
 	if err != nil {
@@ -307,7 +307,7 @@ func TestUseColdAutoSyncsUnsyncedOCICatalogBeforeResolve(t *testing.T) {
 
 	wantDemoCall := "ghcr.io/x/y:v2|" + store
 	if !slices.Contains(calls, wantDemoCall) {
-		t.Fatalf("syncCatalogStore not called for the unsynced demo catalog: %v", calls)
+		t.Fatalf("updateCatalogStore not called for the never-updated demo catalog: %v", calls)
 	}
 
 	calls = nil
@@ -315,11 +315,11 @@ func TestUseColdAutoSyncsUnsyncedOCICatalogBeforeResolve(t *testing.T) {
 		t.Fatalf("second use: %v\n%s", err, errb)
 	}
 	if len(calls) != 0 {
-		t.Fatalf("already-synced stores must not be re-synced, got calls %v", calls)
+		t.Fatalf("already-updated stores must not be updated again, got calls %v", calls)
 	}
 }
 
-func TestUseColdAutoSyncFailureDoesNotAbortWhenToolResolvesElsewhere(t *testing.T) {
+func TestUseColdAutoUpdateFailureDoesNotAbortWhenToolResolvesElsewhere(t *testing.T) {
 	cases := []struct {
 		name string
 		arg  string
@@ -341,7 +341,7 @@ func TestUseColdAutoSyncFailureDoesNotAbortWhenToolResolvesElsewhere(t *testing.
 				t.Fatal(err)
 			}
 
-			testx.Swap(t, &syncCatalogStore, func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) error {
+			testx.Swap(t, &updateCatalogStore, func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) error {
 				return errors.New("network unreachable")
 			})
 
@@ -349,8 +349,8 @@ func TestUseColdAutoSyncFailureDoesNotAbortWhenToolResolvesElsewhere(t *testing.
 			if err != nil {
 				t.Fatalf("use: %v\nstdout: %s\nstderr: %s", err, out, errb)
 			}
-			if !strings.Contains(errb, "Could not sync catalog cold") {
-				t.Fatalf("stderr should warn about the cold catalog's sync failure: %q", errb)
+			if !strings.Contains(errb, "Resolving without catalog cold") {
+				t.Fatalf("stderr should warn about the cold catalog's update failure: %q", errb)
 			}
 			if !strings.Contains(errb, "Installed tool v1.0.0") {
 				t.Fatalf("use should still resolve and install from the dir catalog: %q", errb)
@@ -362,14 +362,14 @@ func TestUseColdAutoSyncFailureDoesNotAbortWhenToolResolvesElsewhere(t *testing.
 	}
 }
 
-func TestUseColdAutoSyncFailureSurfacesAtResolveWhenToolOnlyThere(t *testing.T) {
+func TestUseColdAutoUpdateFailureSurfacesAtResolveWhenToolOnlyThere(t *testing.T) {
 	cases := []struct {
 		name         string
 		arg          string
 		wantColdWarn bool
 	}{
-		{"qualified to the unsynced catalog", "cold:tool", true},
-		{"unqualified, tool only in unsynced catalog", "tool", false},
+		{"qualified to the never-updated catalog", "cold:tool", true},
+		{"unqualified, tool only in never-updated catalog", "tool", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -381,24 +381,26 @@ func TestUseColdAutoSyncFailureSurfacesAtResolveWhenToolOnlyThere(t *testing.T) 
 				t.Fatal(err)
 			}
 
-			wantSyncErr := errors.New("network unreachable")
-			testx.Swap(t, &syncCatalogStore, func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) error { return wantSyncErr })
+			wantUpdateErr := errors.New("network unreachable")
+			testx.Swap(t, &updateCatalogStore, func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) error {
+				return wantUpdateErr
+			})
 
 			_, errb, err := runNem(t, nemHomeDir, "use", c.arg)
 			if err == nil {
-				t.Fatal("want error when the tool resolves in no synced catalog")
+				t.Fatal("want error when the tool resolves in no updated catalog")
 			}
-			if !errors.Is(err, ocix.ErrNotSynced) {
-				t.Fatalf("want ErrNotSynced from resolution, got %v", err)
+			if !errors.Is(err, ocix.ErrNotUpdated) {
+				t.Fatalf("want ErrNotUpdated from resolution, got %v", err)
 			}
-			if errors.Is(err, wantSyncErr) {
-				t.Fatalf("use's error should come from resolution, not the sync failure: %v", err)
+			if errors.Is(err, wantUpdateErr) {
+				t.Fatalf("use's error should come from resolution, not the update failure: %v", err)
 			}
-			if c.wantColdWarn && !strings.Contains(errb, "Could not sync catalog cold") {
-				t.Fatalf("stderr should still warn about the failed sync: %q", errb)
+			if c.wantColdWarn && !strings.Contains(errb, "Resolving without catalog cold") {
+				t.Fatalf("stderr should still warn about the failed update: %q", errb)
 			}
 			if !strings.Contains(errb, "nem catalog update") {
-				t.Fatalf("stderr should carry the not-synced hint: %q", errb)
+				t.Fatalf("stderr should carry the never-updated hint: %q", errb)
 			}
 			if _, err := os.Stat(filepath.Join(projDir, "nem.toml")); !os.IsNotExist(err) {
 				t.Fatal("nem.toml must not be written when resolution fails")
@@ -413,7 +415,7 @@ func TestHintForTable(t *testing.T) {
 		err  error
 		want string
 	}{
-		{"not synced", ocix.ErrNotSynced, "nem catalog update"},
+		{"never updated", ocix.ErrNotUpdated, "nem catalog update"},
 		{"catalog not found", &catalog.NotFoundError{Name: "dev"}, "nem catalog add"},
 		{"package not found", &catalog.PackageNotFoundError{Name: "go", Catalogs: []string{"official"}}, "nem catalog update"},
 		{"unsupported platform", &resolve.UnsupportedPlatformError{Name: "go", Version: "v1"}, "none of nem's platforms"},

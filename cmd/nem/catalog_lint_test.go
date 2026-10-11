@@ -178,7 +178,7 @@ env:
 
 	// Unknown package: hard error naming the catalog.
 	_, errb, err = runNem(t, nemHome, "catalog", "lint", catDir, "--package", "nosuch")
-	if err == nil || !strings.Contains(errb, "nosuch not found in catalog(s) "+catDir) {
+	if err == nil || !strings.Contains(errb, "nosuch not found in catalog "+catDir) {
 		t.Fatalf("err = %v, stderr = %q; want PackageNotFoundError naming the catalog", err, errb)
 	}
 }
@@ -200,7 +200,7 @@ func TestCatalogLintAcceptsManifestPathAsFileCatalog(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "package nosuch not found") {
 		t.Fatalf("want a clean not-found error, got: %v", err)
 	}
-	if strings.Contains(err.Error(), "catalog(s)") {
+	if strings.Contains(err.Error(), "in catalog") {
 		t.Fatalf("dangling catalog list in error: %v", err)
 	}
 }

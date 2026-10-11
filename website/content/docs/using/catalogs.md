@@ -14,7 +14,7 @@ to editing that list, which lives in `config.yaml`.
 A catalog is an ordered, named source of package manifests. There are two
 types:
 
-- `oci` — an OCI registry reference, synced locally. This is how the
+- `oci` — an OCI registry reference, copied to a local store. This is how the
   official catalog is distributed.
 - `dir` — a local directory laid out as `pkgs/<name>/`[`pkg.yaml`](../../reference/pkg-yaml/), mainly for
   authoring a catalog before publishing it. It is what you use while writing
@@ -47,7 +47,7 @@ nem catalog add <name> <ref>      # --type oci|dir; default: auto-detect
 nem catalog list
 nem catalog remove <name>
 nem catalog reorder <name>...     # every configured catalog, exactly once
-nem catalog update [name]         # sync oci catalogs from their remote
+nem catalog update [name]         # update oci catalogs from their remote
 nem catalog enable <name>...
 nem catalog disable <name>...
 ```
@@ -56,8 +56,8 @@ nem catalog disable <name>...
 pass `--type`, and appends the new catalog after the ones already
 configured — a private catalog that should beat `official` needs a
 `reorder` afterwards. `reorder` rewrites the whole precedence list at once — it
-expects every configured catalog named exactly once. `update` re-syncs
-`oci` catalogs against their remote; `dir` catalogs are read live from
+expects every configured catalog named exactly once. `update` pulls
+`oci` catalogs from their remote again; `dir` catalogs are read live from
 disk and need no updating.
 
 All of this is stored in `$NEM_HOME/config.yaml`, and hand-editing the file

@@ -479,7 +479,7 @@ func TestSelectNamesTheCatalogForAnUnknownPackage(t *testing.T) {
 	if err == nil {
 		t.Fatal("an unknown package must be rejected")
 	}
-	if want := "package ghost not found in catalog(s) " + tgt.Ref; err.Error() != want {
+	if want := "package ghost not found in catalog " + tgt.Ref; err.Error() != want {
 		t.Fatalf("err = %q, want %q", err.Error(), want)
 	}
 	if _, ok := errors.AsType[*catalog.PackageNotFoundError](err); !ok {

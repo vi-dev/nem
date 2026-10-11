@@ -29,8 +29,8 @@ func newUpdateCmd() *cobra.Command {
 			"which catalogs keep newest first, as if " +
 			"nem use had been run again for each, then install and rewrite nem.toml and " +
 			"nem.lock. Without names, every declared package is updated. A pick below a " +
-			"declared version aborts the whole update. A catalog that was never synced is " +
-			"synced first; one last synced more than a week ago earns a warning to run " +
+			"declared version aborts the whole update. A catalog that was never updated is " +
+			"updated first; one last updated more than a week ago earns a warning to run " +
 			"nem catalog update.",
 		Example: "  nem update                   # every declared package\n" +
 			"  nem update kubectl           # one package\n" +
@@ -172,7 +172,7 @@ func runUpdate(cmd *cobra.Command, args []string, global, dryRun bool) error {
 	return nil
 }
 
-const staleSyncAfter = 7 * 24 * time.Hour
+const staleAfter = 7 * 24 * time.Hour
 
 func warnStaleCatalogs(cfg *config.Config, result *resolve.Result) {
 	warned := false
@@ -190,23 +190,23 @@ func warnStaleCatalogs(cfg *config.Config, result *resolve.Result) {
 		if err != nil {
 			continue
 		}
-		synced, err := ocix.LastSynced(store)
+		updated, err := ocix.LastUpdated(store)
 		if err != nil {
 			continue
 		}
-		age := time.Since(synced)
-		if age < staleSyncAfter {
+		age := time.Since(updated)
+		if age < staleAfter {
 			continue
 		}
-		console.Warn("Catalog %s last synced %s ago", e.Catalog, syncAgePhrase(age))
+		console.Warn("Catalog %s last updated %s ago", e.Catalog, agePhrase(age))
 		warned = true
 	}
 	if warned {
-		console.Hint("Run `nem catalog update` to refresh catalogs")
+		console.Hint("Run `nem catalog update`")
 	}
 }
 
-func syncAgePhrase(age time.Duration) string {
+func agePhrase(age time.Duration) string {
 	return report.Plural(max(int(age.Hours()/24), 1), "day")
 }
 

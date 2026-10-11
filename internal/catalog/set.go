@@ -69,7 +69,7 @@ func (s *Set) Lookup(ctx context.Context, key project.ToolKey) (Hit, error) {
 		return Hit{Pkg: pkg, Digest: dig, Entry: e}, nil
 	}
 	searched := make([]string, 0, len(s.entries))
-	var notSynced []string
+	var notUpdated []string
 	for _, e := range s.entries {
 		searched = append(searched, e.Name)
 		pkg, dig, err := e.Catalog.Package(ctx, key.Name)
@@ -77,16 +77,16 @@ func (s *Set) Lookup(ctx context.Context, key project.ToolKey) (Hit, error) {
 			if _, ok := errors.AsType[*PackageNotFoundError](err); ok {
 				continue
 			}
-			if errors.Is(err, ocix.ErrNotSynced) {
-				notSynced = append(notSynced, e.Name)
+			if errors.Is(err, ocix.ErrNotUpdated) {
+				notUpdated = append(notUpdated, e.Name)
 				continue
 			}
 			return Hit{}, err
 		}
 		return Hit{Pkg: pkg, Digest: dig, Entry: e}, nil
 	}
-	if len(notSynced) > 0 {
-		return Hit{}, &NotSyncedError{Name: key.Name, Catalogs: notSynced}
+	if len(notUpdated) > 0 {
+		return Hit{}, &NotUpdatedError{Name: key.Name, Catalogs: notUpdated}
 	}
 	return Hit{}, &PackageNotFoundError{Name: key.Name, Catalogs: searched}
 }
@@ -96,13 +96,13 @@ type SetSummary struct {
 	Catalog string
 }
 
-func (s *Set) Summaries(ctx context.Context) (hits []SetSummary, unsynced []string, err error) {
+func (s *Set) Summaries(ctx context.Context) (hits []SetSummary, neverUpdated []string, err error) {
 	seen := map[string]bool{}
 	for _, e := range s.entries {
 		summaries, err := e.Catalog.Summaries(ctx)
 		if err != nil {
-			if errors.Is(err, ocix.ErrNotSynced) {
-				unsynced = append(unsynced, e.Name)
+			if errors.Is(err, ocix.ErrNotUpdated) {
+				neverUpdated = append(neverUpdated, e.Name)
 				continue
 			}
 			return nil, nil, err
@@ -115,7 +115,7 @@ func (s *Set) Summaries(ctx context.Context) (hits []SetSummary, unsynced []stri
 			hits = append(hits, SetSummary{Summary: sum, Catalog: e.Name})
 		}
 	}
-	return hits, unsynced, nil
+	return hits, neverUpdated, nil
 }
 
 func (s *Set) PackageNames(ctx context.Context) []string {

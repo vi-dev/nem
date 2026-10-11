@@ -16,19 +16,27 @@ func (e *PackageNotFoundError) Error() string {
 	if len(e.Catalogs) == 0 {
 		return fmt.Sprintf("package %s not found", e.Name)
 	}
-	return fmt.Sprintf("package %s not found in catalog(s) %s", e.Name, strings.Join(e.Catalogs, ", "))
+	return fmt.Sprintf("package %s not found in %s", e.Name, catalogList(e.Catalogs))
 }
 
-type NotSyncedError struct {
+func catalogList(names []string) string {
+	noun := "catalog"
+	if len(names) > 1 {
+		noun = "catalogs"
+	}
+	return noun + " " + strings.Join(names, ", ")
+}
+
+type NotUpdatedError struct {
 	Name     string
 	Catalogs []string
 }
 
-func (e *NotSyncedError) Error() string {
-	return fmt.Sprintf("%s not found; unsynced catalog(s): %s", e.Name, strings.Join(e.Catalogs, ", "))
+func (e *NotUpdatedError) Error() string {
+	return fmt.Sprintf("%s not found; %s never updated", e.Name, catalogList(e.Catalogs))
 }
 
-func (e *NotSyncedError) Unwrap() error { return ocix.ErrNotSynced }
+func (e *NotUpdatedError) Unwrap() error { return ocix.ErrNotUpdated }
 
 type NotFoundError struct{ Name string }
 

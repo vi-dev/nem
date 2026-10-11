@@ -181,8 +181,8 @@ func TestAirGappedCatalogRoundTrip(t *testing.T) {
 		t.Fatalf("catalog add: %v\n%s", err, errb)
 	}
 
-	testx.Swap(t, &syncCatalog, func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) (string, error) {
-		store, err := ocix.SyncLocalCatalog(ctx, dstCatalog, "v2", storePath, progress)
+	testx.Swap(t, &updateCatalog, func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) (string, error) {
+		store, err := ocix.UpdateLocalCatalog(ctx, dstCatalog, "v2", storePath, progress)
 		if err != nil {
 			return "", err
 		}

@@ -42,8 +42,8 @@ func TestOpenConfiguredBuildsEntriesInOrder(t *testing.T) {
 	if !ok {
 		t.Fatalf("official should be an OCI source, got %T", entries[1].Catalog)
 	}
-	if _, err := src.PackageNames(context.Background()); !errors.Is(err, ocix.ErrNotSynced) {
-		t.Fatalf("want ErrNotSynced from the unopened store, got %v", err)
+	if _, err := src.PackageNames(context.Background()); !errors.Is(err, ocix.ErrNotUpdated) {
+		t.Fatalf("want ErrNotUpdated from the unopened store, got %v", err)
 	}
 	if _, ok := entries[0].Archives.(*archive.Dir); !ok {
 		t.Fatalf("dev entry archives = %T, want *archive.Dir", entries[0].Archives)

@@ -321,7 +321,7 @@ func TestUpdateWarnsWhenCatalogStale(t *testing.T) {
 		t.Fatal(err)
 	}
 	var calls []string
-	testx.Swap(t, &syncCatalogStore, fakeOCICatalogSync(t, &calls, otherPlatform(t)))
+	testx.Swap(t, &updateCatalogStore, fakeOCICatalogUpdate(t, &calls, otherPlatform(t)))
 
 	if _, errb, err := runNem(t, nemHomeDir, "use", "demo:tool"); err != nil {
 		t.Fatalf("use: %v\n%s", err, errb)
@@ -340,7 +340,7 @@ func TestUpdateWarnsWhenCatalogStale(t *testing.T) {
 	if err != nil {
 		t.Fatalf("update: %v\n%s", err, errb)
 	}
-	if strings.Contains(errb, "last synced") {
+	if strings.Contains(errb, "last updated") {
 		t.Fatalf("a mirror under a week old must not warn: %q", errb)
 	}
 
@@ -353,7 +353,7 @@ func TestUpdateWarnsWhenCatalogStale(t *testing.T) {
 	if err != nil {
 		t.Fatalf("update: %v\n%s", err, errb)
 	}
-	if !strings.Contains(errb, "Catalog demo last synced 8 days ago") {
+	if !strings.Contains(errb, "Catalog demo last updated 8 days ago") {
 		t.Fatalf("stderr should warn about the stale mirror: %q", errb)
 	}
 	if !strings.Contains(errb, "nem catalog update") {
@@ -430,7 +430,7 @@ func TestUpdateStaleWarningSurvivesRefusal(t *testing.T) {
 		t.Fatal(err)
 	}
 	var calls []string
-	testx.Swap(t, &syncCatalogStore, fakeOCICatalogSync(t, &calls, otherPlatform(t)))
+	testx.Swap(t, &updateCatalogStore, fakeOCICatalogUpdate(t, &calls, otherPlatform(t)))
 
 	if _, errb, err := runNem(t, nemHomeDir, "use", "demo:tool"); err != nil {
 		t.Fatalf("use: %v\n%s", err, errb)
@@ -458,12 +458,12 @@ func TestUpdateStaleWarningSurvivesRefusal(t *testing.T) {
 	if !strings.Contains(err.Error(), "nem use demo:tool@v1.0.0") {
 		t.Fatalf("the hint must keep the catalog qualifier: %v", err)
 	}
-	if !strings.Contains(errb, "Catalog demo last synced 8 days ago") {
+	if !strings.Contains(errb, "Catalog demo last updated 8 days ago") {
 		t.Fatalf("the refusal must not hide the stale-mirror warning: %q", errb)
 	}
 }
 
-func TestSyncAgePhrase(t *testing.T) {
+func TestAgePhrase(t *testing.T) {
 	cases := []struct {
 		age  time.Duration
 		want string
@@ -472,8 +472,8 @@ func TestSyncAgePhrase(t *testing.T) {
 		{72 * time.Hour, "3 days"},
 	}
 	for _, c := range cases {
-		if got := syncAgePhrase(c.age); got != c.want {
-			t.Errorf("syncAgePhrase(%v) = %q, want %q", c.age, got, c.want)
+		if got := agePhrase(c.age); got != c.want {
+			t.Errorf("agePhrase(%v) = %q, want %q", c.age, got, c.want)
 		}
 	}
 }

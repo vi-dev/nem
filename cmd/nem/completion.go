@@ -175,7 +175,7 @@ func completeUseVersions(cmd *cobra.Command, toComplete string) ([]string, cobra
 		if err != nil {
 
 			var nf *catalog.PackageNotFoundError
-			if errors.As(err, &nf) || errors.Is(err, ocix.ErrNotSynced) {
+			if errors.As(err, &nf) || errors.Is(err, ocix.ErrNotUpdated) {
 				continue
 			}
 			return nil, cobra.ShellCompDirectiveNoFileComp
