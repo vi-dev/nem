@@ -98,6 +98,8 @@ func (s stubCatalog) ReadFiles(context.Context, string) (spec.Files, error) {
 	return spec.Files{}, s.err
 }
 
+func (s stubCatalog) Digest(context.Context, string) (string, error) { return "", nil }
+
 func TestSetSummariesDedupAndNeverUpdated(t *testing.T) {
 	a := writeDirCatalog(t, "shared", "only-a")
 	b := writeDirCatalog(t, "shared", "only-b")

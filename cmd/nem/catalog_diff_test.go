@@ -1,12 +1,25 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"maps"
 	"strings"
+	"sync"
 	"testing"
 
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content/oci"
+
+	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/diff"
+	"github.com/vi-dev/nem/internal/ocix"
+	"github.com/vi-dev/nem/internal/ocix/ocixtest"
+	"github.com/vi-dev/nem/internal/spec"
 )
 
 const diffWiringFixture = `schema: 2
@@ -190,4 +203,97 @@ func TestCatalogDiffCompletesPackagesFromBaseCatalog(t *testing.T) {
 	if !strings.Contains(out, "btool") || strings.Contains(out, "atool") {
 		t.Fatalf("completion = %q, want btool only", out)
 	}
+}
+
+func TestCatalogDiffAgainstOCIRefReadsTheIndex(t *testing.T) {
+	src, err := oci.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := []ocixtest.FakeEntry{
+		{Name: "atool", Latest: "1.0.0", YAML: []byte(diffWiringFixture)},
+		{Name: "ztool", Latest: "1.0.0", YAML: []byte(strings.Replace(diffWiringFixture, "name: atool", "name: ztool", 1))},
+	}
+	fillers, fillerYAML := diffFillers(7)
+	ocixtest.PushFakeCatalog(t, src, append(entries, fillers...), "2")
+	defer catalog.SetRemoteTarget(func(string) (oras.ReadOnlyTarget, string, error) { return src, "v2", nil })()
+	dirPkgs := map[string]string{"atool": diffWiringFixtureV2}
+	maps.Copy(dirPkgs, fillerYAML)
+	dir := writeLintFixture(t, dirPkgs)
+
+	out, errOut, err := runNem(t, t.TempDir(), "catalog", "diff", dir, "example.com/cat:v2")
+	if err != nil {
+		t.Fatalf("diff: %v\nstderr: %s", err, errOut)
+	}
+	for _, want := range []string{"atool", "updated", "ztool", "removed"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("stdout = %q, want %q", out, want)
+		}
+	}
+	if !strings.Contains(errOut, "Read catalog example.com/cat:v2") || strings.Contains(errOut, "Pulled catalog") {
+		t.Fatalf("stderr = %q, want the index read narrated and no full pull", errOut)
+	}
+}
+
+type fetchCountingTarget struct {
+	oras.ReadOnlyTarget
+	mu      sync.Mutex
+	fetches map[string]int
+}
+
+func (c *fetchCountingTarget) Fetch(ctx context.Context, d ocispec.Descriptor) (io.ReadCloser, error) {
+	c.mu.Lock()
+	c.fetches[d.Digest.String()]++
+	c.mu.Unlock()
+	return c.ReadOnlyTarget.Fetch(ctx, d)
+}
+
+func TestCatalogDiffBetweenOCIRefsPullsNeither(t *testing.T) {
+	ztool := strings.Replace(diffWiringFixture, "name: atool", "name: ztool", 1)
+	stores := map[string]*fetchCountingTarget{}
+	fillers, _ := diffFillers(3)
+	for ref, entries := range map[string][]ocixtest.FakeEntry{
+		"example.com/a:v2": {{Name: "atool", Latest: "1.1.0", YAML: []byte(diffWiringFixtureV2)}, {Name: "ztool", Latest: "1.0.0", YAML: []byte(ztool)}},
+		"example.com/b:v2": {{Name: "atool", Latest: "1.0.0", YAML: []byte(diffWiringFixture)}, {Name: "ztool", Latest: "1.0.0", YAML: []byte(ztool)}},
+	} {
+		src, err := oci.New(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		ocixtest.PushFakeCatalog(t, src, append(entries, fillers...), "2")
+		stores[ref] = &fetchCountingTarget{ReadOnlyTarget: src, fetches: map[string]int{}}
+	}
+	defer catalog.SetRemoteTarget(func(ref string) (oras.ReadOnlyTarget, string, error) { return stores[ref], "v2", nil })()
+
+	out, errOut, err := runNem(t, t.TempDir(), "catalog", "diff", "example.com/a:v2", "example.com/b:v2")
+	if err != nil {
+		t.Fatalf("diff: %v\nstderr: %s", err, errOut)
+	}
+	if !strings.Contains(out, "atool") || !strings.Contains(out, "updated") || strings.Contains(out, "ztool") {
+		t.Fatalf("stdout = %q, want atool updated and ztool absent", out)
+	}
+	if strings.Contains(errOut, "Pulled catalog") || !strings.Contains(errOut, "Read catalog example.com/a:v2") {
+		t.Fatalf("stderr = %q, want both sides read index-only", errOut)
+	}
+	_, ztoolDesc, err := ocix.PackageManifest(spec.Files{Pkg: []byte(ztool)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for ref, store := range stores {
+		if n := store.fetches[ztoolDesc.Digest.String()]; n != 0 {
+			t.Fatalf("%s fetched the unchanged ztool manifest %d times", ref, n)
+		}
+	}
+}
+
+func diffFillers(n int) ([]ocixtest.FakeEntry, map[string]string) {
+	entries := make([]ocixtest.FakeEntry, 0, n)
+	yamls := make(map[string]string, n)
+	for i := range n {
+		name := fmt.Sprintf("filler%d", i)
+		yaml := strings.Replace(diffWiringFixture, "name: atool", "name: "+name, 1)
+		entries = append(entries, ocixtest.FakeEntry{Name: name, Latest: "1.0.0", YAML: []byte(yaml)})
+		yamls[name] = yaml
+	}
+	return entries, yamls
 }

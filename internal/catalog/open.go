@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 
+	"oras.land/oras-go/v2"
+
 	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/config"
 	"github.com/vi-dev/nem/internal/home"
@@ -39,6 +41,19 @@ func OpenConfigured(cfg *config.Config, h home.Home) (*Set, error) {
 }
 
 func Open(ctx context.Context, cat string) (Entry, error) {
+	return open(ctx, cat, openRemote)
+}
+
+func OpenIndex(ctx context.Context, cat string) (Entry, error) {
+	return open(ctx, cat, openRemoteIndex)
+}
+
+func Local(cat string) bool {
+	_, err := os.Stat(cat)
+	return err == nil || looksLikePath(cat)
+}
+
+func open(ctx context.Context, cat string, remote func(context.Context, string) (Catalog, error)) (Entry, error) {
 	info, err := os.Stat(cat)
 	switch {
 	case err == nil && info.IsDir():
@@ -51,7 +66,7 @@ func Open(ctx context.Context, cat string) (Entry, error) {
 	if err := ocix.WithTagOrDigest(cat); err != nil {
 		return Entry{}, err
 	}
-	src, err := openRemote(ctx, cat)
+	src, err := remote(ctx, cat)
 	if err != nil {
 		return Entry{}, err
 	}
@@ -64,6 +79,14 @@ func looksLikePath(arg string) bool {
 		strings.HasSuffix(arg, ".yaml") || strings.HasSuffix(arg, ".yml")
 }
 
+var remoteTarget = ocix.RemoteCatalog
+
+func SetRemoteTarget(f func(ref string) (oras.ReadOnlyTarget, string, error)) (restore func()) {
+	prev := remoteTarget
+	remoteTarget = f
+	return func() { remoteTarget = prev }
+}
+
 var openRemote = func(ctx context.Context, ref string) (Catalog, error) {
 	labels := report.TaskLabels{
 		Run:     "Pulling catalog " + ref,
@@ -73,13 +96,38 @@ var openRemote = func(ctx context.Context, ref string) (Catalog, error) {
 	}
 	var store *ocix.Store
 	err := report.RunTask(ctx, labels, func(progress report.ProgressFunc) error {
-		src, tag, err := ocix.RemoteCatalog(ref)
+		src, tag, err := remoteTarget(ref)
 		if err != nil {
 			return err
 		}
 		store, err = ocix.OpenStoreInMemory(ctx, src, tag, progress)
 		if err != nil {
 			return fmt.Errorf("pull catalog %s: %w", ref, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return NewOCI(ref, store), nil
+}
+
+var openRemoteIndex = func(ctx context.Context, ref string) (Catalog, error) {
+	labels := report.TaskLabels{
+		Run:     "Reading catalog " + ref,
+		Segment: "reading index",
+		Done:    "Read catalog " + ref,
+		Fail:    "Failed to read catalog " + ref,
+	}
+	var store *ocix.Store
+	err := report.RunTask(ctx, labels, func(report.ProgressFunc) error {
+		src, tag, err := remoteTarget(ref)
+		if err != nil {
+			return err
+		}
+		store, err = ocix.OpenStore(ctx, src, tag)
+		if err != nil {
+			return fmt.Errorf("read catalog %s: %w", ref, err)
 		}
 		return nil
 	})

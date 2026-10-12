@@ -139,3 +139,14 @@ func (f *File) UpdateManifest(_ context.Context, name string, data []byte) error
 	}
 	return fsx.WriteAtomic(f.path, data, info.Mode().Perm())
 }
+
+func (f *File) Digest(ctx context.Context, name string) (string, error) {
+	if _, _, err := f.Package(ctx, name); err != nil {
+		return "", err
+	}
+	files, err := f.ReadFiles(ctx, name)
+	if err != nil {
+		return "", err
+	}
+	return digestOfFiles(files)
+}

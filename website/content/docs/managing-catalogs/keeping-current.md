@@ -35,9 +35,9 @@ OK 0 changed (0 new, 0 updated, 0 removed), 829 unchanged
 
 `new` is a package the mirror does not have yet and `updated` one whose
 manifest changed, typically a new version; `removed` runs the other way,
-a package your mirror still has that the source dropped. The base, here
-the source, is linted before the comparison and a lint finding stops the
-run, so a scheduled job inherits the source's lint state. The JSON form
+a package your mirror still has that the source dropped. A local base is
+linted before the comparison and a finding stops the run; a published
+base was linted when it was published and is read as it is. The JSON form
 lists the versions each row adds, which is enough to drive a scoped
 `fill`.
 

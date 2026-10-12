@@ -62,6 +62,11 @@ func (s *Store) Digest() string { return s.digest }
 
 func (s *Store) Packages() []TitledManifest { return enumerateTitledManifests(s.idx) }
 
+func (s *Store) Manifest(name string) (ocispec.Descriptor, bool) {
+	m, ok := s.byName[name]
+	return m, ok
+}
+
 func (s *Store) Files(ctx context.Context, name string) (spec.Files, string, error) {
 	m, ok := s.byName[name]
 	if !ok {

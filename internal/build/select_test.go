@@ -256,6 +256,7 @@ var _ catalog.Catalog = (*fakeCatalogSource)(nil)
 func (f *fakeCatalogSource) PackageNames(context.Context) ([]string, error) { return f.names, nil }
 
 func (f *fakeCatalogSource) ReadManifest(context.Context, string) ([]byte, error) { return nil, nil }
+func (f *fakeCatalogSource) Digest(context.Context, string) (string, error)       { return "", nil }
 func (f *fakeCatalogSource) ReadFiles(context.Context, string) (spec.Files, error) {
 	return spec.Files{}, nil
 }

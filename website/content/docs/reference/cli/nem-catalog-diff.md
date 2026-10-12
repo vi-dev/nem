@@ -5,7 +5,7 @@ weight: 7
 
 Compare a base catalog's package manifests against a target catalog.
 
-Lint &lt;base&gt;, then compare its package manifests against &lt;target&gt; and print one row per package with its status relative to target: new, updated, or removed, plus a count of unchanged packages. Base is the catalog being worked on and target the reference, typically the published one. --output json emits only the changed rows together with the versions base adds.
+Lint &lt;base&gt; when it is a local catalog, then compare its package manifests against &lt;target&gt; and print one row per package with its status relative to target: new, updated, or removed, plus a count of unchanged packages. Base is the catalog being worked on and target the reference, typically the published one. --output json emits only the changed rows together with the versions base adds.
 
 ## Usage
 

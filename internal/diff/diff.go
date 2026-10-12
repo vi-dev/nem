@@ -4,16 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime"
 	"slices"
+	"sync/atomic"
 
-	"github.com/opencontainers/go-digest"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/ocix"
+	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
+
+const compareConcurrency = 16
 
 const (
 	StatusNew     = "new"
@@ -45,12 +47,18 @@ func (r *Result) Count(status string) int {
 	return n
 }
 
+type plan struct {
+	name             string
+	inBase, inTarget bool
+	same             bool
+}
+
 func Compare(ctx context.Context, base, target string, packages []string) (*Result, error) {
-	baseEntry, err := catalog.Open(ctx, base)
+	baseEntry, err := catalog.OpenIndex(ctx, base)
 	if err != nil {
 		return nil, err
 	}
-	targetEntry, err := catalog.Open(ctx, target)
+	targetEntry, err := catalog.OpenIndex(ctx, target)
 	if err != nil {
 		return nil, err
 	}
@@ -59,26 +67,68 @@ func Compare(ctx context.Context, base, target string, packages []string) (*Resu
 		return nil, err
 	}
 
+	plans, err := planAll(ctx, baseEntry, targetEntry, names)
+	if err != nil {
+		return nil, err
+	}
+	var needBase, needTarget int
+	for _, p := range plans {
+		if p.same {
+			continue
+		}
+		if p.inBase {
+			needBase++
+		}
+		if p.inTarget {
+			needTarget++
+		}
+	}
+	pulls, pctx := errgroup.WithContext(ctx)
+	pulls.Go(func() error {
+		var err error
+		baseEntry, err = pullIfMostNeeded(pctx, baseEntry, needBase)
+		return err
+	})
+	pulls.Go(func() error {
+		var err error
+		targetEntry, err = pullIfMostNeeded(pctx, targetEntry, needTarget)
+		return err
+	})
+	if err := pulls.Wait(); err != nil {
+		return nil, err
+	}
+
 	type outcome struct {
 		change  Change
 		changed bool
 	}
 	outcomes := make([]outcome, len(names))
+	subject := report.Plural(len(names), "package")
+	task := report.FromContext(ctx).Task("Comparing " + subject)
+	task.Segment("comparing")
+	var done atomic.Int64
+	total := int64(len(names))
+	task.Progress(0, total, report.Items)
 	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(min(runtime.NumCPU(), 8))
-	for i, name := range names {
+	g.SetLimit(compareConcurrency)
+	for i, p := range plans {
 		g.Go(func() error {
-			c, changed, err := diffOne(gctx, baseEntry, targetEntry, name)
-			if err != nil {
-				return err
+			if !p.same {
+				c, changed, err := loadChange(gctx, baseEntry, targetEntry, p)
+				if err != nil {
+					return err
+				}
+				outcomes[i] = outcome{change: c, changed: changed}
 			}
-			outcomes[i] = outcome{change: c, changed: changed}
+			task.Progress(done.Add(1), total, report.Items)
 			return nil
 		})
 	}
 	if err := g.Wait(); err != nil {
+		task.Fail("Failed to compare " + subject)
 		return nil, err
 	}
+	task.Done("Compared " + subject)
 
 	res := &Result{Changes: make([]Change, 0, len(names))}
 	for _, o := range outcomes {
@@ -89,6 +139,47 @@ func Compare(ctx context.Context, base, target string, packages []string) (*Resu
 		res.Changes = append(res.Changes, o.change)
 	}
 	return res, nil
+}
+
+func planAll(ctx context.Context, base, target catalog.Entry, names []string) ([]plan, error) {
+	plans := make([]plan, len(names))
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(compareConcurrency)
+	for i, name := range names {
+		g.Go(func() error {
+			bd, inBase, err := digestOf(gctx, base, name)
+			if err != nil {
+				return err
+			}
+			td, inTarget, err := digestOf(gctx, target, name)
+			if err != nil {
+				return err
+			}
+			if !inBase && !inTarget {
+				return &catalog.PackageNotFoundError{Name: name, Catalogs: []string{base.Name, target.Name}}
+			}
+			plans[i] = plan{name: name, inBase: inBase, inTarget: inTarget, same: inBase && inTarget && bd == td}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	return plans, nil
+}
+
+func pullIfMostNeeded(ctx context.Context, entry catalog.Entry, need int) (catalog.Entry, error) {
+	if entry.Ref == "" || need == 0 {
+		return entry, nil
+	}
+	names, err := entry.Catalog.PackageNames(ctx)
+	if err != nil {
+		return catalog.Entry{}, err
+	}
+	if need*4 <= len(names) {
+		return entry, nil
+	}
+	return catalog.Open(ctx, entry.Name)
 }
 
 func compareNames(ctx context.Context, packages []string, base, target catalog.Entry) ([]string, error) {
@@ -116,16 +207,24 @@ func compareNames(ctx context.Context, packages []string, base, target catalog.E
 	return slices.Compact(names), nil
 }
 
+func digestOf(ctx context.Context, entry catalog.Entry, name string) (string, bool, error) {
+	d, err := entry.Catalog.Digest(ctx, name)
+	if _, ok := errors.AsType[*catalog.PackageNotFoundError](err); ok {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("%s: package %s: %w", entry.Name, name, err)
+	}
+	return d, true, nil
+}
+
 type side struct {
 	pkg    *spec.Package
-	digest digest.Digest
+	digest string
 }
 
 func loadSide(ctx context.Context, entry catalog.Entry, name string) (*side, error) {
 	files, err := entry.Catalog.ReadFiles(ctx, name)
-	if _, ok := errors.AsType[*catalog.PackageNotFoundError](err); ok {
-		return nil, nil
-	}
 	if err != nil {
 		return nil, err
 	}
@@ -140,24 +239,24 @@ func loadSide(ctx context.Context, entry catalog.Entry, name string) (*side, err
 	if err != nil {
 		return nil, fmt.Errorf("%s: package %s: %w", entry.Name, name, err)
 	}
-	return &side{pkg: pkg, digest: desc.Digest}, nil
+	return &side{pkg: pkg, digest: desc.Digest.String()}, nil
 }
 
-func diffOne(ctx context.Context, base, target catalog.Entry, name string) (Change, bool, error) {
-	b, err := loadSide(ctx, base, name)
-	if err != nil {
-		return Change{}, false, err
+func loadChange(ctx context.Context, base, target catalog.Entry, p plan) (Change, bool, error) {
+	var b, t *side
+	var err error
+	if p.inBase {
+		if b, err = loadSide(ctx, base, p.name); err != nil {
+			return Change{}, false, err
+		}
 	}
-	t, err := loadSide(ctx, target, name)
-	if err != nil {
-		return Change{}, false, err
+	if p.inTarget {
+		if t, err = loadSide(ctx, target, p.name); err != nil {
+			return Change{}, false, err
+		}
 	}
-	c := Change{Name: name, Diff: []string{}}
+	c := Change{Name: p.name, Diff: []string{}}
 	switch {
-	case b == nil && t == nil:
-		return Change{}, false, &catalog.PackageNotFoundError{Name: name, Catalogs: []string{base.Name, target.Name}}
-	case b != nil && t != nil && b.digest == t.digest:
-		return Change{}, false, nil
 	case t == nil:
 		c.Status = StatusNew
 		c.Base = latest(b.pkg)
@@ -167,6 +266,8 @@ func diffOne(ctx context.Context, base, target catalog.Entry, name string) (Chan
 		c.Status = StatusRemoved
 		c.Build = anyBuilds(t.pkg, versionsOf(t.pkg))
 		c.Target = latest(t.pkg)
+	case b.digest == t.digest:
+		return Change{}, false, nil
 	default:
 		c.Status = StatusUpdated
 		c.Base = latest(b.pkg)

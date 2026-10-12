@@ -170,3 +170,15 @@ func loadFromStore(ctx context.Context, store *ocix.Store, catalogName, name str
 	}
 	return pkg, dig, nil
 }
+
+func (s *OCI) Digest(ctx context.Context, name string) (string, error) {
+	store, err := s.openStore(ctx)
+	if err != nil {
+		return "", err
+	}
+	m, ok := store.Manifest(name)
+	if !ok {
+		return "", &PackageNotFoundError{Name: name}
+	}
+	return m.Digest.String(), nil
+}

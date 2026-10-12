@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/diff"
 	"github.com/vi-dev/nem/internal/publish"
 )
@@ -16,7 +17,8 @@ func newCatalogDiffCmd() *cobra.Command {
 		Use:         "diff <base> <target>",
 		Short:       "Compare a base catalog's package manifests against a target catalog",
 		Annotations: guide("Authoring workflow", "/docs/writing-packages/workflow"),
-		Long: "Lint <base>, then compare its package manifests against <target> and print one " +
+		Long: "Lint <base> when it is a local catalog, then compare its package manifests against " +
+			"<target> and print one " +
 			"row per package with its status relative to target: new, updated, or removed, " +
 			"plus a count of unchanged packages. Base is the catalog being worked on and " +
 			"target the reference, typically the published one. --output json emits only " +
@@ -30,15 +32,17 @@ func newCatalogDiffCmd() *cobra.Command {
 			if err := validateOutput(output); err != nil {
 				return err
 			}
-			findings, err := publish.Lint(cmd.Context(), args[0], packages...)
-			if err != nil {
-				return err
-			}
-			if len(findings) > 0 {
-				for _, f := range findings {
-					console.Warn("%s", f.String())
+			if catalog.Local(args[0]) {
+				findings, err := publish.Lint(cmd.Context(), args[0], packages...)
+				if err != nil {
+					return err
 				}
-				return &ExitError{Code: 1}
+				if len(findings) > 0 {
+					for _, f := range findings {
+						console.Warn("%s", f.String())
+					}
+					return &ExitError{Code: 1}
+				}
 			}
 			res, err := diff.Compare(cmd.Context(), args[0], args[1], packages)
 			if err != nil {
