@@ -8,6 +8,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -115,6 +116,55 @@ func TestRunPresentSkipsDownload(t *testing.T) {
 	if statuses := task.Statuses(); len(statuses) != 1 || statuses[0] != "probing" {
 		t.Fatalf("statuses = %v, want [\"probing\"] only: present items must not add a status update", statuses)
 	}
+}
+
+func TestRunReadsEachArchiveIndexOncePerVersion(t *testing.T) {
+	up := testx.NewFileServer(t)
+	wireUpstream(t, up)
+	payload := []byte("present-payload")
+
+	store, tag := newCatalog(t, map[string]string{
+		"go": urlPkg("go", "1.0.0", up.URL+"/go/{{.Version}}", testx.Sha256Hex(payload)),
+	})
+	wireCatalog(t, store, tag)
+
+	s := memory.New()
+	platMap := map[string][]byte{}
+	for _, plat := range spec.SupportedPlatforms {
+		platMap[plat.String()] = payload
+	}
+	ocixtest.PushFakeArchive(t, s, "1.0.0", platMap)
+	counted := &countingArchive{Target: s}
+	archives := testx.NewArchiveFixtures()
+	archives.Set("go", counted)
+	wireArchives(t, archives)
+
+	ctx, _ := testx.ReporterContext(context.Background())
+	if _, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := counted.resolves.Load(); got != 1 {
+		t.Fatalf("archive resolves = %d, want 1: the version index is resolved once, not per platform", got)
+	}
+	if got, want := counted.fetches.Load(), int64(1+len(spec.SupportedPlatforms)); got != want {
+		t.Fatalf("archive fetches = %d, want %d: the index once plus one manifest per platform", got, want)
+	}
+}
+
+type countingArchive struct {
+	oras.Target
+	resolves atomic.Int64
+	fetches  atomic.Int64
+}
+
+func (c *countingArchive) Resolve(ctx context.Context, ref string) (ocispec.Descriptor, error) {
+	c.resolves.Add(1)
+	return c.Target.Resolve(ctx, ref)
+}
+
+func (c *countingArchive) Fetch(ctx context.Context, d ocispec.Descriptor) (io.ReadCloser, error) {
+	c.fetches.Add(1)
+	return c.Target.Fetch(ctx, d)
 }
 
 func TestRunHealsStaleArchive(t *testing.T) {

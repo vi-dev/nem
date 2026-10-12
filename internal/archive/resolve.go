@@ -57,12 +57,20 @@ func ResolvePlatforms(ctx context.Context, src oras.ReadOnlyTarget, version stri
 	return platforms, nil
 }
 
-func Resolve(ctx context.Context, src oras.ReadOnlyTarget, version string, platform spec.Platform) (ocispec.Descriptor, error) {
+func FetchIndex(ctx context.Context, src oras.ReadOnlyTarget, version string) (ocispec.Index, error) {
 	_, idx, err := fetchIndex(ctx, src, version)
+	return idx, err
+}
+
+func Resolve(ctx context.Context, src oras.ReadOnlyTarget, version string, platform spec.Platform) (ocispec.Descriptor, error) {
+	idx, err := FetchIndex(ctx, src, version)
 	if err != nil {
 		return ocispec.Descriptor{}, err
 	}
+	return ResolveIn(ctx, src, idx, version, platform)
+}
 
+func ResolveIn(ctx context.Context, src oras.ReadOnlyTarget, idx ocispec.Index, version string, platform spec.Platform) (ocispec.Descriptor, error) {
 	platDesc, ok := selectPlatform(idx, platform)
 	if !ok {
 		return ocispec.Descriptor{}, fmt.Errorf("archive %s: platform %s: %w", version, platform, ErrNotFound)

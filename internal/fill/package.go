@@ -73,13 +73,23 @@ func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledM
 			continue
 		}
 		cancelled := false
+		idx, err := archive.FetchIndex(ctx, target, v.Version)
+		if err != nil && !errors.Is(err, archive.ErrNotFound) {
+			if report.IsCancellation(err) {
+				break
+			}
+			rep.Warn("%s %s: %v", nm.Title, v.Version, err)
+			failed = true
+			agg.failed.Add(1)
+			continue
+		}
 		var batch []batchedManifest
 		for _, plat := range r.SupportedBy() {
 			if ctx.Err() != nil {
 				cancelled = true
 				break
 			}
-			outcome, entry := fillItem(ctx, h, target, pkg, v.Version, plat, opts.DryRun, task)
+			outcome, entry := fillItem(ctx, h, target, idx, pkg, v.Version, plat, opts.DryRun, task)
 			if outcome == outcomeCancelled {
 				cancelled = true
 				break
@@ -178,7 +188,7 @@ type batchedManifest struct {
 	heal bool
 }
 
-func fillItem(ctx context.Context, h home.Home, archives oras.Target, pkg *spec.Package, version string, plat spec.Platform, dryRun bool, task report.Task) (itemOutcome, ocispec.Descriptor) {
+func fillItem(ctx context.Context, h home.Home, archives oras.Target, idx ocispec.Index, pkg *spec.Package, version string, plat spec.Platform, dryRun bool, task report.Task) (itemOutcome, ocispec.Descriptor) {
 	rep := report.FromContext(ctx)
 	sha, err := pkg.Sha256(version, plat)
 	if err != nil {
@@ -187,7 +197,7 @@ func fillItem(ctx context.Context, h home.Home, archives oras.Target, pkg *spec.
 	}
 	want := digest.NewDigestFromEncoded(digest.SHA256, sha)
 
-	desc, err := archive.Resolve(ctx, archives, version, plat)
+	desc, err := archive.ResolveIn(ctx, archives, idx, version, plat)
 	switch {
 	case errors.Is(err, archive.ErrNotFound):
 		return doFill(ctx, h, archives, pkg, version, plat, sha, dryRun, false, task)
