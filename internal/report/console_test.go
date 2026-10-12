@@ -350,6 +350,34 @@ func TestLiveProgressAloneRendersNothingUntilStatusIsSet(t *testing.T) {
 	tk.Done("Updated catalog")
 }
 
+func TestLiveSegmentChangeClearsStaleProgress(t *testing.T) {
+	c, _, errb := newLiveTest(Options{IsTTY: true, Color: ColorNever})
+	tk := c.Task("Filling go")
+	tk.Segment("filling 1.0.0 linux/amd64")
+	tk.Progress(10, 10, Bytes)
+	c.repaint()
+	if got := errb.String(); !strings.Contains(got, "filling 1.0.0 linux/amd64 100%") {
+		t.Fatalf("progress under its segment must render: %q", got)
+	}
+
+	errb.Reset()
+	tk.Segment("filling 1.0.0 linux/arm64")
+	c.repaint()
+	if got := errb.String(); strings.Contains(got, "100%") {
+		t.Fatalf("a new segment must not inherit the previous segment's progress: %q", got)
+	}
+
+	errb.Reset()
+	tk.Segment("filling 1.0.0 linux/arm64")
+	tk.Progress(5, 10, Bytes)
+	tk.Segment("filling 1.0.0 linux/arm64")
+	c.repaint()
+	if got := errb.String(); !strings.Contains(got, "filling 1.0.0 linux/arm64 50%") {
+		t.Fatalf("re-setting the same segment must keep its progress: %q", got)
+	}
+	tk.Done("Filled go")
+}
+
 func TestLiveDiscardShrinksBlockWithNoCompletionLine(t *testing.T) {
 	c, _, errb := newLiveTest(Options{IsTTY: true, Color: ColorNever})
 	first := c.Task("Mirroring curl")

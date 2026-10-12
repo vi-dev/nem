@@ -35,6 +35,9 @@ func (c *Console) Task(label string) Task {
 func (t *task) Segment(segment string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.segment != "" && t.segment != segment {
+		t.done, t.total, t.unit = 0, 0, 0
+	}
 	t.segment = segment
 	t.segmentStart = t.console.now()
 }
