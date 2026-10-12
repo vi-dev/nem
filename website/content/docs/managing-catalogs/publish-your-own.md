@@ -17,19 +17,22 @@ nem catalog publish registry.example/nem/catalog . --dry-run   # the plan, nothi
 nem catalog publish registry.example/nem/catalog .             # publish under tag v3
 ```
 
-It lints the catalog first and refuses on findings. The dry run prints
-the packages it would publish and the tags it would write:
+It lints the catalog first and refuses on findings. Both runs start by
+comparing the catalog with the index the tags currently point at. The
+dry run prints the packages that would change, as `new`, `updated` or
+`removed`, and the tags it would write:
 
 ```
-PACKAGE  VERSION
-jq       1.8.2
-OK Would publish registry.example/nem/catalog (1 package), tags v3, v3.20260930T092433Z
+PACKAGE  VERSION  STATUS
+jq       1.8.2    new
+OK Would publish registry.example/nem/catalog: 1 to push, tags v3, v3.20260930T092433Z
 ```
 
-The real run pushes each package manifest, skipping any whose bytes are
-already in the registry, assembles the index, and tags it:
+The real run pushes each changed package manifest, assembles the index,
+and tags it:
 
 ```
+OK Compared with registry.example/nem/catalog:v3: 1 to push
 OK Pushed jq 1.8.2
 OK Published registry.example/nem/catalog: 1 pushed, 0 unchanged, tags v3, v3.20260930T092433Z
 ```
@@ -42,10 +45,29 @@ you can pin or roll back to. A second run with nothing changed pushes
 nothing and moves the tags to the same index:
 
 ```
+OK Compared with registry.example/nem/catalog:v3: 1 unchanged
 OK Published registry.example/nem/catalog: 0 pushed, 1 unchanged, tags v3, v3.20260930T092512Z
 ```
 
+A package that the published index lists but the catalog no longer has
+is dropped from the new index; the dry run shows it as `removed` and the
+summary counts it.
+
 `--force` pushes every manifest again regardless.
+
+`--output json` prints the result on stdout for scripts: the reference,
+the tags, the digest of the published index, and the changed packages.
+The dry run prints the same document, with the digest the publish would
+produce, so a pipeline can tag that exact index later.
+
+```json
+{
+  "ref": "registry.example/nem/catalog",
+  "tags": ["v3", "v3.20260930T092433Z"],
+  "index": "sha256:…",
+  "packages": [{"name": "jq", "version": "1.8.2", "status": "new"}]
+}
+```
 
 ## Archives
 

@@ -2,19 +2,31 @@ package publish
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"runtime"
-	"sync/atomic"
+	"sort"
+	"strings"
 	"time"
 
+	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
 	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/errdef"
 
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
+)
+
+const pushConcurrency = 16
+
+const (
+	StatusNew       = "new"
+	StatusUpdated   = "updated"
+	StatusUnchanged = "unchanged"
+	StatusRemoved   = "removed"
 )
 
 type Options struct {
@@ -43,19 +55,29 @@ type pkgEntry struct {
 	Name        string
 	Description string
 	Version     string
+	manifest    ocispec.Descriptor
+	status      string
 }
 
 type Package struct {
-	Name    string
-	Version string
-	Pushed  bool
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Status  string `json:"status"`
 }
 
 type Result struct {
 	Tags      []string
+	Index     string
 	Packages  []Package
 	Pushed    int
 	Unchanged int
+	Removed   int
+}
+
+type targetIndex struct {
+	found    bool
+	digests  map[digest.Digest]bool
+	versions map[string]string
 }
 
 func Publish(ctx context.Context, cat, ref string, opts Options) (*Result, error) {
@@ -68,41 +90,129 @@ func Publish(ctx context.Context, cat, ref string, opts Options) (*Result, error
 		return nil, err
 	}
 
-	res := &Result{Tags: effectiveTags(opts.Tags, nowFunc()), Packages: make([]Package, 0, len(entries))}
-	for _, e := range entries {
-		res.Packages = append(res.Packages, Package{Name: e.Name, Version: e.Version})
-	}
-	if opts.DryRun {
-		return res, nil
-	}
-
 	target, err := openTarget(ctx, ref)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", ref, err)
 	}
-	if err := ocix.PushEmptyConfig(ctx, target); err != nil {
-		return nil, fmt.Errorf("push empty config: %w", err)
-	}
-
-	idxEntries, err := pushPackages(ctx, target, entries, opts.Force, res)
+	res := &Result{Tags: effectiveTags(opts.Tags, nowFunc())}
+	removed, err := compare(ctx, target, ref, baseTags(opts.Tags), entries, opts.Force, res)
 	if err != nil {
 		return nil, err
 	}
+	if opts.DryRun {
+		_, idxDesc := assembleIndex(entries)
+		res.Index = idxDesc.Digest.String()
+		return res, nil
+	}
 
-	idxBytes, idxDesc := ocix.AssembleCatalogIndex(idxEntries)
+	if err := ocix.PushEmptyConfig(ctx, target); err != nil {
+		return nil, fmt.Errorf("push empty config: %w", err)
+	}
+	if err := pushPackages(ctx, target, entries, opts.Force); err != nil {
+		return nil, err
+	}
+	res.Packages = packagesOf(entries, removed)
+	res.count(opts.Force)
+
+	idxBytes, idxDesc := assembleIndex(entries)
 	if err := ocix.PushBlobAndTag(ctx, target, idxBytes, idxDesc, res.Tags); err != nil {
 		return nil, fmt.Errorf("push catalog index: %w", err)
 	}
+	res.Index = idxDesc.Digest.String()
 	return res, nil
 }
 
-func effectiveTags(optTags []string, now time.Time) []string {
-	base := optTags
-	if len(base) == 0 {
-		base = []string{"v3"}
+func assembleIndex(entries []pkgEntry) ([]byte, ocispec.Descriptor) {
+	idxEntries := make([]ocix.CatalogIndexEntry, 0, len(entries))
+	for _, e := range entries {
+		idxEntries = append(idxEntries, indexEntry(e))
 	}
+	return ocix.AssembleCatalogIndex(idxEntries)
+}
+
+func (r *Result) count(force bool) {
+	r.Pushed, r.Unchanged, r.Removed = 0, 0, 0
+	for _, p := range r.Packages {
+		switch {
+		case p.Status == StatusRemoved:
+			r.Removed++
+		case force || p.Status != StatusUnchanged:
+			r.Pushed++
+		default:
+			r.Unchanged++
+		}
+	}
+}
+
+func baseTags(optTags []string) []string {
+	if len(optTags) == 0 {
+		return []string{"v3"}
+	}
+	return optTags
+}
+
+func effectiveTags(optTags []string, now time.Time) []string {
 	release := "v3." + now.UTC().Format("20060102T150405Z")
-	return append(append([]string(nil), base...), release)
+	return append(append([]string(nil), baseTags(optTags)...), release)
+}
+
+func fetchTargetIndex(ctx context.Context, target oras.ReadOnlyTarget, tags []string) (targetIndex, error) {
+	index := targetIndex{digests: map[digest.Digest]bool{}, versions: map[string]string{}}
+	for _, tag := range tags {
+		idx, _, err := ocix.FetchCatalogIndex(ctx, target, tag)
+		if errors.Is(err, errdef.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return targetIndex{}, err
+		}
+		index.found = true
+		for _, m := range idx.Manifests {
+			index.digests[m.Digest] = true
+			if title := m.Annotations[ocix.AnnotationTitle]; title != "" {
+				if _, seen := index.versions[title]; !seen {
+					index.versions[title] = m.Annotations[ocix.AnnotationVersion]
+				}
+			}
+		}
+		return index, nil
+	}
+	return index, nil
+}
+
+func classify(entries []pkgEntry, index targetIndex) []Package {
+	present := make(map[string]bool, len(entries))
+	for i := range entries {
+		e := &entries[i]
+		present[e.Name] = true
+		_, known := index.versions[e.Name]
+		switch {
+		case index.digests[e.manifest.Digest]:
+			e.status = StatusUnchanged
+		case known:
+			e.status = StatusUpdated
+		default:
+			e.status = StatusNew
+		}
+	}
+	var removed []Package
+	for name, version := range index.versions {
+		if !present[name] {
+			removed = append(removed, Package{Name: name, Version: version, Status: StatusRemoved})
+		}
+	}
+	sort.Slice(removed, func(i, j int) bool { return removed[i].Name < removed[j].Name })
+	return removed
+}
+
+func packagesOf(entries []pkgEntry, removed []Package) []Package {
+	out := make([]Package, 0, len(entries)+len(removed))
+	for _, e := range entries {
+		out = append(out, Package{Name: e.Name, Version: e.Version, Status: e.status})
+	}
+	out = append(out, removed...)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 func enumerate(ctx context.Context, cat string) ([]pkgEntry, error) {
@@ -132,76 +242,111 @@ func enumerate(ctx context.Context, cat string) ([]pkgEntry, error) {
 		if err != nil {
 			return nil, fmt.Errorf("parse %s: %w", name, err)
 		}
+		_, desc, err := ocix.PackageManifest(files)
+		if err != nil {
+			return nil, fmt.Errorf("compute manifest descriptor for %s: %w", name, err)
+		}
 		var version string
 		if len(pkg.Versions) > 0 {
 			version = pkg.Versions[0].Version
 		}
-		out = append(out, pkgEntry{Files: files, Name: pkg.Name, Description: pkg.Description, Version: version})
+		out = append(out, pkgEntry{Files: files, Name: pkg.Name, Description: pkg.Description, Version: version, manifest: desc})
 	}
 	return out, nil
 }
 
-func pushPackages(ctx context.Context, target oras.Target, entries []pkgEntry, force bool, res *Result) ([]ocix.CatalogIndexEntry, error) {
-	idxEntries := make([]ocix.CatalogIndexEntry, len(entries))
-	var pushed, skipped atomic.Int64
+func pushPackages(ctx context.Context, target oras.Target, entries []pkgEntry, force bool) error {
 
 	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(min(runtime.NumCPU(), 8))
+	g.SetLimit(pushConcurrency)
 
-	for i, e := range entries {
+	for i := range entries {
+		e := &entries[i]
 		g.Go(func() error {
 			if err := gctx.Err(); err != nil {
 				return err
 			}
-			entry, wasPushed, err := pushOne(gctx, target, e, force)
+			return pushOne(gctx, target, e, force)
+		})
+	}
+	return g.Wait()
+}
+
+func pushOne(ctx context.Context, target oras.Target, e *pkgEntry, force bool) error {
+	r := report.FromContext(ctx)
+	if !force && e.status == StatusUnchanged {
+		r.Debug("Skipped %s %s (unchanged)", e.Name, e.Version)
+		return nil
+	}
+
+	task := r.Task(fmt.Sprintf("Pushing %s %s", e.Name, e.Version))
+	task.Segment("pushing manifest")
+	if _, err := ocix.PushPackageManifest(ctx, target, e.Files); err != nil {
+		task.Fail(fmt.Sprintf("Failed to push %s %s", e.Name, e.Version))
+		return fmt.Errorf("push %s: %w", e.Name, err)
+	}
+	task.Done(fmt.Sprintf("Pushed %s %s", e.Name, e.Version))
+	return nil
+}
+
+func indexEntry(e pkgEntry) ocix.CatalogIndexEntry {
+	return ocix.CatalogIndexEntry{Manifest: e.manifest, Title: e.Name, Description: e.Description, Version: e.Version}
+}
+
+func compare(ctx context.Context, target oras.ReadOnlyTarget, ref string, tags []string, entries []pkgEntry, force bool, res *Result) ([]Package, error) {
+	r := report.FromContext(ctx)
+	with := ref + ":" + strings.Join(tags, ", ")
+	task := r.Task("Comparing with " + with)
+	index, err := fetchTargetIndex(ctx, target, tags)
+	if err != nil {
+		task.Fail("Failed to compare with " + with)
+		return nil, err
+	}
+	removed := classify(entries, index)
+	suffix := ""
+	if !index.found {
+		task.Segment("checking manifests")
+		if err := markExisting(ctx, target, entries); err != nil {
+			task.Fail("Failed to compare with " + with)
+			return nil, err
+		}
+		suffix = " (tag not found)"
+	}
+	res.Packages = packagesOf(entries, removed)
+	res.count(force)
+	task.Done("Compared with " + with + ": " + compareSummary(res) + suffix)
+	return removed, nil
+}
+
+func markExisting(ctx context.Context, target oras.ReadOnlyTarget, entries []pkgEntry) error {
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(pushConcurrency)
+	for i := range entries {
+		e := &entries[i]
+		g.Go(func() error {
+			exists, err := target.Exists(gctx, e.manifest)
 			if err != nil {
-				return err
+				return fmt.Errorf("check %s: %w", e.Name, err)
 			}
-			idxEntries[i] = entry
-			res.Packages[i].Pushed = wasPushed
-			if wasPushed {
-				pushed.Add(1)
-			} else {
-				skipped.Add(1)
+			if exists {
+				e.status = StatusUnchanged
 			}
 			return nil
 		})
 	}
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
-	res.Pushed = int(pushed.Load())
-	res.Unchanged = int(skipped.Load())
-	return idxEntries, nil
+	return g.Wait()
 }
 
-func pushOne(ctx context.Context, target oras.Target, e pkgEntry, force bool) (ocix.CatalogIndexEntry, bool, error) {
-	r := report.FromContext(ctx)
-
-	_, desc, err := ocix.PackageManifest(e.Files)
-	if err != nil {
-		return ocix.CatalogIndexEntry{}, false, fmt.Errorf("compute manifest descriptor for %s: %w", e.Name, err)
+func compareSummary(res *Result) string {
+	var groups []string
+	if res.Pushed > 0 {
+		groups = append(groups, fmt.Sprintf("%d to push", res.Pushed))
 	}
-
-	if !force {
-		exists, err := target.Exists(ctx, desc)
-		if err != nil {
-			return ocix.CatalogIndexEntry{}, false, fmt.Errorf("check %s: %w", e.Name, err)
-		}
-		if exists {
-			r.Debug("Skipped %s %s (unchanged)", e.Name, e.Version)
-			return indexEntry(e, desc), false, nil
-		}
+	if res.Removed > 0 {
+		groups = append(groups, fmt.Sprintf("%d removed", res.Removed))
 	}
-
-	pushed, err := ocix.PushPackageManifest(ctx, target, e.Files)
-	if err != nil {
-		return ocix.CatalogIndexEntry{}, false, fmt.Errorf("push %s: %w", e.Name, err)
+	if res.Unchanged > 0 {
+		groups = append(groups, fmt.Sprintf("%d unchanged", res.Unchanged))
 	}
-	r.Success("Pushed %s %s", e.Name, e.Version)
-	return indexEntry(e, pushed), true, nil
-}
-
-func indexEntry(e pkgEntry, desc ocispec.Descriptor) ocix.CatalogIndexEntry {
-	return ocix.CatalogIndexEntry{Manifest: desc, Title: e.Name, Description: e.Description, Version: e.Version}
+	return strings.Join(groups, ", ")
 }

@@ -5,7 +5,7 @@ weight: 16
 
 Publish a catalog to an OCI registry.
 
-Lint the catalog, then push its package manifests to &lt;ref&gt; as an OCI index and move the given tags to it. Manifests whose content is unchanged are not pushed again unless --force. Archives built with nem catalog build --push and nem catalog fill live beside the index and are not touched.
+Lint the catalog, then push its package manifests to &lt;ref&gt; as an OCI index and move the given tags to it. Packages are compared with the index the tags point at: unchanged manifests are not pushed again unless --force, and --dry-run lists what would change. --output json prints the ref, tags, index digest and changed packages on stdout. Archives built with nem catalog build --push and nem catalog fill live beside the index and are not touched.
 
 ## Usage
 
@@ -20,15 +20,16 @@ Aliases: `pub`
 ```shell
 nem catalog publish registry.example/nem/catalog .                        # publish a checkout under tag v3
 nem catalog publish registry.example/nem/catalog --tag v3 --tag 2026.09   # several tags
-nem catalog publish registry.example/nem/catalog --dry-run                # the plan only
+nem catalog publish registry.example/nem/catalog --dry-run                # what would change
 ```
 
 ## Flags
 
 | Flag | Description |
 |------|-------------|
-| `--dry-run` | report the publish plan without writing anything |
+| `--dry-run` | report what would change without writing anything |
 | `--force` | push every package manifest even when unchanged |
+| `--output <string>` | output format: text or json (default `text`) |
 | `--tag <strings>` | tag to move to the published index (repeatable; default v3) |
 
 ## Global flags

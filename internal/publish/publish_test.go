@@ -20,6 +20,7 @@ import (
 	"oras.land/oras-go/v2/errdef"
 
 	"github.com/vi-dev/nem/internal/ocix"
+	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
 )
 
@@ -151,7 +152,7 @@ func TestPublishReportsResult(t *testing.T) {
 	if res.Pushed != 1 || res.Unchanged != 0 {
 		t.Fatalf("counts = %d/%d, want 1/0", res.Pushed, res.Unchanged)
 	}
-	if len(res.Packages) != 1 || res.Packages[0].Name != "go" || !res.Packages[0].Pushed {
+	if len(res.Packages) != 1 || res.Packages[0].Name != "go" || res.Packages[0].Status != StatusNew {
 		t.Fatalf("packages = %+v", res.Packages)
 	}
 	if want := []string{"v2", "v3.20260102T030405Z"}; !slices.Equal(res.Tags, want) {
@@ -162,21 +163,8 @@ func TestPublishReportsResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Pushed != 0 || res.Unchanged != 1 || res.Packages[0].Pushed {
+	if res.Pushed != 0 || res.Unchanged != 1 || res.Packages[0].Status != StatusUnchanged {
 		t.Fatalf("second run = %+v", res)
-	}
-}
-
-func TestPublishDryRunWritesNothing(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
-	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
-	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) {
-		t.Fatal("openTarget must not be called during a dry run")
-		return nil, nil
-	})()
-
-	if _, err := Publish(ctx, dir, "example.com/cat", Options{DryRun: true}); err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -363,5 +351,324 @@ func TestPublishPushesFrozenRecipeLayers(t *testing.T) {
 	third, err := Publish(ctx, dir, "example.com/cat", Options{})
 	if err != nil || third.Pushed != 1 {
 		t.Fatalf("a recipe-only edit must change the package digest: %+v, %v", third, err)
+	}
+}
+
+func TestPublishUnchangedRepublishMakesNoPerPackageRequests(t *testing.T) {
+	ctx, _ := testx.ReporterContext(context.Background())
+	dir := writeCatalog(t, map[string]string{"go": validGoPkg, "kubectl": pkgNamed("kubectl")})
+	store, _ := newStore(t)
+	ct := newCountingTarget(store)
+	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return ct, nil })()
+
+	if _, err := Publish(ctx, dir, "example.com/cat", Options{Tags: []string{"v2"}}); err != nil {
+		t.Fatalf("initial publish: %v", err)
+	}
+
+	_, goDesc, err := ocix.PackageManifest(spec.Files{Pkg: []byte(validGoPkg)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := ct.existsCount(goDesc.Digest.String())
+
+	res, err := Publish(ctx, dir, "example.com/cat", Options{Tags: []string{"v2"}})
+	if err != nil {
+		t.Fatalf("republish: %v", err)
+	}
+	if res.Pushed != 0 || res.Unchanged != 2 {
+		t.Fatalf("counts = %d pushed, %d unchanged, want 0/2", res.Pushed, res.Unchanged)
+	}
+	if got := ct.existsCount(goDesc.Digest.String()) - before; got != 0 {
+		t.Fatalf("republish of an unchanged catalog checked the go manifest %d times, want 0 (the v2 index already lists it)", got)
+	}
+}
+
+func TestPublishFallsBackToManifestChecksWhenTagIsAbsent(t *testing.T) {
+	ctx, _ := testx.ReporterContext(context.Background())
+	dir := writeCatalog(t, map[string]string{"go": validGoPkg, "kubectl": pkgNamed("kubectl")})
+	store, _ := newStore(t)
+	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
+
+	if _, err := Publish(ctx, dir, "example.com/cat", Options{Tags: []string{"v2"}}); err != nil {
+		t.Fatalf("initial publish: %v", err)
+	}
+	res, err := Publish(ctx, dir, "example.com/cat", Options{Tags: []string{"other"}})
+	if err != nil {
+		t.Fatalf("publish under a new tag: %v", err)
+	}
+	if res.Pushed != 0 || res.Unchanged != 2 {
+		t.Fatalf("counts = %d pushed, %d unchanged, want 0/2 (manifests already exist)", res.Pushed, res.Unchanged)
+	}
+	assertTagResolves(t, store, "other")
+}
+
+func TestPublishClassifiesPackagesAgainstTargetIndex(t *testing.T) {
+	ctx, _ := testx.ReporterContext(context.Background())
+	store, _ := newStore(t)
+	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
+
+	dirA := writeCatalog(t, map[string]string{"go": validGoPkg, "alpha": pkgNamed("alpha")})
+	if _, err := Publish(ctx, dirA, "example.com/cat", Options{}); err != nil {
+		t.Fatalf("initial publish: %v", err)
+	}
+
+	changedGoPkg := strings.Replace(validGoPkg, "description: The Go programming language", "description: Go, updated", 1)
+	dirB := writeCatalog(t, map[string]string{"go": changedGoPkg, "helm": pkgNamed("helm")})
+	res, err := Publish(ctx, dirB, "example.com/cat", Options{})
+	if err != nil {
+		t.Fatalf("second publish: %v", err)
+	}
+
+	want := []Package{
+		{Name: "alpha", Version: "v1.26.5", Status: StatusRemoved},
+		{Name: "go", Version: "v1.26.5", Status: StatusUpdated},
+		{Name: "helm", Version: "v1.26.5", Status: StatusNew},
+	}
+	if !slices.Equal(res.Packages, want) {
+		t.Fatalf("packages = %+v, want %+v", res.Packages, want)
+	}
+	if res.Pushed != 2 || res.Unchanged != 0 || res.Removed != 1 {
+		t.Fatalf("counts = %d pushed, %d unchanged, %d removed, want 2/0/1", res.Pushed, res.Unchanged, res.Removed)
+	}
+
+	s, err := ocix.OpenStore(ctx, store, "v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Files(ctx, "alpha"); err == nil {
+		t.Fatal("alpha must be gone from the published index")
+	}
+}
+
+func TestPublishDryRunClassifiesWithoutWriting(t *testing.T) {
+	ctx, _ := testx.ReporterContext(context.Background())
+	store, storeDir := newStore(t)
+	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
+
+	dirA := writeCatalog(t, map[string]string{"go": validGoPkg})
+	if _, err := Publish(ctx, dirA, "example.com/cat", Options{}); err != nil {
+		t.Fatalf("initial publish: %v", err)
+	}
+	blobsBefore := countBlobs(t, storeDir)
+	defer swapNow(func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) })()
+
+	dirB := writeCatalog(t, map[string]string{"go": validGoPkg, "helm": pkgNamed("helm")})
+	res, err := Publish(ctx, dirB, "example.com/cat", Options{DryRun: true})
+	if err != nil {
+		t.Fatalf("dry run: %v", err)
+	}
+	want := []Package{
+		{Name: "go", Version: "v1.26.5", Status: StatusUnchanged},
+		{Name: "helm", Version: "v1.26.5", Status: StatusNew},
+	}
+	if !slices.Equal(res.Packages, want) {
+		t.Fatalf("packages = %+v, want %+v", res.Packages, want)
+	}
+	if res.Pushed != 1 || res.Unchanged != 1 {
+		t.Fatalf("counts = %d pushed, %d unchanged, want 1/1", res.Pushed, res.Unchanged)
+	}
+	if got := countBlobs(t, storeDir); got != blobsBefore {
+		t.Fatalf("dry run wrote blobs: %d → %d", blobsBefore, got)
+	}
+	if _, err := store.Resolve(ctx, "v3.20260102T030405Z"); !errors.Is(err, errdef.ErrNotFound) {
+		t.Fatalf("dry run must not create the release tag, got %v", err)
+	}
+}
+
+func TestPublishDryRunAgainstAbsentTagMarksEverythingNew(t *testing.T) {
+	ctx, _ := testx.ReporterContext(context.Background())
+	store, _ := newStore(t)
+	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
+
+	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
+	res, err := Publish(ctx, dir, "example.com/cat", Options{DryRun: true})
+	if err != nil {
+		t.Fatalf("dry run: %v", err)
+	}
+	if len(res.Packages) != 1 || res.Packages[0].Status != StatusNew || res.Pushed != 1 {
+		t.Fatalf("result = %+v", res)
+	}
+}
+
+func TestPublishNarratesCompareAndPushesAsTasks(t *testing.T) {
+	store, _ := newStore(t)
+	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
+
+	dirA := writeCatalog(t, map[string]string{"go": validGoPkg, "kubectl": pkgNamed("kubectl")})
+	ctxA, repA := testx.ReporterContext(context.Background())
+	if _, err := Publish(ctxA, dirA, "example.com/cat", Options{}); err != nil {
+		t.Fatalf("initial publish: %v", err)
+	}
+	first := repA.TaskFor("Comparing with example.com/cat:v3")
+	if first == nil {
+		t.Fatalf("tasks = %v, want the compare task", labelsOf(repA.Tasks()))
+	}
+	if done, _, outcome := first.Snapshot(); !done || outcome != "Compared with example.com/cat:v3: 2 to push (tag not found)" {
+		t.Fatalf("first compare outcome = %q (done %v)", outcome, done)
+	}
+
+	changedGoPkg := strings.Replace(validGoPkg, "description: The Go programming language", "description: Go, updated", 1)
+	dirB := writeCatalog(t, map[string]string{"go": changedGoPkg, "helm": pkgNamed("helm")})
+	ctxB, repB := testx.ReporterContext(context.Background())
+	if _, err := Publish(ctxB, dirB, "example.com/cat", Options{}); err != nil {
+		t.Fatalf("second publish: %v", err)
+	}
+
+	compare := repB.TaskFor("Comparing with example.com/cat:v3")
+	if compare == nil {
+		t.Fatalf("tasks = %v, want the compare task", labelsOf(repB.Tasks()))
+	}
+	if done, _, outcome := compare.Snapshot(); !done || outcome != "Compared with example.com/cat:v3: 2 to push, 1 removed" {
+		t.Fatalf("compare outcome = %q (done %v)", outcome, done)
+	}
+	push := repB.TaskFor("Pushing go v1.26.5")
+	if push == nil {
+		t.Fatalf("tasks = %v, want a push task for go", labelsOf(repB.Tasks()))
+	}
+	if done, _, outcome := push.Snapshot(); !done || outcome != "Pushed go v1.26.5" {
+		t.Fatalf("push outcome = %q (done %v)", outcome, done)
+	}
+	if got := push.Statuses(); !slices.Contains(got, "pushing manifest") {
+		t.Fatalf("push segments = %v, want pushing manifest", got)
+	}
+	if repB.TaskFor("Pushing kubectl v1.26.5") != nil {
+		t.Fatal("a removed package must not get a push task")
+	}
+	if slices.ContainsFunc(repB.Successes(), func(s string) bool { return strings.HasPrefix(s, "Pushed ") }) {
+		t.Fatalf("pushed outcomes must come from tasks, not bare Success lines: %v", repB.Successes())
+	}
+}
+
+func TestPublishUnchangedPackagesGetNoTask(t *testing.T) {
+	store, _ := newStore(t)
+	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
+	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
+	ctx, _ := testx.ReporterContext(context.Background())
+	if _, err := Publish(ctx, dir, "example.com/cat", Options{}); err != nil {
+		t.Fatalf("initial publish: %v", err)
+	}
+	ctx, rep := testx.ReporterContext(context.Background())
+	if _, err := Publish(ctx, dir, "example.com/cat", Options{}); err != nil {
+		t.Fatalf("republish: %v", err)
+	}
+	if rep.TaskFor("Pushing go v1.26.5") != nil {
+		t.Fatal("an unchanged package must not get a push task")
+	}
+	compare := rep.TaskFor("Comparing with example.com/cat:v3")
+	if compare == nil {
+		t.Fatalf("tasks = %v, want the compare task", labelsOf(rep.Tasks()))
+	}
+	if done, _, outcome := compare.Snapshot(); !done || outcome != "Compared with example.com/cat:v3: 1 unchanged" {
+		t.Fatalf("compare outcome = %q (done %v)", outcome, done)
+	}
+}
+
+func TestPublishFailedPushFailsItsTask(t *testing.T) {
+	store, _ := newStore(t)
+	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
+	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) {
+		return failOnManifestPushTarget{Target: store}, nil
+	})()
+	ctx, rep := testx.ReporterContext(context.Background())
+	if _, err := Publish(ctx, dir, "example.com/cat", Options{}); err == nil {
+		t.Fatal("expected the manifest push failure to surface")
+	}
+	push := rep.TaskFor("Pushing go v1.26.5")
+	if push == nil {
+		t.Fatalf("tasks = %v, want a push task for go", labelsOf(rep.Tasks()))
+	}
+	if _, failed, outcome := push.Snapshot(); !failed || outcome != "Failed to push go v1.26.5" {
+		t.Fatalf("push outcome = %q (failed %v)", outcome, failed)
+	}
+}
+
+func labelsOf(tasks []*testx.Task) []string {
+	out := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		out = append(out, task.Label)
+	}
+	return out
+}
+
+func TestPublishReportsIndexDigest(t *testing.T) {
+	ctx, _ := testx.ReporterContext(context.Background())
+	store, _ := newStore(t)
+	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
+	dir := writeCatalog(t, map[string]string{"go": validGoPkg, "kubectl": pkgNamed("kubectl")})
+
+	dry, err := Publish(ctx, dir, "example.com/cat", Options{DryRun: true})
+	if err != nil {
+		t.Fatalf("dry run: %v", err)
+	}
+	real, err := Publish(ctx, dir, "example.com/cat", Options{})
+	if err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	desc, err := store.Resolve(ctx, "v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if real.Index != desc.Digest.String() {
+		t.Fatalf("Index = %q, want the published index digest %s", real.Index, desc.Digest)
+	}
+	if dry.Index != real.Index {
+		t.Fatalf("dry-run Index = %q, want the same digest the publish produced (%s)", dry.Index, real.Index)
+	}
+}
+
+func TestPublishClassifiesAgainstTheFirstResolvedTagOnly(t *testing.T) {
+	ctx, _ := testx.ReporterContext(context.Background())
+	store, _ := newStore(t)
+	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
+
+	dirA := writeCatalog(t, map[string]string{"go": validGoPkg, "alpha": pkgNamed("alpha")})
+	if _, err := Publish(ctx, dirA, "example.com/cat", Options{Tags: []string{"old"}}); err != nil {
+		t.Fatalf("publish under old: %v", err)
+	}
+	dirB := writeCatalog(t, map[string]string{"go": validGoPkg})
+	if _, err := Publish(ctx, dirB, "example.com/cat", Options{Tags: []string{"v3"}}); err != nil {
+		t.Fatalf("publish under v3: %v", err)
+	}
+
+	res, err := Publish(ctx, dirB, "example.com/cat", Options{Tags: []string{"v3", "old"}})
+	if err != nil {
+		t.Fatalf("publish under v3 and old: %v", err)
+	}
+	if res.Removed != 0 || res.Unchanged != 1 || res.Pushed != 0 {
+		t.Fatalf("counts = %d pushed, %d removed, %d unchanged; the stale old tag must not make alpha look removed", res.Pushed, res.Removed, res.Unchanged)
+	}
+
+	res, err = Publish(ctx, dirA, "example.com/cat", Options{Tags: []string{"v3", "old"}})
+	if err != nil {
+		t.Fatalf("re-add alpha: %v", err)
+	}
+	if res.Packages[0].Name != "alpha" || res.Packages[0].Status != StatusNew || res.Pushed != 1 {
+		t.Fatalf("result = %+v, want alpha new relative to v3", res)
+	}
+}
+
+func TestPublishDryRunChecksManifestsWhenTagIsAbsent(t *testing.T) {
+	store, _ := newStore(t)
+	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
+	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
+	ctx, _ := testx.ReporterContext(context.Background())
+	if _, err := Publish(ctx, dir, "example.com/cat", Options{}); err != nil {
+		t.Fatalf("initial publish: %v", err)
+	}
+
+	ctx, rep := testx.ReporterContext(context.Background())
+	res, err := Publish(ctx, dir, "example.com/cat", Options{Tags: []string{"other"}, DryRun: true})
+	if err != nil {
+		t.Fatalf("dry run: %v", err)
+	}
+	if res.Pushed != 0 || res.Unchanged != 1 || res.Packages[0].Status != StatusUnchanged {
+		t.Fatalf("result = %+v, want go unchanged (its manifest already exists)", res)
+	}
+	compare := rep.TaskFor("Comparing with example.com/cat:other")
+	if compare == nil {
+		t.Fatalf("tasks = %v, want the compare task", labelsOf(rep.Tasks()))
+	}
+	if done, _, outcome := compare.Snapshot(); !done || outcome != "Compared with example.com/cat:other: 1 unchanged (tag not found)" {
+		t.Fatalf("compare outcome = %q (done %v)", outcome, done)
 	}
 }
