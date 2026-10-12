@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -124,6 +125,7 @@ func NewFileServer(t testing.TB) *FileServer {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 		_, _ = w.Write(body)
 	}))
 	t.Cleanup(u.Close)

@@ -184,32 +184,14 @@ func pushFromStore(ctx context.Context, store *archive.Dir, name, version string
 	if err != nil {
 		return false, err
 	}
-	blob := archive.Blob{Digest: desc.Digest, Size: desc.Size, Open: func() (io.ReadCloser, error) {
-		rc, err := archive.Fetch(ctx, staged, version, plat)
-		if err != nil {
-			return nil, err
-		}
-		return &uploadProgress{ReadCloser: rc, total: desc.Size, task: task}, nil
-	}}
+	blob := archive.ProgressBlob(archive.Blob{Digest: desc.Digest, Size: desc.Size, Open: func() (io.ReadCloser, error) {
+		return archive.Fetch(ctx, staged, version, plat)
+	}}, task)
 	_, pushed, err := archive.Push(ctx, remote, version, plat, blob, opts.Force)
 	if err != nil {
 		return false, err
 	}
 	return pushed, nil
-}
-
-type uploadProgress struct {
-	io.ReadCloser
-	sent  int64
-	total int64
-	task  report.Task
-}
-
-func (u *uploadProgress) Read(p []byte) (int, error) {
-	n, err := u.ReadCloser.Read(p)
-	u.sent += int64(n)
-	u.task.Progress(u.sent, u.total, report.Bytes)
-	return n, err
 }
 
 func firstLine(s string) string {

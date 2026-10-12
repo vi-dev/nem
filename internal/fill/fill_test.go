@@ -1,6 +1,7 @@
 package fill
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/ocix/ocixtest"
 	"github.com/vi-dev/nem/internal/publish/publishtest"
+	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
 )
@@ -165,6 +167,66 @@ func (c *countingArchive) Resolve(ctx context.Context, ref string) (ocispec.Desc
 func (c *countingArchive) Fetch(ctx context.Context, d ocispec.Descriptor) (io.ReadCloser, error) {
 	c.fetches.Add(1)
 	return c.Target.Fetch(ctx, d)
+}
+
+func TestRunReportsByteProgressForDownloadAndUpload(t *testing.T) {
+	up := testx.NewFileServer(t)
+	wireUpstream(t, up)
+	payload := bytes.Repeat([]byte("p"), 200_000)
+	up.Set("/go/1.0.0", payload)
+
+	store, tag := newCatalog(t, map[string]string{
+		"go": urlPkg("go", "1.0.0", up.URL+"/go/{{.Version}}", testx.Sha256Hex(payload)),
+	})
+	wireCatalog(t, store, tag)
+	ctx, rep := testx.ReporterContext(context.Background())
+	observer := &uploadObserver{Target: memory.New(), size: int64(len(payload)), task: func() *testx.Task { return rep.TaskFor("Filling go") }}
+	archives := testx.NewArchiveFixtures()
+	archives.Set("go", observer)
+	wireArchives(t, archives)
+
+	if _, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	size := int64(len(payload))
+	reached := func(calls []testx.ProgressCall) bool {
+		return slices.ContainsFunc(calls, func(c testx.ProgressCall) bool {
+			return c.Unit == report.Bytes && c.Done == size && c.Total == size
+		})
+	}
+	if !observer.pushed {
+		t.Fatal("the archive blob was never pushed")
+	}
+	if !reached(observer.before) {
+		t.Fatalf("progress before the upload = %+v, want the download to reach %d bytes", observer.before, size)
+	}
+	if !reached(observer.during) {
+		t.Fatalf("progress during the upload = %+v, want the upload to reach %d bytes", observer.during, size)
+	}
+}
+
+type uploadObserver struct {
+	oras.Target
+	size   int64
+	task   func() *testx.Task
+	pushed bool
+	before []testx.ProgressCall
+	during []testx.ProgressCall
+}
+
+func (o *uploadObserver) Push(ctx context.Context, desc ocispec.Descriptor, r io.Reader) error {
+	if desc.Size != o.size {
+		return o.Target.Push(ctx, desc, r)
+	}
+	o.pushed = true
+	o.before = o.task().ProgressCalls()
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	o.during = o.task().ProgressCalls()[len(o.before):]
+	return o.Target.Push(ctx, desc, bytes.NewReader(data))
 }
 
 func TestRunHealsStaleArchive(t *testing.T) {

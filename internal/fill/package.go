@@ -233,7 +233,7 @@ func doFill(ctx context.Context, h home.Home, archives oras.Target, pkg *spec.Pa
 		return outcomeFailed, ocispec.Descriptor{}
 	}
 	meta := fetch.Meta{Name: pkg.Name, Version: version, Platform: plat}
-	path, err := fetch.Download(ctx, httpClient, url, sha, h.Tmp(), meta, nil)
+	path, err := fetch.Download(ctx, httpClient, url, sha, h.Tmp(), meta, task)
 	if err != nil {
 		if report.IsCancellation(err) {
 			return outcomeCancelled, ocispec.Descriptor{}
@@ -249,7 +249,7 @@ func doFill(ctx context.Context, h home.Home, archives oras.Target, pkg *spec.Pa
 		return outcomeFailed, ocispec.Descriptor{}
 	}
 
-	entry, err := archive.Stage(ctx, archives, plat, archive.FileBlob(path, sha, info.Size()))
+	entry, err := archive.Stage(ctx, archives, plat, archive.ProgressBlob(archive.FileBlob(path, sha, info.Size()), task))
 	if err != nil {
 		if report.IsCancellation(err) {
 			return outcomeCancelled, ocispec.Descriptor{}
