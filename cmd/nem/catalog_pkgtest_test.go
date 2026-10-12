@@ -266,8 +266,8 @@ func TestCatalogTestEmptyCatalogReportsNothingToTest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("catalog test: %v\n%s", err, errb)
 	}
-	if !strings.Contains(out+errb, "Nothing to test") {
-		t.Fatalf("want a nothing-to-test notice, got:\n%s\n%s", out, errb)
+	if !strings.Contains(errb, "OK Nothing to test") {
+		t.Fatalf("want the nothing-to-test outcome at Success, got:\n%s\n%s", out, errb)
 	}
 }
 

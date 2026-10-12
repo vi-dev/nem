@@ -65,7 +65,7 @@ func newCatalogTestCmd() *cobra.Command {
 			}
 			sels = build.Merge(sels, nil)
 			if len(sels) == 0 {
-				console.Info("Nothing to test")
+				console.Success("Nothing to test")
 				return nil
 			}
 			sources = sources.Prepend(target.Entry)
