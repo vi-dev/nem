@@ -3,12 +3,19 @@ package build
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
+	"sync/atomic"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/vi-dev/nem/internal/catalog"
+	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/resolve"
 	"github.com/vi-dev/nem/internal/spec"
 )
+
+const checkConcurrency = 16
 
 func Select(ctx context.Context, t *Target, packages []string) ([]Selection, error) {
 	sels := make([]Selection, 0, len(packages))
@@ -237,8 +244,13 @@ func SelectMissing(ctx context.Context, t *Target, scope []spec.Ref) ([]Selectio
 		candidates = append(candidates, candidate{pkg: pkg, versions: versions})
 	}
 
+	type check struct {
+		pkg     *spec.Package
+		version string
+		plats   []spec.Platform
+	}
 	seen := map[string]bool{}
-	var sels []Selection
+	var checks []check
 	for _, c := range candidates {
 		stats.Checked++
 		for _, v := range c.versions {
@@ -253,22 +265,52 @@ func SelectMissing(ctx context.Context, t *Target, scope []spec.Ref) ([]Selectio
 			if !buildable(r) {
 				continue
 			}
-			plats := r.SupportedBy()
-			have, err := t.ArchivePlatforms(ctx, c.pkg.Name, v)
-			if err != nil {
-				return nil, MissingStats{}, err
-			}
-			var absent []spec.Platform
-			for _, plat := range plats {
-				if !slices.Contains(have, plat) {
-					absent = append(absent, plat)
-				}
-			}
-			if len(absent) > 0 {
-				sels = append(sels, Selection{Pkg: c.pkg, Version: v, Reason: "missing archive", Platforms: absent})
-			}
+			checks = append(checks, check{pkg: c.pkg, version: v, plats: r.SupportedBy()})
 		}
 	}
+
+	task := report.FromContext(ctx).Task("Checking archives at " + t.Ref)
+	task.Segment("checking")
+	total := int64(len(checks))
+	var done atomic.Int64
+	task.Progress(0, total, report.Items)
+	absent := make([][]spec.Platform, len(checks))
+	errs := make([]error, len(checks))
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(checkConcurrency)
+	for i, c := range checks {
+		g.Go(func() error {
+			have, err := t.ArchivePlatforms(gctx, c.pkg.Name, c.version)
+			if err != nil {
+				errs[i] = err
+				return err
+			}
+			for _, plat := range c.plats {
+				if !slices.Contains(have, plat) {
+					absent[i] = append(absent[i], plat)
+				}
+			}
+			task.Progress(done.Add(1), total, report.Items)
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		task.Fail("Failed to check archives at " + t.Ref)
+		for _, e := range errs {
+			if e != nil && (!errors.Is(e, context.Canceled) || ctx.Err() != nil) {
+				return nil, MissingStats{}, e
+			}
+		}
+		return nil, MissingStats{}, err
+	}
+	var sels []Selection
+	for i, c := range checks {
+		if len(absent[i]) > 0 {
+			sels = append(sels, Selection{Pkg: c.pkg, Version: c.version, Reason: "missing archive", Platforms: absent[i]})
+		}
+	}
+	task.Done(fmt.Sprintf("Checked %s: %s, %d prebuilt skipped",
+		report.Plural(stats.Checked, "package"), report.Plural(len(sels), "incomplete version"), stats.Skipped))
 	return sels, stats, nil
 }
 

@@ -6,7 +6,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -16,6 +18,7 @@ import (
 	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/build"
 	"github.com/vi-dev/nem/internal/catalog"
+	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
 )
@@ -302,9 +305,12 @@ func TestSelectMissingOCI(t *testing.T) {
 	tgt := &build.Target{Ref: ref, Entry: catalog.Entry{Name: ref, Catalog: src, Archives: archive.Remote(ref)}}
 
 	store := memory.New()
+	var mu sync.Mutex
 	var gotRef string
 	t.Cleanup(archive.SetRepoOpener(func(openedRef string) (oras.Target, error) {
+		mu.Lock()
 		gotRef = openedRef
+		mu.Unlock()
 		return store, nil
 	}))
 
@@ -316,8 +322,11 @@ func TestSelectMissingOCI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("archive.Ref: %v", err)
 	}
-	if gotRef != wantRef {
-		t.Fatalf("archives opener got ref %q, want %q", gotRef, wantRef)
+	mu.Lock()
+	opened := gotRef
+	mu.Unlock()
+	if opened != wantRef {
+		t.Fatalf("archives opener got ref %q, want %q", opened, wantRef)
 	}
 	if stats.Checked != 1 || stats.Skipped != 1 {
 		t.Fatalf("stats = %+v, want Checked=1 Skipped=1", stats)
@@ -393,6 +402,44 @@ func TestSelectMissingAbortsOnRegistryFailure(t *testing.T) {
 	if !strings.Contains(err.Error(), "tgttool@v2.0.0") {
 		t.Fatalf("err = %v, want it to name the package@version being probed", err)
 	}
+}
+
+func TestSelectMissingReportsTheRootFailureNotACancelledSibling(t *testing.T) {
+	ctx := context.Background()
+	const ref = "ghcr.io/org/cat:v2"
+	src := &fakeCatalogSource{
+		names: []string{"tgttool"},
+		pkgs: map[string]*spec.Package{
+			"tgttool": parseSelectPkg(t, selectTargetPkg),
+		},
+	}
+	tgt := &build.Target{Ref: ref, Entry: catalog.Entry{Name: ref, Catalog: src, Archives: archive.Remote(ref)}}
+
+	t.Cleanup(archive.SetRepoOpener(func(string) (oras.Target, error) {
+		return stallingArchives{stall: "v2.0.0", err: errors.New("registry unreachable")}, nil
+	}))
+
+	_, _, err := build.SelectMissing(ctx, tgt, nil)
+	if err == nil {
+		t.Fatal("a registry failure must abort the scan")
+	}
+	if !strings.Contains(err.Error(), "registry unreachable") {
+		t.Fatalf("err = %v, want the registry failure, not the cancelled sibling", err)
+	}
+}
+
+type stallingArchives struct {
+	erroringArchives
+	stall string
+	err   error
+}
+
+func (s stallingArchives) Resolve(ctx context.Context, tag string) (ocispec.Descriptor, error) {
+	if tag == s.stall {
+		<-ctx.Done()
+		return ocispec.Descriptor{}, ctx.Err()
+	}
+	return ocispec.Descriptor{}, s.err
 }
 
 func selectDirTarget(t *testing.T) *build.Target {
@@ -666,5 +713,45 @@ func TestSelectMissingSelectsVersionsOfAFrozenBuildableRecipe(t *testing.T) {
 			t.Fatalf("scope %v: stats = %+v, want zb checked", scope, stats)
 		}
 		assertReasons(t, sels, map[string]string{"zb@1.0.0": "missing archive"})
+	}
+}
+
+func TestSelectMissingNarratesTheCheckAsOneTask(t *testing.T) {
+	ctx, rep := testx.ReporterContext(context.Background())
+	const ref = "ghcr.io/org/cat:v2"
+	src := &fakeCatalogSource{
+		names: []string{"pretool", "tgttool"},
+		pkgs: map[string]*spec.Package{
+			"pretool": parseSelectPkg(t, selectPrebuiltPkg),
+			"tgttool": parseSelectPkg(t, selectTargetPkg),
+		},
+	}
+	tgt := &build.Target{Ref: ref, Entry: catalog.Entry{Name: ref, Catalog: src, Archives: archive.Remote(ref)}}
+	store := memory.New()
+	t.Cleanup(archive.SetRepoOpener(func(string) (oras.Target, error) { return store, nil }))
+
+	sels, _, err := build.SelectMissing(ctx, tgt, nil)
+	if err != nil {
+		t.Fatalf("SelectMissing: %v", err)
+	}
+	if len(sels) != 2 {
+		t.Fatalf("sels = %+v, want both tgttool versions", sels)
+	}
+	task := rep.TaskFor("Checking archives at " + ref)
+	if task == nil {
+		var labels []string
+		for _, tk := range rep.Tasks() {
+			labels = append(labels, tk.Label)
+		}
+		t.Fatalf("tasks = %v, want the archive check task", labels)
+	}
+	if done, _, outcome := task.Snapshot(); !done || outcome != "Checked 1 package: 2 incomplete versions, 1 prebuilt skipped" {
+		t.Fatalf("outcome = %q (done %v)", outcome, done)
+	}
+	if calls := task.ProgressCalls(); len(calls) == 0 || calls[len(calls)-1].Done != 2 || calls[len(calls)-1].Total != 2 || calls[len(calls)-1].Unit != report.Items {
+		t.Fatalf("progress = %+v, want it to reach 2/2 versions", calls)
+	}
+	if got := task.Statuses(); !slices.Contains(got, "checking") {
+		t.Fatalf("segments = %v, want \"checking\"", got)
 	}
 }

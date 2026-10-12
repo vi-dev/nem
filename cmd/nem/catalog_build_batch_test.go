@@ -201,7 +201,7 @@ func TestCatalogBuildWithDepsComposesWithMissing(t *testing.T) {
 	if tableRow(out, 1, "bsolo") != nil {
 		t.Fatalf("--missing must scan only the selected roots, not unrelated packages:\n%s", out)
 	}
-	if !strings.Contains(errb, "Checked 1 oci package:") {
+	if !strings.Contains(errb, "Checked 1 package:") {
 		t.Fatalf("the missing scan must narrate what it checked:\n%s", errb)
 	}
 }

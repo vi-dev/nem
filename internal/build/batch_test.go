@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -703,5 +704,79 @@ func TestVerdictCountsRowsAndDecidesTheExitCode(t *testing.T) {
 				t.Fatalf("err = %v, want %q", err, tc.err)
 			}
 		})
+	}
+}
+
+func TestRunBatchNarratesEachPushWithByteProgress(t *testing.T) {
+	h := testx.HomeAt(t.TempDir())
+	a := batchSpec{name: "alpha", version: "1.0.0",
+		step: `mkdir -p "$NEM_OUTPUT/bin"` + "\n" + `echo hi > "$NEM_OUTPUT/bin/tool"`}
+	sources, pkgs := batchFixture(t, a)
+	store := memory.New()
+	target := ociTarget("ghcr.io/x/cat:v2")
+	target.Store = funcStore{openRW: func(string) (oras.Target, error) { return store, nil }}
+	plan := batchPlan(t, pkgs, a)
+	opts := BatchOptions{Target: target, Push: true}
+
+	ctx, rep := testx.ReporterContext(context.Background())
+	if _, err := RunBatch(ctx, h, sources, plan, opts); err != nil {
+		t.Fatalf("RunBatch: %v", err)
+	}
+	push := rep.TaskFor("Pushing alpha 1.0.0")
+	if push == nil {
+		var labels []string
+		for _, tk := range rep.Tasks() {
+			labels = append(labels, tk.Label)
+		}
+		t.Fatalf("tasks = %v, want a push task", labels)
+	}
+	if done, _, outcome := push.Snapshot(); !done || outcome != "Pushed alpha 1.0.0" {
+		t.Fatalf("outcome = %q (done %v)", outcome, done)
+	}
+	if got := push.Statuses(); !slices.Contains(got, "uploading") {
+		t.Fatalf("segments = %v, want \"uploading\"", got)
+	}
+	calls := push.ProgressCalls()
+	if len(calls) == 0 || calls[len(calls)-1].Unit != report.Bytes || calls[len(calls)-1].Total <= 0 || calls[len(calls)-1].Done != calls[len(calls)-1].Total {
+		t.Fatalf("progress = %+v, want byte progress reaching the archive size", calls)
+	}
+	if slices.ContainsFunc(rep.Successes(), func(s string) bool { return strings.HasPrefix(s, "Pushed ") }) {
+		t.Fatalf("pushed outcomes must come from the task, not bare Success lines: %v", rep.Successes())
+	}
+
+	ctx, rep = testx.ReporterContext(context.Background())
+	if _, err := RunBatch(ctx, h, sources, plan, opts); err != nil {
+		t.Fatalf("second RunBatch: %v", err)
+	}
+	if again := rep.TaskFor("Pushing alpha 1.0.0"); again != nil && !again.Discarded() {
+		_, _, outcome := again.Snapshot()
+		t.Fatalf("an unchanged push must discard its task, got outcome %q", outcome)
+	}
+}
+
+func TestRunBatchFailedPushFailsItsTask(t *testing.T) {
+	h := testx.HomeAt(t.TempDir())
+	a := batchSpec{name: "alpha", version: "1.0.0",
+		step: `mkdir -p "$NEM_OUTPUT/bin"` + "\n" + `echo hi > "$NEM_OUTPUT/bin/tool"`}
+	sources, pkgs := batchFixture(t, a)
+	target := ociTarget("ghcr.io/x/cat:v2")
+	target.Store = funcStore{openRW: func(string) (oras.Target, error) {
+		return &testx.RejectPushTarget{Target: memory.New()}, nil
+	}}
+
+	ctx, rep := testx.ReporterContext(context.Background())
+	rows, err := RunBatch(ctx, h, sources, batchPlan(t, pkgs, a), BatchOptions{Target: target, Push: true})
+	if err != nil {
+		t.Fatalf("RunBatch: %v", err)
+	}
+	if len(rows) != 1 || !rows[0].PushFailed {
+		t.Fatalf("rows = %v, want the push-failed row", rowStrings(rows))
+	}
+	push := rep.TaskFor("Pushing alpha 1.0.0")
+	if push == nil {
+		t.Fatal("want a push task")
+	}
+	if _, failed, outcome := push.Snapshot(); !failed || outcome != "Failed to push alpha 1.0.0" {
+		t.Fatalf("outcome = %q (failed %v)", outcome, failed)
 	}
 }

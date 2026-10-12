@@ -147,28 +147,30 @@ func pushBuiltEntry(ctx context.Context, store *archive.Dir, name, version strin
 	if !opts.Push {
 		return row
 	}
+	task := rep.Task(fmt.Sprintf("Pushing %s %s", name, version))
 	if opts.Target.IsDir() {
-
 		row.Result = "pushed"
-		rep.Success("Pushed %s %s", name, version)
+		task.Done(fmt.Sprintf("Pushed %s %s", name, version))
 		return row
 	}
-	switch pushed, err := pushFromStore(ctx, store, name, version, opts); {
+	task.Segment("uploading")
+	switch pushed, err := pushFromStore(ctx, store, name, version, opts, task); {
 	case err != nil:
 		row.Detail = "push failed: " + firstLine(err.Error())
 		row.PushFailed = true
+		task.Fail(fmt.Sprintf("Failed to push %s %s", name, version))
 	case pushed:
 		row.Result = "pushed"
-		rep.Success("Pushed %s %s", name, version)
+		task.Done(fmt.Sprintf("Pushed %s %s", name, version))
 	default:
-
 		row.Result = "pushed"
 		row.Detail = "unchanged"
+		task.Discard()
 	}
 	return row
 }
 
-func pushFromStore(ctx context.Context, store *archive.Dir, name, version string, opts BatchOptions) (bool, error) {
+func pushFromStore(ctx context.Context, store *archive.Dir, name, version string, opts BatchOptions, task report.Task) (bool, error) {
 	staged, err := store.Open(ctx, name)
 	if err != nil {
 		return false, err
@@ -183,13 +185,31 @@ func pushFromStore(ctx context.Context, store *archive.Dir, name, version string
 		return false, err
 	}
 	blob := archive.Blob{Digest: desc.Digest, Size: desc.Size, Open: func() (io.ReadCloser, error) {
-		return archive.Fetch(ctx, staged, version, plat)
+		rc, err := archive.Fetch(ctx, staged, version, plat)
+		if err != nil {
+			return nil, err
+		}
+		return &uploadProgress{ReadCloser: rc, total: desc.Size, task: task}, nil
 	}}
 	_, pushed, err := archive.Push(ctx, remote, version, plat, blob, opts.Force)
 	if err != nil {
 		return false, err
 	}
 	return pushed, nil
+}
+
+type uploadProgress struct {
+	io.ReadCloser
+	sent  int64
+	total int64
+	task  report.Task
+}
+
+func (u *uploadProgress) Read(p []byte) (int, error) {
+	n, err := u.ReadCloser.Read(p)
+	u.sent += int64(n)
+	u.task.Progress(u.sent, u.total, report.Bytes)
+	return n, err
 }
 
 func firstLine(s string) string {
