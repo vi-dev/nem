@@ -11,7 +11,7 @@ Every environment variable nem reads, and every one it sets.
 |---|---|---|
 | `NEM_HOME` | `~/.nem` | Where everything nem installs and records lives, used as given: no `~` expansion, a relative value resolves against each command's working directory, and an empty value counts as unset. See [NEM_HOME](../nem-home/). |
 | `NO_COLOR` | unset | Any non-empty value disables colour when `--color` is `auto`. |
-| `GITHUB_TOKEN` | unset | Raises the GitHub API rate limit for `nem self update`. |
+| `GITHUB_TOKEN` | unset | Raises the GitHub API rate limit for `nem self update` and for the release checksum lookups in `nem catalog bump`. |
 | `DOCKER_CONFIG` | `~/.docker` | Directory holding the `config.json` that registry credentials are read from. |
 | `SHELL` | `bash` when unset | Picks the dialect for `nem activate`, `nem deactivate`, and `nem env` when no shell is named. |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` | unset | Standard proxy settings, in upper or lower case with upper case winning, honoured for every download and registry request. `ALL_PROXY` is not read. |

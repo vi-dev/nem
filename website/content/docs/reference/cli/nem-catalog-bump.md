@@ -5,7 +5,7 @@ weight: 6
 
 Add newer upstream versions to package manifests.
 
-Discover newer upstream versions for the selected packages, download each new artifact to compute its checksums, and add the resulting entries to the package manifests. With --backfill &lt;n&gt;, the newest n discovered versions are given entries even when they are older than the current latest. --dry-run only discovers and reports.
+Discover newer upstream versions for the selected packages, record each new artifact's checksum, and add the resulting entries to the package manifests. Checksums of GitHub release assets come from the GitHub API when the release publishes them (set GITHUB_TOKEN to raise the API rate limit); every other artifact is downloaded and hashed. With --backfill &lt;n&gt;, the newest n discovered versions are given entries even when they are older than the current latest. --dry-run only discovers and reports.
 
 ## Usage
 

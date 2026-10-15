@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -18,11 +19,13 @@ func newCatalogBumpCmd() *cobra.Command {
 		Use:         "bump [catalog]",
 		Short:       "Add newer upstream versions to package manifests",
 		Annotations: guide("Version discovery", "/docs/writing-packages/version-discovery"),
-		Long: "Discover newer upstream versions for the selected packages, download each new " +
-			"artifact to compute its checksums, and add the resulting entries to the package " +
-			"manifests. With --backfill <n>, the newest n discovered versions are given " +
-			"entries even when they are older than the current latest. --dry-run only " +
-			"discovers and reports.",
+		Long: "Discover newer upstream versions for the selected packages, record each new " +
+			"artifact's checksum, and add the resulting entries to the package manifests. " +
+			"Checksums of GitHub release assets come from the GitHub API when the release " +
+			"publishes them (set GITHUB_TOKEN to raise the API rate limit); every other " +
+			"artifact is downloaded and hashed. With --backfill <n>, the newest n discovered " +
+			"versions are given entries even when they are older than the current latest. " +
+			"--dry-run only discovers and reports.",
 		Example: "  nem catalog bump                         # every package\n" +
 			"  nem catalog bump . --package kubectl     # one package\n" +
 			"  nem catalog bump . --backfill 3          # ensure the newest three versions exist\n" +
@@ -41,7 +44,7 @@ func newCatalogBumpCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := bump.Run(cmd.Context(), cat, bump.Options{Packages: refs, Backfill: backfill, DryRun: dryRun})
+			res, err := bump.Run(cmd.Context(), cat, bump.Options{Packages: refs, Backfill: backfill, DryRun: dryRun, GitHubToken: os.Getenv("GITHUB_TOKEN")})
 			if err != nil {
 				return err
 			}

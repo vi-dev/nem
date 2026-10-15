@@ -14,7 +14,6 @@ import (
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/discover"
 	"github.com/vi-dev/nem/internal/fetch"
-	"github.com/vi-dev/nem/internal/netx"
 	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
@@ -25,9 +24,10 @@ var (
 )
 
 type Options struct {
-	Packages []spec.Ref
-	Backfill int
-	DryRun   bool
+	Packages    []spec.Ref
+	Backfill    int
+	DryRun      bool
+	GitHubToken string
 }
 
 type Row struct {
@@ -103,12 +103,13 @@ func Run(ctx context.Context, cat string, opts Options) (*Result, error) {
 		}
 	}
 
+	rel := newReleases(opts.GitHubToken)
 	results := make([]*Row, len(jobs))
 	var g errgroup.Group
 	g.SetLimit(min(runtime.NumCPU(), 8))
 	for i, j := range jobs {
 		g.Go(func() error {
-			results[i] = bumpOne(ctx, editor, j, opts, explicit)
+			results[i] = bumpOne(ctx, editor, j, opts, explicit, rel)
 			return nil
 		})
 	}
@@ -146,7 +147,7 @@ func plan(opts Options) ([]job, error) {
 	return jobs, nil
 }
 
-func bumpOne(ctx context.Context, editor catalog.Editor, j job, opts Options, explicit bool) *Row {
+func bumpOne(ctx context.Context, editor catalog.Editor, j job, opts Options, explicit bool, rel *releases) *Row {
 	rep := report.FromContext(ctx)
 	row := &Row{Name: j.name}
 	task := rep.Task("Bumping " + j.name)
@@ -222,7 +223,7 @@ func bumpOne(ctx context.Context, editor catalog.Editor, j job, opts Options, ex
 		task.Done(resultLine("Would bump", "Would backfill", pkg.Name, current, row.Head, targets))
 		return row
 	}
-	added, head, err := apply(ctx, editor, pkg.Name, files, pkg, targets, metas, task, row)
+	added, head, err := apply(ctx, editor, pkg.Name, files, pkg, targets, metas, task, row, rel)
 	if err != nil {
 		return fail(err)
 	}
@@ -248,13 +249,13 @@ func displayVersion(v string) string {
 	return v
 }
 
-func apply(ctx context.Context, editor catalog.Editor, name string, files spec.Files, pkg *spec.Package, targets []string, metas map[string]map[string]string, task report.Task, row *Row) ([]string, string, error) {
+func apply(ctx context.Context, editor catalog.Editor, name string, files spec.Files, pkg *spec.Package, targets []string, metas map[string]map[string]string, task report.Task, row *Row, rel *releases) ([]string, string, error) {
 	rep := report.FromContext(ctx)
 	edited := files.Pkg
 	var added []string
 	var lastErr error
 	for _, target := range targets {
-		entry, err := buildEntry(ctx, pkg, target, metas[target], task)
+		entry, err := buildEntry(ctx, pkg, target, metas[target], task, rel)
 		if err != nil {
 			lastErr = err
 			if _, ok := errors.AsType[*fetch.ArtifactNotFoundError](err); ok {
@@ -407,14 +408,14 @@ func insertPos(data []byte, version string) (int, error) {
 	return len(pkg.Versions), nil
 }
 
-func buildEntry(ctx context.Context, pkg *spec.Package, target string, meta map[string]string, task report.Task) (spec.VersionEntry, error) {
+func buildEntry(ctx context.Context, pkg *spec.Package, target string, meta map[string]string, task report.Task, rel *releases) (spec.VersionEntry, error) {
 	pkg = withVersion(pkg, target, meta)
 	r, err := pkg.Recipe(target)
 	if err != nil {
 		return spec.VersionEntry{Version: target, Meta: meta}, err
 	}
 	if r.Artifact.OCI != "" {
-		return buildOCIEntry(ctx, pkg, r, target, meta, task)
+		return buildOCIEntry(ctx, pkg, r, target, meta, task, rel)
 	}
 
 	e := spec.VersionEntry{Version: target, Meta: meta}
@@ -427,7 +428,7 @@ func buildEntry(ctx context.Context, pkg *spec.Package, target string, meta map[
 		}
 		task.Segment(fmt.Sprintf("hashing %s %s", target, plat))
 		fmeta := fetch.Meta{Name: pkg.Name, Version: target, Platform: plat}
-		sum, err := digestURL(ctx, netx.Client(), url, fmeta, task)
+		sum, err := hashArtifact(ctx, rel, url, plat.String(), fmeta, task)
 		if err != nil {
 			return e, err
 		}
@@ -436,7 +437,7 @@ func buildEntry(ctx context.Context, pkg *spec.Package, target string, meta map[
 	return e, nil
 }
 
-func buildOCIEntry(ctx context.Context, pkg *spec.Package, r *spec.Recipe, target string, meta map[string]string, task report.Task) (spec.VersionEntry, error) {
+func buildOCIEntry(ctx context.Context, pkg *spec.Package, r *spec.Recipe, target string, meta map[string]string, task report.Task, rel *releases) (spec.VersionEntry, error) {
 	e := spec.VersionEntry{Version: target, Meta: meta}
 	if r.Build == nil {
 		return e, nil
@@ -447,7 +448,7 @@ func buildOCIEntry(ctx context.Context, pkg *spec.Package, r *spec.Recipe, targe
 	}
 	task.Segment(fmt.Sprintf("hashing %s source", target))
 	fmeta := fetch.Meta{Name: pkg.Name, Version: target, Platform: spec.Current()}
-	sum, err := digestURL(ctx, netx.Client(), url, fmeta, task)
+	sum, err := hashArtifact(ctx, rel, url, "source", fmeta, task)
 	if err != nil {
 		if _, ok := errors.AsType[*fetch.ArtifactNotFoundError](err); ok {
 			return e, fmt.Errorf("source for %s@%s not found: %s", pkg.Name, target, url)
