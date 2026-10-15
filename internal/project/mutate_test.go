@@ -3,6 +3,7 @@ package project
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -62,5 +63,34 @@ func TestWriteManifestNoOp(t *testing.T) {
 	after, _ := os.Stat(path)
 	if !after.ModTime().Equal(before.ModTime()) {
 		t.Fatal("no-op write touched the file")
+	}
+}
+
+func TestRenderManifestOmitsEmptySections(t *testing.T) {
+	m := &Manifest{Path: "nem.toml"}
+	out, err := renderManifest(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("empty manifest rendered sections:\n%s", out)
+	}
+
+	AddTool(m, ToolKey{Name: "go"}, "v1")
+	out, err = renderManifest(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "[env]") {
+		t.Fatalf("empty env section rendered:\n%s", out)
+	}
+
+	m.Env = []EnvVar{{Name: "FOO", Value: "bar"}}
+	out, err = renderManifest(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "[env]\nFOO = 'bar'\n") {
+		t.Fatalf("env section missing:\n%s", out)
 	}
 }

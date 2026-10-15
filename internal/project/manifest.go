@@ -50,8 +50,8 @@ type Manifest struct {
 }
 
 type rawManifest struct {
-	Tools map[string]string `toml:"tools"`
-	Env   map[string]string `toml:"env"`
+	Tools map[string]string `toml:"tools,omitempty"`
+	Env   map[string]string `toml:"env,omitempty"`
 }
 
 func LoadManifest(path string) (*Manifest, error) {

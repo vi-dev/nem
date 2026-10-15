@@ -48,12 +48,18 @@ func WriteManifest(m *Manifest) error {
 }
 
 func renderManifest(m *Manifest) ([]byte, error) {
-	raw := rawManifest{Tools: map[string]string{}, Env: map[string]string{}}
-	for _, t := range m.Tools {
-		raw.Tools[t.Key.String()] = t.Version
+	var raw rawManifest
+	if len(m.Tools) > 0 {
+		raw.Tools = make(map[string]string, len(m.Tools))
+		for _, t := range m.Tools {
+			raw.Tools[t.Key.String()] = t.Version
+		}
 	}
-	for _, e := range m.Env {
-		raw.Env[e.Name] = e.Value
+	if len(m.Env) > 0 {
+		raw.Env = make(map[string]string, len(m.Env))
+		for _, e := range m.Env {
+			raw.Env[e.Name] = e.Value
+		}
 	}
 	out, err := toml.Marshal(raw)
 	if err != nil {
