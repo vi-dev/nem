@@ -3,6 +3,7 @@ package build
 import (
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/vi-dev/nem/internal/install"
@@ -22,8 +23,8 @@ type EnvContext struct {
 	Prefix     string
 	StagingDir string
 	OutputDir  string
-
-	AbsRpath bool
+	Bins, Libs []string
+	AbsRpath   bool
 }
 
 func ComposeEnv(base []string, deps []ResolvedDep, ectx EnvContext) []string {
@@ -32,6 +33,13 @@ func ComposeEnv(base []string, deps []ResolvedDep, ectx EnvContext) []string {
 	var pathDirs []string
 	var cppflags, cflags, ldflags, cgoLdflags, pkgcfg []string
 	newDTags := false
+	if runtime.GOOS == "linux" && !ectx.AbsRpath {
+		for _, rp := range selfRpaths(ectx.Bins, ectx.Libs) {
+			ldflags = append(ldflags, "-Wl,-rpath,'$"+rp+"'")
+			cgoLdflags = append(cgoLdflags, "-Wl,-rpath,"+rp)
+		}
+		newDTags = true
+	}
 	for _, d := range deps {
 		vars[depPrefixVar(d.Name)] = d.Prefix
 		if d.OnPath || d.OnLoaderPath {
@@ -122,6 +130,61 @@ func binaryDepth(outDir, path string) (int, error) {
 
 func depRpath(dep, lib string) string {
 	return depsRpath(loaderAnchor()) + dep + "/" + lib
+}
+
+func selfRpaths(bins, libs []string) []string {
+	if len(bins) == 0 {
+		bins = []string{"bin"}
+	}
+	if len(libs) == 0 {
+		libs = []string{"lib"}
+	}
+	shallowest := -1
+	for _, dir := range slices.Concat(bins, libs) {
+		if d := pathDepth(dir); shallowest < 0 || d < shallowest {
+			shallowest = d
+		}
+	}
+	out := []string{"$ORIGIN"}
+	seen := map[string]bool{"$ORIGIN": true}
+	add := func(from, to string) {
+		rel, err := filepath.Rel(from, to)
+		if err != nil || rel == "." || leadingUps(rel) > shallowest {
+			return
+		}
+		if rp := "$ORIGIN/" + filepath.ToSlash(rel); !seen[rp] {
+			seen[rp] = true
+			out = append(out, rp)
+		}
+	}
+	for _, b := range bins {
+		for _, l := range libs {
+			add(b, l)
+		}
+	}
+	for _, l1 := range libs {
+		for _, l2 := range libs {
+			add(l1, l2)
+		}
+	}
+	return out
+}
+
+func pathDepth(dir string) int {
+	dir = filepath.ToSlash(filepath.Clean(dir))
+	if dir == "." {
+		return 0
+	}
+	return strings.Count(dir, "/") + 1
+}
+
+func leadingUps(rel string) int {
+	ups := 0
+	for rel == ".." || strings.HasPrefix(rel, "../") {
+		ups++
+		rel = strings.TrimPrefix(strings.TrimPrefix(rel, ".."), "/")
+	}
+	return ups
 }
 
 func rpathFlag(dep, lib string) string {

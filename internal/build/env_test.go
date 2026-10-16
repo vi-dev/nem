@@ -213,3 +213,73 @@ func TestDepsRpathHelpers(t *testing.T) {
 		}
 	}
 }
+
+func TestComposeEnvAddsSelfRpaths(t *testing.T) {
+	ectx := EnvContext{
+		Version: "v1", Platform: spec.Platform{OS: runtime.GOOS, Arch: runtime.GOARCH},
+		Prefix: "/nem/packages/tool/v2", Bins: []string{"bin", "libexec/tool"}, Libs: []string{"lib"},
+	}
+	m := envMap(ComposeEnv(nil, nil, ectx))
+	if runtime.GOOS != "linux" {
+		if strings.Contains(m["LDFLAGS"], "ORIGIN") {
+			t.Fatalf("self rpaths are linux-only, got %q", m["LDFLAGS"])
+		}
+		return
+	}
+	for _, want := range []string{"-Wl,-rpath,'$$ORIGIN'", "-Wl,-rpath,'$$ORIGIN/../lib'"} {
+		if !strings.Contains(m["LDFLAGS"], want) {
+			t.Fatalf("LDFLAGS = %q, want %s", m["LDFLAGS"], want)
+		}
+	}
+	if strings.Contains(m["LDFLAGS"], "$$ORIGIN/../../lib") {
+		t.Fatalf("LDFLAGS = %q, must not carry an rpath that escapes bin/", m["LDFLAGS"])
+	}
+	for _, want := range []string{"-Wl,-rpath,$ORIGIN ", "-Wl,-rpath,$ORIGIN/../lib"} {
+		if !strings.Contains(m["CGO_LDFLAGS"]+" ", want) {
+			t.Fatalf("CGO_LDFLAGS = %q, want %s", m["CGO_LDFLAGS"], want)
+		}
+	}
+	if i, j := strings.Index(m["LDFLAGS"], "$$ORIGIN'"), strings.Index(m["LDFLAGS"], "$$ORIGIN/"); i > j {
+		t.Fatalf("$ORIGIN must come before the other rpaths: %q", m["LDFLAGS"])
+	}
+}
+
+func TestSelfRpathsDefaultToBinAndLib(t *testing.T) {
+	got := selfRpaths(nil, nil)
+	want := []string{"$ORIGIN", "$ORIGIN/../lib"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("selfRpaths(nil, nil) = %v, want %v", got, want)
+	}
+	got = selfRpaths([]string{"."}, []string{"lib", "lib64"})
+	want = []string{"$ORIGIN", "$ORIGIN/lib", "$ORIGIN/lib64"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("selfRpaths(., lib lib64) = %v, want %v", got, want)
+	}
+}
+
+func TestSelfRpathsStayInsideThePackageFromEveryDirectory(t *testing.T) {
+	cases := []struct {
+		bins, libs []string
+		depth      int
+		want       []string
+	}{
+		{[]string{"bin", "libexec/tool"}, []string{"lib"}, 1, []string{"$ORIGIN", "$ORIGIN/../lib"}},
+		{[]string{"bin"}, []string{"lib", "lib/plugins"}, 1, []string{"$ORIGIN", "$ORIGIN/../lib", "$ORIGIN/../lib/plugins", "$ORIGIN/plugins", "$ORIGIN/.."}},
+		{[]string{"."}, []string{"lib", "lib64"}, 0, []string{"$ORIGIN", "$ORIGIN/lib", "$ORIGIN/lib64"}},
+		{[]string{"libexec/a"}, []string{"lib"}, 1, []string{"$ORIGIN"}},
+	}
+	for _, c := range cases {
+		got := selfRpaths(c.bins, c.libs)
+		if strings.Join(got, " ") != strings.Join(c.want, " ") {
+			t.Errorf("selfRpaths(%v, %v) = %v, want %v", c.bins, c.libs, got, c.want)
+		}
+		for _, rp := range got {
+			if runtime.GOOS != "linux" {
+				break
+			}
+			if reason := depsRpathViolation(rp, c.depth); reason != "" {
+				t.Errorf("selfRpaths(%v, %v): %s fails verify at depth %d: %s", c.bins, c.libs, rp, c.depth, reason)
+			}
+		}
+	}
+}

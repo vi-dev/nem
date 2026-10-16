@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/vi-dev/nem/internal/spec"
 )
 
 func writeTree(t *testing.T, root, rel, content string) {
@@ -327,4 +329,57 @@ func elfDynStrings(t *testing.T, path string, tag delf.DynTag) string {
 		t.Fatal(err)
 	}
 	return strings.Join(vals, ":")
+}
+
+func TestLinuxBinariesFindTheirOwnLibraries(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("ELF rpath handling is linux-only")
+	}
+	if _, err := exec.LookPath("cc"); err != nil {
+		t.Skip("cc not available")
+	}
+
+	out := t.TempDir()
+	src := t.TempDir()
+	writeTree(t, src, "demo.c", "int demo(void) { return 42; }\n")
+	writeTree(t, src, "user.c", "int demo(void); int user(void) { return demo(); }\n")
+	writeTree(t, src, "main.c", "int user(void); int main(void) { return user() - 42; }\n")
+	for _, d := range []string{"lib", "bin"} {
+		if err := os.MkdirAll(filepath.Join(out, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ectx := EnvContext{Version: "v1", Platform: spec.Current(), Prefix: out, OutputDir: out,
+		Bins: []string{"bin"}, Libs: []string{"lib"}}
+	ldflags := envMap(ComposeEnv(nil, nil, ectx))["LDFLAGS"]
+	var flags []string
+	for _, f := range strings.Fields(ldflags) {
+		flags = append(flags, strings.ReplaceAll(f, "'", ""))
+	}
+	run := func(args ...string) {
+		t.Helper()
+		if b, err := exec.Command("cc", append(args, flags...)...).CombinedOutput(); err != nil {
+			t.Fatalf("cc %v: %v\n%s", args, err, b)
+		}
+	}
+	libDir := filepath.Join(out, "lib")
+	run("-shared", "-fPIC", "-Wl,-soname,libdemo.so.1", "-o", filepath.Join(libDir, "libdemo.so.1"), filepath.Join(src, "demo.c"))
+	run("-shared", "-fPIC", "-Wl,-soname,libuser.so.1", "-o", filepath.Join(libDir, "libuser.so.1"), filepath.Join(src, "user.c"), "-L"+libDir, "-l:libdemo.so.1")
+	run("-o", filepath.Join(out, "bin", "demo"), filepath.Join(src, "main.c"), "-L"+libDir, "-Wl,-rpath-link,"+libDir, "-l:libuser.so.1")
+	if got := elfDynStrings(t, filepath.Join(out, "bin", "demo"), delf.DT_RUNPATH); !strings.Contains(got, "$$ORIGIN") {
+		t.Fatalf("precondition: flags passed unchanged must leave the doubled anchor, got %q", got)
+	}
+
+	if err := normalizeOutput(out); err != nil {
+		t.Fatalf("normalizeOutput: %v", err)
+	}
+
+	cmd := exec.Command(filepath.Join(out, "bin", "demo"))
+	cmd.Env = []string{}
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("binary does not find its own libraries without an environment: %v\n%s", err, b)
+	}
+	if got := elfDynStrings(t, filepath.Join(out, "bin", "demo"), delf.DT_RUNPATH); !strings.HasPrefix(got, "$ORIGIN:$ORIGIN/../lib") {
+		t.Fatalf("RUNPATH = %q", got)
+	}
 }

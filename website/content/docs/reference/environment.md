@@ -77,7 +77,7 @@ nem sets these on top of it:
 | `NEM_DEP_<NAME>_PREFIX` | yes | yes | The install directory of each resolved dependency, transitive ones included, with the name upper-cased and other characters replaced by `_`. A build resolves `build.deps`; a test resolves the run-time `deps`, plus one entry for the package itself under its throwaway name. |
 | `PATH` | yes | yes | The `bins` of dependencies on the path or loader path, prepended; in a test the package's own `bins` come first. |
 | `CPPFLAGS`, `CFLAGS`, `CGO_CFLAGS` | yes | yes | `-I` flags for each link dependency's include directory, appended after any inherited value. |
-| `LDFLAGS`, `CGO_LDFLAGS` | yes | yes | `-L` and rpath flags for each link dependency, appended; on macOS always `-Wl,-headerpad_max_install_names` as well. |
+| `LDFLAGS`, `CGO_LDFLAGS` | yes | yes | `-L` and rpath flags for each link dependency, appended; in a build on Linux also `$ORIGIN` rpaths so a package's binaries and libraries find the libraries in its own `libs` directories; on macOS always `-Wl,-headerpad_max_install_names` as well. |
 | `PKG_CONFIG_PATH` | yes | yes | Each link dependency's `pkgconfig` directories, joined with the path-list separator and appended. |
 | `DYLD_LIBRARY_PATH` on macOS, `LD_LIBRARY_PATH` on Linux | no | yes | The `libs` of the package and its link dependencies; any inherited value is dropped first. |
 

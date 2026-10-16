@@ -115,6 +115,7 @@ func buildPackage(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.
 	outputDir := filepath.Join(srcRoot, r.Build.Output)
 	env := ComposeEnv(os.Environ(), deps, EnvContext{
 		Version: version, Platform: spec.Current(), Prefix: prefix, StagingDir: staging, OutputDir: outputDir,
+		Bins: r.Bins, Libs: r.Libs,
 	})
 
 	env = ScrubEnv(env, []string{"PWD"}, "PWD="+srcRoot)

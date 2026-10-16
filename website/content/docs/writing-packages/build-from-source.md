@@ -56,7 +56,8 @@ package's `test` steps against it, and stage the archive.
 Steps run with `sh -c` inside the unpacked source with `NEM_OUTPUT`,
 `NEM_VERSION`, `NEM_PREFIX`, `NEM_DEP_<NAME>_PREFIX` for each dependency,
 and `PATH`, `CFLAGS`, `LDFLAGS`, `PKG_CONFIG_PATH`, and friends prepared so
-the dependencies are found; the full list is under
+the dependencies are found and, on Linux, the package's own libraries too;
+the full list is under
 [Configuration variables](../../reference/environment/#variables-in-build-and-test-steps).
 A configure-and-make project installs into `$NEM_OUTPUT` through
 `DESTDIR`; this is the AWS CLI's recipe, whose second step exists because

@@ -290,7 +290,9 @@ the package installs into), `NEM_STAGING_DIR`, `NEM_OUTPUT` (the absolute
 `output` directory), and `NEM_DEP_<NAME>_PREFIX` for each dependency, with
 the name upper-cased and other characters replaced by `_`. `PATH`,
 `CPPFLAGS`, `CFLAGS`, `LDFLAGS`, `CGO_CFLAGS`, `CGO_LDFLAGS`, and
-`PKG_CONFIG_PATH` are prepared so the dependencies are found. The full list
+`PKG_CONFIG_PATH` are prepared so the dependencies are found, and on Linux
+`LDFLAGS` also carries `$ORIGIN` rpaths so a package's binaries find the
+libraries in its own `libs` directories. The full list
 is under [Configuration variables](../environment/#variables-in-build-and-test-steps).
 
 A version of a built package carries `sourceSha256`, the checksum of the
