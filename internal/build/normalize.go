@@ -20,6 +20,11 @@ func normalizeOutput(outDir string) error {
 	if err := relocatePkgconfig(outDir); err != nil {
 		return err
 	}
+	if runtime.GOOS == "linux" {
+		if err := fixElfRpathAnchors(outDir); err != nil {
+			return err
+		}
+	}
 	if runtime.GOOS == "darwin" {
 		fixes, err := planMachoFixes(outDir)
 		if err != nil {

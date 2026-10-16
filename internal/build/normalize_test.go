@@ -1,10 +1,13 @@
 package build
 
 import (
+	"bytes"
+	delf "debug/elf"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -166,4 +169,162 @@ func TestNormalizeMachoSelfRpath(t *testing.T) {
 	if len(fixes) != 0 {
 		t.Fatalf("normalization not idempotent, still planned: %+v", fixes)
 	}
+}
+
+func TestNormalizeElfRpathAnchor(t *testing.T) {
+	out := t.TempDir()
+	lib, doubled := buildDoubledAnchorLib(t, out)
+
+	if err := normalizeOutput(out); err != nil {
+		t.Fatalf("normalizeOutput: %v", err)
+	}
+
+	want := strings.ReplaceAll(doubled, "$$ORIGIN", "$ORIGIN")
+	if got := elfDynStrings(t, lib, delf.DT_RUNPATH); got != want {
+		t.Fatalf("RUNPATH = %q, want %q", got, want)
+	}
+	if got := elfDynStrings(t, lib, delf.DT_SONAME); got != "libdemo.so.1" {
+		t.Fatalf("SONAME changed to %q", got)
+	}
+	target, err := os.Readlink(filepath.Join(out, "lib", ".nem-link-dependencies"))
+	if err != nil {
+		t.Fatalf("dep link not planted after the rewrite: %v", err)
+	}
+	if target != filepath.Join("..", ".nem-link-dependencies") {
+		t.Fatalf("dep link target = %q", target)
+	}
+
+	if err := normalizeOutput(out); err != nil {
+		t.Fatalf("second normalizeOutput: %v", err)
+	}
+	if got := elfDynStrings(t, lib, delf.DT_RUNPATH); got != want {
+		t.Fatalf("not idempotent: RUNPATH = %q", got)
+	}
+}
+
+func TestNormalizeElfRpathAnchorKeepsReadOnlyFiles(t *testing.T) {
+	out := t.TempDir()
+	lib, doubled := buildDoubledAnchorLib(t, out)
+	if err := os.Chmod(lib, 0o555); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := normalizeOutput(out); err != nil {
+		t.Fatalf("normalizeOutput: %v", err)
+	}
+
+	want := strings.ReplaceAll(doubled, "$$ORIGIN", "$ORIGIN")
+	if got := elfDynStrings(t, lib, delf.DT_RUNPATH); got != want {
+		t.Fatalf("RUNPATH = %q, want %q", got, want)
+	}
+	info, err := os.Stat(lib)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o555 {
+		t.Fatalf("mode = %o after the rewrite, want 555", info.Mode().Perm())
+	}
+}
+
+func TestElfRpathRewriteRefusesAliasedStrings(t *testing.T) {
+	out := t.TempDir()
+	lib, _ := buildDoubledAnchorLib(t, out)
+	pointSonameInsideRunpath(t, lib)
+	before, err := os.ReadFile(lib)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = fixElfRpathAnchor(lib)
+	if err == nil || !strings.Contains(err.Error(), "another dynamic string starts inside") {
+		t.Fatalf("fixElfRpathAnchor error = %v, want a refusal", err)
+	}
+	after, err := os.ReadFile(lib)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("the refused file was modified")
+	}
+}
+
+func buildDoubledAnchorLib(t *testing.T, out string) (string, string) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skip("ELF rpath normalization is linux-only")
+	}
+	if _, err := exec.LookPath("cc"); err != nil {
+		t.Skip("cc not available")
+	}
+	src := t.TempDir()
+	writeTree(t, src, "demo.c", "int demo(void) { return 42; }\n")
+	if err := os.MkdirAll(filepath.Join(out, "lib"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lib := filepath.Join(out, "lib", "libdemo.so.1")
+	doubled := "$$ORIGIN/.nem-link-dependencies/zlib/lib:$$ORIGIN/.nem-link-dependencies/pcre2/lib"
+	cmd := exec.Command("cc", "-shared", "-fPIC", "-o", lib, "-Wl,-soname,libdemo.so.1",
+		"-Wl,--enable-new-dtags", "-Wl,-rpath,"+doubled, filepath.Join(src, "demo.c"))
+	if outb, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("cc: %v\n%s", err, outb)
+	}
+	if got := elfDynStrings(t, lib, delf.DT_RUNPATH); got != doubled {
+		t.Fatalf("precondition: RUNPATH = %q, want the doubled anchor %q", got, doubled)
+	}
+	return lib, doubled
+}
+
+func pointSonameInsideRunpath(t *testing.T, path string) {
+	t.Helper()
+	f, err := delf.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if f.Class != delf.ELFCLASS64 {
+		t.Skip("the test patches 64-bit dynamic entries")
+	}
+	runpath, err := f.DynValue(delf.DT_RUNPATH)
+	if err != nil || len(runpath) != 1 {
+		t.Fatalf("DT_RUNPATH values = %v, %v", runpath, err)
+	}
+	dyn := f.Section(".dynamic")
+	if dyn == nil {
+		t.Fatal("no .dynamic section")
+	}
+	data, err := dyn.Data()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i+16 <= len(data); i += 16 {
+		if delf.DynTag(f.ByteOrder.Uint64(data[i:])) != delf.DT_SONAME {
+			continue
+		}
+		var val [8]byte
+		f.ByteOrder.PutUint64(val[:], runpath[0]+1)
+		w, err := os.OpenFile(path, os.O_RDWR, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer w.Close()
+		if _, err := w.WriteAt(val[:], int64(dyn.Offset)+int64(i)+8); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	t.Fatal("no DT_SONAME entry to patch")
+}
+
+func elfDynStrings(t *testing.T, path string, tag delf.DynTag) string {
+	t.Helper()
+	f, err := delf.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	vals, err := f.DynString(tag)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Join(vals, ":")
 }

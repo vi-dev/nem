@@ -85,6 +85,7 @@ func TestDepsRpathViolation(t *testing.T) {
 	a := loaderAnchor()
 	mustBe := "rpath must be " + a + "/.nem-link-dependencies/<dep>/<lib>; link via $LDFLAGS"
 	escape := "rpath escapes the package root; link via $LDFLAGS so rpaths go through .nem-link-dependencies"
+	doubled := "rpath anchor is $$ORIGIN, left by a build system that passes $LDFLAGS to the linker unchanged; normalize rewrites it"
 	cases := []struct {
 		ref   string
 		depth int
@@ -104,6 +105,7 @@ func TestDepsRpathViolation(t *testing.T) {
 		{a + "/x/../../.nem-link-dependencies/zlib/lib", 1, mustBe},
 		{"/usr/lib/libz.1.dylib", 1, ""},
 		{"libz.so.1", 1, ""},
+		{"$$ORIGIN/.nem-link-dependencies/zlib/lib", 1, doubled},
 	}
 	for _, tc := range cases {
 		if got := depsRpathViolation(tc.ref, tc.depth); got != tc.want {

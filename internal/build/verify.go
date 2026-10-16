@@ -109,6 +109,9 @@ func cutAnchor(ref string, anchors []string) (rest string, ups int, ok bool) {
 }
 
 func depsRpathViolation(ref string, depth int) string {
+	if strings.HasPrefix(ref, doubledLoaderAnchor) {
+		return "rpath anchor is " + doubledLoaderAnchor + ", left by a build system that passes $LDFLAGS to the linker unchanged; normalize rewrites it"
+	}
 	rest, ups, ok := cutLoaderAnchor(ref)
 	if !ok {
 		return ""

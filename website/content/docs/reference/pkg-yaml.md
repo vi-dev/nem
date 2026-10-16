@@ -283,7 +283,7 @@ declare a relative `oci` artifact.
 | `steps` | yes | A list of `run` scripts, each with optional `platforms`, executed with `sh -c` inside the unpacked source. |
 | `output` | yes | The directory, relative to the unpacked source, that the steps fill. It becomes the installed package. |
 | `deps` | no | Build-time dependencies, in the same shape as `deps`. |
-| `normalize` | no | Default `true`. After the steps, nem drops libtool `.la` files, rewrites `pkg-config` files to relocatable paths, on macOS fixes Mach-O install names and rpaths, and plants a `.nem-link-dependencies` link in every subdirectory holding a binary that links a dependency. The verification step that follows requires those links, so with `normalize: false` the build fails unless the steps plant them themselves. |
+| `normalize` | no | Default `true`. After the steps, nem makes the output relocatable: it drops libtool `.la` files, rewrites `pkg-config` files to relative paths, repairs the rpaths the build left behind (a `$$ORIGIN` anchor from meson or ninja on Linux, install names and rpaths in Mach-O files on macOS), and plants a `.nem-link-dependencies` link next to every binary that links a dependency. Verification needs those links, so with `normalize: false` the steps must plant them or the build fails. |
 
 Steps see `NEM_VERSION`, `NEM_OS`, `NEM_ARCH`, `NEM_PREFIX` (the directory
 the package installs into), `NEM_STAGING_DIR`, `NEM_OUTPUT` (the absolute
