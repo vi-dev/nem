@@ -8,9 +8,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 func normalizeOutput(outDir string) error {
@@ -18,6 +20,9 @@ func normalizeOutput(outDir string) error {
 		return err
 	}
 	if err := relocatePkgconfig(outDir); err != nil {
+		return err
+	}
+	if err := scrubConfigScripts(outDir); err != nil {
 		return err
 	}
 	if runtime.GOOS == "linux" {
@@ -69,7 +74,7 @@ func relocatePkgconfig(outDir string) error {
 		}
 		lines := strings.Split(string(data), "\n")
 		for i, line := range lines {
-			lines[i] = relocatePCLine(line, libSeg)
+			lines[i] = scrubInjectedFlags(relocatePCLine(line, libSeg))
 		}
 		out := strings.Join(lines, "\n")
 		if out == string(data) {
@@ -99,6 +104,54 @@ func relocatePCLine(line, libSeg string) string {
 		return "includedir=${prefix}/include"
 	}
 	return line
+}
+
+var injectedFlag = regexp.MustCompile(
+	`-Wl,-rpath,'?(\$\$?ORIGIN|\$\$?\{ORIGIN\}|@loader_path)[^\s'"]*'?` +
+		`|-Wl,-rpath-link,[^\s'"]+` +
+		`|-Wl,--enable-new-dtags` +
+		`|-Wl,-headerpad_max_install_names`)
+
+func scrubInjectedFlags(s string) string {
+	matches := injectedFlag.FindAllStringIndex(s, -1)
+	for i := len(matches) - 1; i >= 0; i-- {
+		start, end := matches[i][0], matches[i][1]
+		switch {
+		case start > 0 && s[start-1] == ' ':
+			start--
+		case end < len(s) && s[end] == ' ':
+			end++
+		}
+		s = s[:start] + s[end:]
+	}
+	return s
+}
+
+func scrubConfigScripts(outDir string) error {
+	return filepath.WalkDir(outDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.Type().IsRegular() || !strings.HasSuffix(d.Name(), "-config") {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if !bytes.HasPrefix(data, []byte("#!")) || bytes.IndexFunc(data, func(r rune) bool { return r == 0 || (r > unicode.MaxASCII && !unicode.IsPrint(r)) }) >= 0 {
+			return nil
+		}
+		out := scrubInjectedFlags(string(data))
+		if out == string(data) {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(path, []byte(out), info.Mode().Perm())
+	})
 }
 
 type machoFix struct {

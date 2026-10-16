@@ -383,3 +383,34 @@ func TestLinuxBinariesFindTheirOwnLibraries(t *testing.T) {
 		t.Fatalf("RUNPATH = %q", got)
 	}
 }
+
+func TestNormalizeScrubsInjectedLinkFlagsFromPkgconfigAndConfigScripts(t *testing.T) {
+	out := t.TempDir()
+	writeTree(t, out, "lib/pkgconfig/ncursesw.pc",
+		"prefix=/\nlibdir=${prefix}/lib\n\nName: ncursesw\nVersion: 6.6\n"+
+			"Libs: -L${libdir} -Wl,-rpath,$ORIGIN -Wl,-rpath,$ORIGIN/../lib -Wl,-rpath,'$$ORIGIN/.nem-link-dependencies/zlib/lib' -Wl,-rpath-link,/nem/packages/zlib/1/lib -Wl,--enable-new-dtags -lncursesw\n"+
+			"Libs.private: -Wl,-rpath,@loader_path/.nem-link-dependencies/zlib/lib -Wl,-headerpad_max_install_names -lz\n"+
+			"Cflags: -I${prefix}/include -D_DEFAULT_SOURCE\n")
+	writeTree(t, out, "bin/ncursesw6-config",
+		"#!/bin/sh\nLDFLAGS=\"-Wl,-rpath,$ORIGIN -Wl,-rpath,$ORIGIN/../lib -Wl,--enable-new-dtags\"\n"+
+			"echo \"$LDFLAGS -L/lib -lncursesw\"\necho '-Wl,-rpath,$ORIGIN/../lib -ltinfow'\n")
+	if err := os.Chmod(filepath.Join(out, "bin/ncursesw6-config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := normalizeOutput(out); err != nil {
+		t.Fatalf("normalizeOutput: %v", err)
+	}
+
+	wantPC := "prefix=${pcfiledir}/../..\nlibdir=${prefix}/lib\n\nName: ncursesw\nVersion: 6.6\n" +
+		"Libs: -L${libdir} -lncursesw\n" +
+		"Libs.private: -lz\n" +
+		"Cflags: -I${prefix}/include -D_DEFAULT_SOURCE\n"
+	if got := readTree(t, out, "lib/pkgconfig/ncursesw.pc"); got != wantPC {
+		t.Fatalf("ncursesw.pc =\n%s\nwant\n%s", got, wantPC)
+	}
+	wantScript := "#!/bin/sh\nLDFLAGS=\"\"\necho \"$LDFLAGS -L/lib -lncursesw\"\necho '-ltinfow'\n"
+	if got := readTree(t, out, "bin/ncursesw6-config"); got != wantScript {
+		t.Fatalf("ncursesw6-config =\n%s\nwant\n%s", got, wantScript)
+	}
+}
