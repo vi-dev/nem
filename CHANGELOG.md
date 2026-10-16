@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.11.0](https://github.com/vi-dev/nem/compare/v0.10.0...v0.11.0) (2026-10-16)
+
+
+### Features
+
+* Add frozen recipes to the package model ([42b4c98](https://github.com/vi-dev/nem/commit/42b4c981ec372bfee163ca1662bce7e2f7f6a5da))
+* Bump, fill, mirror and fmt through the version's recipe ([140ad0d](https://github.com/vi-dev/nem/commit/140ad0d4fd0a8b552b864b45fac5067e24a85d6b))
+* Command `catalog bump` takes checksums from GitHub release ([f5e8dbf](https://github.com/vi-dev/nem/commit/f5e8dbf4efdb3819593128e3bc84044c032c3e59))
+* Compare catalogs by manifest digest before reading files ([9467ebd](https://github.com/vi-dev/nem/commit/9467ebdbe1ec80477750dc29477efed6aeac9a84))
+* Install, build and test from the version's recipe ([c646d6f](https://github.com/vi-dev/nem/commit/c646d6f33e660b32490b33082ccf639ecd66d315))
+* Narrate package build stages and progress ([6d74a3f](https://github.com/vi-dev/nem/commit/6d74a3fd9a08cf8e088fec74c502ba4b6d8d56b5))
+* Point the official catalog at the v3 tag ([1b9f58a](https://github.com/vi-dev/nem/commit/1b9f58acfc4d298f8dd674cb72b35b54c768aa66))
+* Publish only changed packages and show the publish plan ([21afb61](https://github.com/vi-dev/nem/commit/21afb611a79dc37efc49b5324ffe0ce73406cfa3))
+* Read deps per picked version and settle to a fixpoint ([d691c85](https://github.com/vi-dev/nem/commit/d691c8528ed43cf5343e559d8a467b456e9937ed))
+* Require files under bins or libs ([b6fdb37](https://github.com/vi-dev/nem/commit/b6fdb378dd61f1f326a74e0154bebc3da758d420))
+* Show byte progress for downloads and uploads in catalog fill ([b9cc127](https://github.com/vi-dev/nem/commit/b9cc127f7aa8bfacefd276a7bfd8ddf5240359a5))
+* Store, publish, lint and diff frozen recipe file sets ([118504b](https://github.com/vi-dev/nem/commit/118504b3fed38cb30b6d3232a27cafb42f56e5a9))
+
+
+### Bug Fixes
+
+* Clear task progress when the segment changes ([d7cb26a](https://github.com/vi-dev/nem/commit/d7cb26ae303e11ab81f3b667caf55f5e7042c26c))
+* Omit empty tools and env sections from nem.toml ([4035843](https://github.com/vi-dev/nem/commit/40358437cb70770511a323b2044a5ad717d1f959))
+* Report an unrunnable command instead of exiting silently ([19e57ea](https://github.com/vi-dev/nem/commit/19e57ea496dddd95272f3e21b067cb697f0d5743))
+* Report nothing to test as an outcome in catalog test ([549aec2](https://github.com/vi-dev/nem/commit/549aec2ed457f313e987a82dc336055e25330337))
+* Use the v3 tag in catalog command examples ([9775ec9](https://github.com/vi-dev/nem/commit/9775ec925a8ed3faebcfb965848642cb26b30572))
+
+
+### Refactors
+
+* Update `catalog update` command wording ([fd8f367](https://github.com/vi-dev/nem/commit/fd8f3676f3a7bb003dde82fada21345d347c251c))
+
+
+### Performance
+
+* Fetch each archive index once per version in catalog fill ([305d9de](https://github.com/vi-dev/nem/commit/305d9deadf19ae7a76a2fb8745c2b61016f47a8f))
+
 ## [0.10.0](https://github.com/vi-dev/nem/compare/v0.9.0...v0.10.0) (2026-10-01)
 
 
