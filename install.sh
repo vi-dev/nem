@@ -94,7 +94,7 @@ resolve_version() {
   echo "${version}"
 }
 
-# Release assets embed the version verbatim: the tag `v1.2.3` for a release, and
+# Release assets embed the version as written: the tag `v1.2.3` for a release, and
 # the literal `unstable` for the rolling main build — so one formula covers both.
 archive_name() {
   local version="$1" os="$2" arch="$3"

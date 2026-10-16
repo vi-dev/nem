@@ -72,7 +72,7 @@ rendering has not changed is not rewritten.
 ## Semantics
 
 Only `nem use`, `nem unuse`, `nem update`, and `nem lock` resolve and rewrite
-this file. `nem sync` reads it verbatim and installs the current platform's subset —
+this file. `nem sync` reads it as written and installs the current platform's subset —
 no resolution happens on that path. If `nem.toml` has drifted from what
 `nem.lock` covers, `sync` prints an advisory warning rather than failing;
 the lock stays authoritative until the next `nem lock`.

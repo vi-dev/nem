@@ -120,7 +120,7 @@ func TestCatalogLintScopedToPackage(t *testing.T) {
 	// Build one catalog containing a clean package and a defective package,
 	// cribbing content from lintFixtureGoPkg/lintFixtureGoPkgReservedEnv above
 	// (their embedded "name: go" must match the directory name "go", so it's
-	// adapted to "good"/"bad" here rather than reused verbatim).
+	// adapted to "good"/"bad" here rather than reused as is).
 	goodPkg := `
 schema: 2
 name: good

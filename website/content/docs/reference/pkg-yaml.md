@@ -362,7 +362,7 @@ Beyond the rules above, `nem catalog lint` reports:
 
 Over a whole catalog it also reports a manifest it cannot read, a missing
 `pkgs/` directory, and a `pkgs/` directory with no packages, and it prints
-every validation error above verbatim.
+every validation error above word for word.
 
 ## Related
 
