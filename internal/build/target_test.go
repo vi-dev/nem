@@ -8,12 +8,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vi-dev/clix/console"
+	"github.com/vi-dev/clix/console/consoletest"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/catalog"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
 )
@@ -33,8 +34,8 @@ func TestOpenTargetDir(t *testing.T) {
 	root := t.TempDir()
 	testx.WriteFile(t, filepath.Join(root, "pkgs", "xtool", "pkg.yaml"), targetPkgYAML)
 
-	rep := &testx.Reporter{}
-	tgt, err := OpenTarget(report.NewContext(context.Background(), rep), root)
+	rep := &consoletest.Narrator{}
+	tgt, err := OpenTarget(console.NewContext(context.Background(), rep), root)
 	if err != nil {
 		t.Fatalf("OpenTarget: %v", err)
 	}

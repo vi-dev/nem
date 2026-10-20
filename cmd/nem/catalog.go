@@ -9,11 +9,11 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/vi-dev/clix/console"
 
 	"github.com/vi-dev/nem/internal/config"
 	"github.com/vi-dev/nem/internal/fsx"
 	"github.com/vi-dev/nem/internal/ocix"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -113,9 +113,9 @@ func newCatalogAddCmd() *cobra.Command {
 			if err := config.SaveConfig(nemHome, cfg); err != nil {
 				return err
 			}
-			console.Success("Added catalog %s", name)
+			ui.Successf("Added catalog %s", name)
 			if entryType == "oci" {
-				console.Hint("Run `nem catalog update " + name + "`")
+				ui.Hint("Run `nem catalog update " + name + "`")
 			}
 			return nil
 		},
@@ -152,7 +152,7 @@ func newCatalogListCmd() *cobra.Command {
 				}
 				rows = append(rows, []string{e.Name, e.Type, source, status})
 			}
-			console.Table([]string{"NAME", "TYPE", "SOURCE", "STATUS"}, rows)
+			ui.Table([]string{"NAME", "TYPE", "SOURCE", "STATUS"}, rows)
 			return nil
 		},
 	}
@@ -197,7 +197,7 @@ func newCatalogRemoveCmd() *cobra.Command {
 			if err := config.SaveConfig(nemHome, cfg); err != nil {
 				return err
 			}
-			console.Success("Removed catalog %s", name)
+			ui.Successf("Removed catalog %s", name)
 			return nil
 		},
 	}
@@ -233,11 +233,11 @@ func newCatalogUpdateCmd() *cobra.Command {
 					return fmt.Errorf("catalog %s is not configured", name)
 				}
 				if entry.Type == "dir" {
-					console.Warn("Catalog %s is a dir catalog (nothing to update)", name)
+					ui.Warnf("Catalog %s is a dir catalog (nothing to update)", name)
 					return nil
 				}
 				if entry.Disabled {
-					console.Warn("Catalog %s is disabled (nothing to update)", name)
+					ui.Warnf("Catalog %s is disabled (nothing to update)", name)
 					return nil
 				}
 				return updateOne(cmd.Context(), *entry)
@@ -263,13 +263,11 @@ func updateOne(ctx context.Context, e config.CatalogEntry) error {
 	if err != nil {
 		return err
 	}
-	labels := report.TaskLabels{
-		Run:     "Updating catalog " + e.Name,
-		Segment: "pulling manifest",
-		Done:    "Updated catalog " + e.Name,
-		Fail:    "Failed to update catalog " + e.Name,
+	outcomes := console.Outcomes{
+		Done:   "Updated catalog " + e.Name,
+		Failed: "Failed to update catalog " + e.Name,
 	}
-	return report.RunTask(ctx, labels, func(count report.ProgressFunc) error {
+	return console.RunTask(ctx, "Updating catalog "+e.Name, "pulling manifest", outcomes, func(count console.ProgressFunc) error {
 		_, err := updateCatalog(ctx, e.Ref, store, count)
 		return err
 	})
@@ -302,7 +300,7 @@ func newCatalogReorderCmd() *cobra.Command {
 			if err := config.SaveConfig(nemHome, cfg); err != nil {
 				return err
 			}
-			console.Success("Reordered catalogs")
+			ui.Success("Reordered catalogs")
 			return nil
 		},
 	}
@@ -362,7 +360,7 @@ func setCatalogsDisabled(names []string, disabled bool) error {
 		verb = "Enabled"
 	}
 	for _, name := range names {
-		console.Success("%s catalog %s", verb, name)
+		ui.Successf("%s catalog %s", verb, name)
 	}
 	return nil
 }

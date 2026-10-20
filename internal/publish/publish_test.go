@@ -14,6 +14,7 @@ import (
 	"time"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/vi-dev/clix/console/consoletest"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/oci"
@@ -97,7 +98,7 @@ func (c *countingTarget) existsCount(digest string) int {
 }
 
 func TestPublishHappyPathAndIdempotency(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg, "kubectl": pkgNamed("kubectl")})
 	store, storeDir := newStore(t)
 
@@ -125,7 +126,7 @@ func TestPublishHappyPathAndIdempotency(t *testing.T) {
 }
 
 func TestPublishRejectsEmptyCatalog(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	dir := t.TempDir()
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) {
 		t.Fatal("openTarget must not be called for an empty catalog")
@@ -139,7 +140,7 @@ func TestPublishRejectsEmptyCatalog(t *testing.T) {
 }
 
 func TestPublishReportsResult(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
 	store, _ := newStore(t)
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
@@ -169,7 +170,7 @@ func TestPublishReportsResult(t *testing.T) {
 }
 
 func TestPublishForceDisablesSkip(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
 	store, _ := newStore(t)
 	ct := newCountingTarget(store)
@@ -201,7 +202,7 @@ func TestPublishForceDisablesSkip(t *testing.T) {
 }
 
 func TestPublishDefaultsTagsToV3(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
 	store, _ := newStore(t)
 
@@ -216,7 +217,7 @@ func TestPublishDefaultsTagsToV3(t *testing.T) {
 }
 
 func TestPublishRejectsTaggedRef(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) {
 		t.Fatal("openTarget must not be called for an invalid ref")
@@ -233,7 +234,7 @@ func TestPublishRejectsTaggedRef(t *testing.T) {
 }
 
 func TestPublishSingleFile(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
 	store, _ := newStore(t)
 
@@ -247,7 +248,7 @@ func TestPublishSingleFile(t *testing.T) {
 }
 
 func TestPublishTargetOpenFailureLeavesTagsUntouched(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
 	wantErr := errFailingOpen{}
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return nil, wantErr })()
@@ -273,7 +274,7 @@ func (f failOnManifestPushTarget) Push(ctx context.Context, d ocispec.Descriptor
 }
 
 func TestPublishMidPushFailureLeavesTagsUntouched(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	store, _ := newStore(t)
 
 	dirA := writeCatalog(t, map[string]string{"go": validGoPkg, "kubectl": pkgNamed("kubectl")})
@@ -320,7 +321,7 @@ func TestPublishMidPushFailureLeavesTagsUntouched(t *testing.T) {
 }
 
 func TestPublishPushesFrozenRecipeLayers(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	dir := t.TempDir()
 	testx.WriteFile(t, filepath.Join(dir, "pkgs", "tool", "pkg.yaml"), "schema: 3\nname: tool\nartifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\nversions: [2.0.0, 1.0.0]\n")
 	testx.WriteFile(t, filepath.Join(dir, "pkgs", "tool", "recipe@1.yaml"), "artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {strip: 1}}]\n")
@@ -355,7 +356,7 @@ func TestPublishPushesFrozenRecipeLayers(t *testing.T) {
 }
 
 func TestPublishUnchangedRepublishMakesNoPerPackageRequests(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg, "kubectl": pkgNamed("kubectl")})
 	store, _ := newStore(t)
 	ct := newCountingTarget(store)
@@ -384,7 +385,7 @@ func TestPublishUnchangedRepublishMakesNoPerPackageRequests(t *testing.T) {
 }
 
 func TestPublishFallsBackToManifestChecksWhenTagIsAbsent(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg, "kubectl": pkgNamed("kubectl")})
 	store, _ := newStore(t)
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
@@ -403,7 +404,7 @@ func TestPublishFallsBackToManifestChecksWhenTagIsAbsent(t *testing.T) {
 }
 
 func TestPublishClassifiesPackagesAgainstTargetIndex(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	store, _ := newStore(t)
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
 
@@ -441,7 +442,7 @@ func TestPublishClassifiesPackagesAgainstTargetIndex(t *testing.T) {
 }
 
 func TestPublishDryRunClassifiesWithoutWriting(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	store, storeDir := newStore(t)
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
 
@@ -476,7 +477,7 @@ func TestPublishDryRunClassifiesWithoutWriting(t *testing.T) {
 }
 
 func TestPublishDryRunAgainstAbsentTagMarksEverythingNew(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	store, _ := newStore(t)
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
 
@@ -495,7 +496,7 @@ func TestPublishNarratesCompareAndPushesAsTasks(t *testing.T) {
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
 
 	dirA := writeCatalog(t, map[string]string{"go": validGoPkg, "kubectl": pkgNamed("kubectl")})
-	ctxA, repA := testx.ReporterContext(context.Background())
+	ctxA, repA := consoletest.Context(context.Background())
 	if _, err := Publish(ctxA, dirA, "example.com/cat", Options{}); err != nil {
 		t.Fatalf("initial publish: %v", err)
 	}
@@ -509,7 +510,7 @@ func TestPublishNarratesCompareAndPushesAsTasks(t *testing.T) {
 
 	changedGoPkg := strings.Replace(validGoPkg, "description: The Go programming language", "description: Go, updated", 1)
 	dirB := writeCatalog(t, map[string]string{"go": changedGoPkg, "helm": pkgNamed("helm")})
-	ctxB, repB := testx.ReporterContext(context.Background())
+	ctxB, repB := consoletest.Context(context.Background())
 	if _, err := Publish(ctxB, dirB, "example.com/cat", Options{}); err != nil {
 		t.Fatalf("second publish: %v", err)
 	}
@@ -528,7 +529,7 @@ func TestPublishNarratesCompareAndPushesAsTasks(t *testing.T) {
 	if done, _, outcome := push.Snapshot(); !done || outcome != "Pushed go v1.26.5" {
 		t.Fatalf("push outcome = %q (done %v)", outcome, done)
 	}
-	if got := push.Statuses(); !slices.Contains(got, "pushing manifest") {
+	if got := push.Phases(); !slices.Contains(got, "pushing manifest") {
 		t.Fatalf("push segments = %v, want pushing manifest", got)
 	}
 	if repB.TaskFor("Pushing kubectl v1.26.5") != nil {
@@ -543,11 +544,11 @@ func TestPublishUnchangedPackagesGetNoTask(t *testing.T) {
 	store, _ := newStore(t)
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	if _, err := Publish(ctx, dir, "example.com/cat", Options{}); err != nil {
 		t.Fatalf("initial publish: %v", err)
 	}
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	if _, err := Publish(ctx, dir, "example.com/cat", Options{}); err != nil {
 		t.Fatalf("republish: %v", err)
 	}
@@ -569,7 +570,7 @@ func TestPublishFailedPushFailsItsTask(t *testing.T) {
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) {
 		return failOnManifestPushTarget{Target: store}, nil
 	})()
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	if _, err := Publish(ctx, dir, "example.com/cat", Options{}); err == nil {
 		t.Fatal("expected the manifest push failure to surface")
 	}
@@ -582,7 +583,7 @@ func TestPublishFailedPushFailsItsTask(t *testing.T) {
 	}
 }
 
-func labelsOf(tasks []*testx.Task) []string {
+func labelsOf(tasks []*consoletest.Task) []string {
 	out := make([]string, 0, len(tasks))
 	for _, task := range tasks {
 		out = append(out, task.Label)
@@ -591,7 +592,7 @@ func labelsOf(tasks []*testx.Task) []string {
 }
 
 func TestPublishReportsIndexDigest(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	store, _ := newStore(t)
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg, "kubectl": pkgNamed("kubectl")})
@@ -617,7 +618,7 @@ func TestPublishReportsIndexDigest(t *testing.T) {
 }
 
 func TestPublishClassifiesAgainstTheFirstResolvedTagOnly(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	store, _ := newStore(t)
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
 
@@ -651,12 +652,12 @@ func TestPublishDryRunChecksManifestsWhenTagIsAbsent(t *testing.T) {
 	store, _ := newStore(t)
 	defer swapOpenTarget(func(context.Context, string) (oras.Target, error) { return store, nil })()
 	dir := writeCatalog(t, map[string]string{"go": validGoPkg})
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	if _, err := Publish(ctx, dir, "example.com/cat", Options{}); err != nil {
 		t.Fatalf("initial publish: %v", err)
 	}
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	res, err := Publish(ctx, dir, "example.com/cat", Options{Tags: []string{"other"}, DryRun: true})
 	if err != nil {
 		t.Fatalf("dry run: %v", err)

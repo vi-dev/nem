@@ -15,6 +15,8 @@ import (
 	"testing"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/vi-dev/clix/console"
+	"github.com/vi-dev/clix/console/consoletest"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/oci"
@@ -22,7 +24,6 @@ import (
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/ocix/ocixtest"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
 )
@@ -544,7 +545,7 @@ func TestCompareNarratesProgressAsOneTask(t *testing.T) {
 	defer catalog.SetRemoteTarget(func(string) (oras.ReadOnlyTarget, string, error) { return src, "v2", nil })()
 	base := writeFixture(t, map[string]string{"atool": fixtureV1, "btool": renamed(fixtureV2, "btool")})
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	if _, err := Compare(ctx, base, "example.com/cat:v2", nil); err != nil {
 		t.Fatalf("Compare: %v", err)
 	}
@@ -560,15 +561,15 @@ func TestCompareNarratesProgressAsOneTask(t *testing.T) {
 		t.Fatalf("outcome = %q (done %v)", outcome, done)
 	}
 	calls := task.ProgressCalls()
-	if len(calls) == 0 || calls[len(calls)-1].Done != 2 || calls[len(calls)-1].Total != 2 || calls[len(calls)-1].Unit != report.Items {
+	if len(calls) == 0 || calls[len(calls)-1].Done != 2 || calls[len(calls)-1].Total != 2 || calls[len(calls)-1].Unit != console.Items {
 		t.Fatalf("progress = %+v, want it to reach 2/2 items", calls)
 	}
-	if got := task.Statuses(); !slices.Contains(got, "comparing") {
+	if got := task.Phases(); !slices.Contains(got, "comparing") {
 		t.Fatalf("segments = %v, want \"comparing\" set before progress so the live line shows the count", got)
 	}
 }
 
-func taskLabels(rep *testx.Reporter) []string {
+func taskLabels(rep *consoletest.Narrator) []string {
 	var labels []string
 	for _, tk := range rep.Tasks() {
 		labels = append(labels, tk.Label)
@@ -588,7 +589,7 @@ func TestComparePullsASideWhenMostOfItMustBeRead(t *testing.T) {
 	defer catalog.SetRemoteTarget(func(string) (oras.ReadOnlyTarget, string, error) { return src, "v2", nil })()
 	base := writeFixture(t, map[string]string{"atool": fixtureV2, "btool": renamed(fixtureV2, "btool")})
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	res, err := Compare(ctx, base, "example.com/cat:v2", nil)
 	if err != nil {
 		t.Fatalf("Compare: %v", err)
@@ -622,7 +623,7 @@ func TestCompareReadsLazilyWhenFewPackagesChanged(t *testing.T) {
 	pkgs["atool"] = fixtureV2
 	base := writeFixture(t, pkgs)
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	res, err := Compare(ctx, base, "example.com/cat:v2", nil)
 	if err != nil {
 		t.Fatalf("Compare: %v", err)

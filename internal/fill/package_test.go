@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/vi-dev/clix/console/consoletest"
 	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/vi-dev/nem/internal/spec"
@@ -26,8 +27,8 @@ func TestFillItemShaLookupFailureWarnsAndFails(t *testing.T) {
 	pkg := testPkg(t, up.URL+"/{{.Version}}", "deadbeef")
 	archives := memory.New()
 
-	ctx, rep := testx.ReporterContext(context.Background())
-	got, _ := fillItem(ctx, newHome(t), archives, ocispec.Index{}, pkg, "9.9.9", spec.SupportedPlatforms[0], false, rep.Task("test"))
+	ctx, rep := consoletest.Context(context.Background())
+	got, _ := fillItem(ctx, newHome(t), archives, ocispec.Index{}, pkg, "9.9.9", spec.SupportedPlatforms[0], false, rep.Start("test"))
 	if got != outcomeFailed {
 		t.Fatalf("outcome = %v, want outcomeFailed for an undeclared version", got)
 	}

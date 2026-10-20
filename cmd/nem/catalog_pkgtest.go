@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/vi-dev/clix/console"
 
 	"github.com/vi-dev/nem/internal/build"
 	"github.com/vi-dev/nem/internal/catalog"
@@ -14,7 +15,6 @@ import (
 	"github.com/vi-dev/nem/internal/install"
 	"github.com/vi-dev/nem/internal/pkgtest"
 	"github.com/vi-dev/nem/internal/project"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/resolve"
 	"github.com/vi-dev/nem/internal/spec"
 )
@@ -65,7 +65,7 @@ func newCatalogTestCmd() *cobra.Command {
 			}
 			sels = build.Merge(sels, nil)
 			if len(sels) == 0 {
-				console.Success("Nothing to test")
+				ui.Success("Nothing to test")
 				return nil
 			}
 			sources = sources.Prepend(target.Entry)
@@ -75,14 +75,14 @@ func newCatalogTestCmd() *cobra.Command {
 				switch {
 				case err != nil:
 					failed++
-					console.Warn("%s: %v", sel.Pkg.Name, err)
+					ui.Warnf("%s: %v", sel.Pkg.Name, err)
 				case ran:
 					tested++
 				default:
 					skipped++
 				}
 			}
-			console.Success("%s", testSummary(tested, failed, skipped))
+			ui.Success(testSummary(tested, failed, skipped))
 			if failed > 0 {
 				return &ExitError{Code: 1}
 			}
@@ -98,7 +98,7 @@ func newCatalogTestCmd() *cobra.Command {
 func testSummary(tested, failed, skipped int) string {
 	var parts []string
 	if tested > 0 {
-		parts = append(parts, "Tested "+report.Plural(tested, "package"))
+		parts = append(parts, "Tested "+console.Plural(tested, "package"))
 	}
 	if failed > 0 {
 		parts = append(parts, fmt.Sprintf("%d failed", failed))
@@ -118,7 +118,7 @@ func runPackageTest(cmd *cobra.Command, sources *catalog.Set, pkg *spec.Package,
 		return false, err
 	}
 	if plat := spec.Current(); !spec.PlatformsInclude(r.Platforms, plat) {
-		console.Info("%s does not support %s", pkg.Name, plat)
+		ui.Infof("%s does not support %s", pkg.Name, plat)
 		return false, nil
 	}
 	result, err := resolve.Resolve(cmd.Context(),
@@ -138,7 +138,7 @@ func runPackageTest(cmd *cobra.Command, sources *catalog.Set, pkg *spec.Package,
 		}
 	}
 	if root == nil {
-		console.Info("%s installs nothing on %s; nothing to test", pkg.Name, spec.Current())
+		ui.Infof("%s installs nothing on %s; nothing to test", pkg.Name, spec.Current())
 		return false, nil
 	}
 	resolved := root.Version
@@ -155,7 +155,7 @@ func runPackageTest(cmd *cobra.Command, sources *catalog.Set, pkg *spec.Package,
 		return false, err
 	}
 
-	task := console.Task("Downloading " + pkg.Name + " " + resolved)
+	task := ui.Start("Downloading " + pkg.Name + " " + resolved)
 	artifact, err := fetch.Acquire(cmd.Context(), root.Pkg, resolved, spec.Current(),
 		root.Source, nemHome.Tmp(), task)
 	if err != nil {
@@ -165,7 +165,7 @@ func runPackageTest(cmd *cobra.Command, sources *catalog.Set, pkg *spec.Package,
 	task.Done("Downloaded " + pkg.Name + " " + resolved)
 	defer os.Remove(artifact)
 
-	if err := pkgtest.InstallAndRun(cmd.Context(), nemHome, deps, pkg, resolved,
+	if err := pkgtest.InstallAndRun(cmd.Context(), ui, nemHome, deps, pkg, resolved,
 		root.Catalog, artifact); err != nil {
 		return false, err
 	}

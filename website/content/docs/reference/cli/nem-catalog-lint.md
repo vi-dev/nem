@@ -29,7 +29,7 @@ nem catalog lint ghcr.io/vi-dev/nem-catalog:v3   # a published catalog
 
 ## Global flags
 
-`--color`, `--quiet`, and `--verbose` apply to every command; see [nem](../nem/).
+`--color`, `--narration`, `--quiet`, and `--verbose` apply to every command; see [nem](../nem/).
 
 ## See also
 

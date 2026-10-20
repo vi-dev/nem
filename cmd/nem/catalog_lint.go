@@ -32,11 +32,11 @@ func newCatalogLintCmd() *cobra.Command {
 			}
 			if len(findings) > 0 {
 				for _, f := range findings {
-					console.Warn("%s", f.String())
+					ui.Warn(f.String())
 				}
 				return &ExitError{Code: 1}
 			}
-			console.Success("Catalog is clean: no findings")
+			ui.Success("Catalog is clean: no findings")
 			return nil
 		},
 	}

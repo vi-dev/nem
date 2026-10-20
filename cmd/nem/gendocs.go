@@ -2,9 +2,9 @@ package main
 
 import (
 	"github.com/spf13/cobra"
+	"github.com/vi-dev/clix/console"
 
 	"github.com/vi-dev/nem/internal/clidoc"
-	"github.com/vi-dev/nem/internal/report"
 )
 
 func guide(title, path string) map[string]string {
@@ -25,7 +25,7 @@ func newGendocsCmd() *cobra.Command {
 			if err := clidoc.Write(args[0], pages); err != nil {
 				return err
 			}
-			console.Success("Wrote %s to %s", report.Plural(len(pages), "page"), args[0])
+			ui.Successf("Wrote %s to %s", console.Plural(len(pages), "page"), args[0])
 			return nil
 		},
 	}

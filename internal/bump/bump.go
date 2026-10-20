@@ -9,12 +9,12 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/vi-dev/clix/console"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/discover"
 	"github.com/vi-dev/nem/internal/fetch"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -148,16 +148,16 @@ func plan(opts Options) ([]job, error) {
 }
 
 func bumpOne(ctx context.Context, editor catalog.Editor, j job, opts Options, explicit bool, rel *releases) *Row {
-	rep := report.FromContext(ctx)
+	rep := console.FromContext(ctx)
 	row := &Row{Name: j.name}
-	task := rep.Task("Bumping " + j.name)
+	task := rep.Start("Bumping " + j.name)
 	fail := func(err error) *Row {
 		row.Error = err.Error()
-		if report.IsCancellation(err) || ctx.Err() != nil {
+		if console.Cancelled(ctx, err) {
 			task.Fail("Cancelled " + row.Name)
 			return row
 		}
-		rep.Warn("%s: %v", row.Name, err)
+		task.Warnf("%s: %v", row.Name, err)
 		task.Fail("Failed to bump " + row.Name)
 		return row
 	}
@@ -175,7 +175,7 @@ func bumpOne(ctx context.Context, editor catalog.Editor, j job, opts Options, ex
 	}
 	row.Name, row.Current = pkg.Name, current
 	if pkg.VersionDiscovery == nil && !explicit {
-		rep.Debug("Skipping %s: no versionDiscovery", pkg.Name)
+		rep.Debugf("Skipping %s: no versionDiscovery", pkg.Name)
 		task.Discard()
 		return nil
 	}
@@ -183,7 +183,7 @@ func bumpOne(ctx context.Context, editor catalog.Editor, j job, opts Options, ex
 		return fail(err)
 	}
 
-	task.Segment("discovering")
+	task.Phase("discovering")
 	var targets []string
 	var metas map[string]map[string]string
 	var present []string
@@ -249,8 +249,7 @@ func displayVersion(v string) string {
 	return v
 }
 
-func apply(ctx context.Context, editor catalog.Editor, name string, files spec.Files, pkg *spec.Package, targets []string, metas map[string]map[string]string, task report.Task, row *Row, rel *releases) ([]string, string, error) {
-	rep := report.FromContext(ctx)
+func apply(ctx context.Context, editor catalog.Editor, name string, files spec.Files, pkg *spec.Package, targets []string, metas map[string]map[string]string, task console.Task, row *Row, rel *releases) ([]string, string, error) {
 	edited := files.Pkg
 	var added []string
 	var lastErr error
@@ -261,7 +260,7 @@ func apply(ctx context.Context, editor catalog.Editor, name string, files spec.F
 			if _, ok := errors.AsType[*fetch.ArtifactNotFoundError](err); ok {
 				row.Missing = append(row.Missing, target)
 			}
-			rep.Warn("%s %s: %v", pkg.Name, target, err)
+			task.Warnf("%s %s: %v", pkg.Name, target, err)
 			continue
 		}
 		pos, err := insertPos(edited, target)
@@ -277,7 +276,7 @@ func apply(ctx context.Context, editor catalog.Editor, name string, files spec.F
 			return nil, "", err
 		}
 		if covering.Build != nil && len(pkg.Versions) > 0 && spec.CompareVersions(target, pkg.Versions[0].Version) < 0 {
-			rep.Warn("%s %s: source-built, archive not published yet", pkg.Name, target)
+			task.Warnf("%s %s: source-built, archive not published yet", pkg.Name, target)
 			row.Unpublished = append(row.Unpublished, target)
 		}
 	}
@@ -312,9 +311,9 @@ func apply(ctx context.Context, editor catalog.Editor, name string, files spec.F
 func resultLine(bumped, backfilled, name, current, head string, added []string) string {
 	switch {
 	case head == current:
-		return fmt.Sprintf("%s %s (%s)", backfilled, name, report.Plural(len(added), "version"))
+		return fmt.Sprintf("%s %s (%s)", backfilled, name, console.Plural(len(added), "version"))
 	case len(added) > 1:
-		return fmt.Sprintf("%s %s %s → %s (%s)", bumped, name, displayVersion(current), head, report.Plural(len(added), "version"))
+		return fmt.Sprintf("%s %s %s → %s (%s)", bumped, name, displayVersion(current), head, console.Plural(len(added), "version"))
 	default:
 		return fmt.Sprintf("%s %s %s → %s", bumped, name, displayVersion(current), head)
 	}
@@ -408,7 +407,7 @@ func insertPos(data []byte, version string) (int, error) {
 	return len(pkg.Versions), nil
 }
 
-func buildEntry(ctx context.Context, pkg *spec.Package, target string, meta map[string]string, task report.Task, rel *releases) (spec.VersionEntry, error) {
+func buildEntry(ctx context.Context, pkg *spec.Package, target string, meta map[string]string, task console.Task, rel *releases) (spec.VersionEntry, error) {
 	pkg = withVersion(pkg, target, meta)
 	r, err := pkg.Recipe(target)
 	if err != nil {
@@ -426,7 +425,7 @@ func buildEntry(ctx context.Context, pkg *spec.Package, target string, meta map[
 		if err != nil {
 			return e, err
 		}
-		task.Segment(fmt.Sprintf("hashing %s %s", target, plat))
+		task.Phase(fmt.Sprintf("hashing %s %s", target, plat))
 		fmeta := fetch.Meta{Name: pkg.Name, Version: target, Platform: plat}
 		sum, err := hashArtifact(ctx, rel, url, plat.String(), fmeta, task)
 		if err != nil {
@@ -437,7 +436,7 @@ func buildEntry(ctx context.Context, pkg *spec.Package, target string, meta map[
 	return e, nil
 }
 
-func buildOCIEntry(ctx context.Context, pkg *spec.Package, r *spec.Recipe, target string, meta map[string]string, task report.Task, rel *releases) (spec.VersionEntry, error) {
+func buildOCIEntry(ctx context.Context, pkg *spec.Package, r *spec.Recipe, target string, meta map[string]string, task console.Task, rel *releases) (spec.VersionEntry, error) {
 	e := spec.VersionEntry{Version: target, Meta: meta}
 	if r.Build == nil {
 		return e, nil
@@ -446,7 +445,7 @@ func buildOCIEntry(ctx context.Context, pkg *spec.Package, r *spec.Recipe, targe
 	if err != nil {
 		return e, err
 	}
-	task.Segment(fmt.Sprintf("hashing %s source", target))
+	task.Phase(fmt.Sprintf("hashing %s source", target))
 	fmeta := fetch.Meta{Name: pkg.Name, Version: target, Platform: spec.Current()}
 	sum, err := hashArtifact(ctx, rel, url, "source", fmeta, task)
 	if err != nil {

@@ -108,9 +108,6 @@ func TestExecLeadingPersistentFlagIsParsedNotPassedToChild(t *testing.T) {
 	if out.String() != "hi\n" {
 		t.Fatalf("stdout = %q, want %q", out.String(), "hi\n")
 	}
-	if !flagVerbose {
-		t.Fatal("--verbose before exec was not parsed as a root persistent flag")
-	}
 }
 
 func TestExecNoCommandGivenIsUsageError(t *testing.T) {

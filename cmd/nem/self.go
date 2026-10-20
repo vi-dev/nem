@@ -94,22 +94,22 @@ func runSelfUpdate(ctx context.Context, targetVersion string, check bool) error 
 
 	if check {
 		if upToDate {
-			console.Data("nem %s is up to date\n", version)
+			ui.Data("nem %s is up to date\n", version)
 		} else {
-			console.Data("Update available: nem %s → %s\n", version, target)
+			ui.Data("Update available: nem %s → %s\n", version, target)
 		}
 		return nil
 	}
 
 	if upToDate {
-		console.Success("nem %s is up to date", version)
+		ui.Successf("nem %s is up to date", version)
 		return nil
 	}
 	if target == "unstable" {
 		if channel == "unstable" {
-			console.Info("Following the unstable channel; `nem self update --version stable` switches back to releases")
+			ui.Info("Following the unstable channel; `nem self update --version stable` switches back to releases")
 		} else {
-			console.Warn("Installing the unstable build from main — not a released version")
+			ui.Warn("Installing the unstable build from main — not a released version")
 		}
 	}
 
@@ -117,14 +117,14 @@ func runSelfUpdate(ctx context.Context, targetVersion string, check bool) error 
 	if err != nil {
 		return err
 	}
-	task := console.Task("Updating nem to " + target)
+	task := ui.Start("Updating nem to " + target)
 	if err := updater.Update(ctx, target, exePath, task); err != nil {
 		task.Fail("Failed to update nem")
 		return err
 	}
 	task.Done("nem " + version + " → " + target)
 	if target != "unstable" {
-		console.Info("Release notes: https://github.com/vi-dev/nem/releases/tag/%s", target)
+		ui.Infof("Release notes: https://github.com/vi-dev/nem/releases/tag/%s", target)
 	}
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/vi-dev/clix"
 
 	"github.com/vi-dev/nem/internal/publish"
 )
@@ -35,7 +36,7 @@ func newCatalogPublishCmd() *cobra.Command {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validateOutput(output); err != nil {
+			if err := clix.ValidateOutput(output); err != nil {
 				return err
 			}
 			ref := args[0]
@@ -49,7 +50,7 @@ func newCatalogPublishCmd() *cobra.Command {
 			}
 			if len(findings) > 0 {
 				for _, f := range findings {
-					console.Warn("%s", f.String())
+					ui.Warn(f.String())
 				}
 				return &ExitError{Code: 1}
 			}
@@ -57,25 +58,25 @@ func newCatalogPublishCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if output == outputJSON {
-				if err := console.JSON(publishDocument(ref, res, force)); err != nil {
+			if output == "json" {
+				if err := ui.JSON(publishDocument(ref, res, force)); err != nil {
 					return err
 				}
 			} else if dryRun {
 				renderPublishPlan(res)
 			}
 			if dryRun {
-				console.Success("Would publish %s: %s, tags %s", ref, publishPlanSummary(res), strings.Join(res.Tags, ", "))
+				ui.Successf("Would publish %s: %s, tags %s", ref, publishPlanSummary(res), strings.Join(res.Tags, ", "))
 				return nil
 			}
-			console.Success("Published %s: %s, tags %s", ref, publishedSummary(res), strings.Join(res.Tags, ", "))
+			ui.Successf("Published %s: %s, tags %s", ref, publishedSummary(res), strings.Join(res.Tags, ", "))
 			return nil
 		},
 	}
 	cmd.Flags().StringArrayVar(&tags, "tag", nil, "tag to move to the published index (repeatable; default v3)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what would change without writing anything")
 	cmd.Flags().BoolVar(&force, "force", false, "push every package manifest even when unchanged")
-	addOutputFlag(cmd, &output)
+	clix.AddOutputFlag(cmd, &output)
 	return cmd
 }
 
@@ -107,7 +108,7 @@ func renderPublishPlan(res *publish.Result) {
 	if len(rows) == 0 {
 		return
 	}
-	console.Table([]string{"PACKAGE", "VERSION", "STATUS"}, rows)
+	ui.Table([]string{"PACKAGE", "VERSION", "STATUS"}, rows)
 }
 
 func publishPlanSummary(res *publish.Result) string {

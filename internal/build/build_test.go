@@ -21,11 +21,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vi-dev/clix/console"
+	"github.com/vi-dev/clix/console/consoletest"
+
 	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/home"
 	"github.com/vi-dev/nem/internal/install"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
 	"github.com/vi-dev/nem/internal/usage"
@@ -55,7 +57,7 @@ func buildFixture(t *testing.T, srcFiles map[string]string, version string, step
 func runBuild(t *testing.T, h home.Home, pkg *spec.Package, opts Options) (string, error) {
 	t.Helper()
 	var b bytes.Buffer
-	ctx := report.NewContext(context.Background(), report.New(&b, &b, report.Options{}))
+	ctx := console.NewContext(context.Background(), console.New(&b, &b, console.Options{}))
 	err := Build(ctx, h, nil, pkg, opts)
 	return b.String(), err
 }
@@ -64,14 +66,14 @@ func runBuildCapture(t *testing.T, h home.Home, pkg *spec.Package, opts Options)
 	t.Helper()
 	var data []byte
 	userTest := opts.Test
-	opts.Test = func(ctx context.Context, p *spec.Package, version, artifactPath string) error {
+	opts.Test = func(ctx context.Context, task console.Task, p *spec.Package, version, artifactPath string) error {
 		b, err := os.ReadFile(artifactPath)
 		if err != nil {
 			return err
 		}
 		data = b
 		if userTest != nil {
-			return userTest(ctx, p, version, artifactPath)
+			return userTest(ctx, task, p, version, artifactPath)
 		}
 		return nil
 	}
@@ -184,10 +186,10 @@ func TestBuildNarratesOneTaskPerPackage(t *testing.T) {
 	h, pkg := buildFixture(t, map[string]string{"src/README": "hi"}, "v1.0.0",
 		spec.BuildStep{Run: `mkdir -p "$NEM_OUTPUT"`})
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	tested := false
 	err := Build(ctx, h, nil, pkg, Options{Version: "v1.0.0",
-		Test: func(context.Context, *spec.Package, string, string) error { tested = true; return nil }})
+		Test: func(context.Context, console.Task, *spec.Package, string, string) error { tested = true; return nil }})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -202,7 +204,7 @@ func TestBuildNarratesOneTaskPerPackage(t *testing.T) {
 		t.Fatalf("no task labelled Building %s v1.0.0", pkg.Name)
 	}
 	want := []string{"downloading source", "unpacking", "step 1/1", "normalizing", "verifying", "testing"}
-	if got := task.Statuses(); !slices.Equal(got, want) {
+	if got := task.Phases(); !slices.Equal(got, want) {
 		t.Fatalf("segments = %v, want %v", got, want)
 	}
 	done, failed, outcome := task.Snapshot()
@@ -214,7 +216,7 @@ func TestBuildNarratesOneTaskPerPackage(t *testing.T) {
 func TestBuildFailedStepFailsTheTaskOnThatStep(t *testing.T) {
 	h, pkg := buildFixture(t, map[string]string{"src/x": "y"}, "v1",
 		spec.BuildStep{Run: `mkdir -p "$NEM_OUTPUT"`}, spec.BuildStep{Run: "exit 3"})
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	if err := Build(ctx, h, nil, pkg, Options{Version: "v1"}); err == nil {
 		t.Fatal("want error when a build step exits non-zero")
 	}
@@ -222,11 +224,52 @@ func TestBuildFailedStepFailsTheTaskOnThatStep(t *testing.T) {
 	if task == nil {
 		t.Fatal("no build task recorded")
 	}
-	if st := task.Statuses(); len(st) == 0 || st[len(st)-1] != "step 2/2" {
+	if st := task.Phases(); len(st) == 0 || st[len(st)-1] != "step 2/2" {
 		t.Fatalf("segments = %v, want to end on step 2/2", st)
 	}
 	if _, failed, outcome := task.Snapshot(); !failed || outcome != "Failed to build "+pkg.Name+" v1" {
 		t.Fatalf("task failed=%v outcome=%q, want Failed to build %s v1", failed, outcome, pkg.Name)
+	}
+}
+
+func TestBuildCancelledStepFailsTheTaskAsCancelled(t *testing.T) {
+	started := filepath.Join(t.TempDir(), "started")
+	h, pkg := buildFixture(t, map[string]string{"src/x": "y"}, "v1",
+		spec.BuildStep{Run: "touch " + started + " && exec sleep 5"})
+	ctx, rep := consoletest.Context(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	errc := make(chan error, 1)
+	go func() { errc <- Build(ctx, h, nil, pkg, Options{Version: "v1"}) }()
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(started); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the build step did not start within 10s")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+
+	var err error
+	select {
+	case err = <-errc:
+	case <-time.After(4 * time.Second):
+		t.Fatal("Build did not return within 4s of the cancel")
+	}
+	if err == nil || !console.Cancelled(ctx, err) {
+		t.Fatalf("Build error = %v, want a cancellation error", err)
+	}
+	task := rep.TaskFor("Building " + pkg.Name + " v1")
+	if task == nil {
+		t.Fatal("no build task recorded")
+	}
+	if done, failed, outcome := task.Snapshot(); done || !failed || outcome != "Cancelled "+pkg.Name+" v1" {
+		t.Fatalf("task done=%v failed=%v outcome=%q, want failed with Cancelled %s v1", done, failed, outcome, pkg.Name)
 	}
 }
 
@@ -235,7 +278,7 @@ func TestBuildQuietSuppressesBuiltLine(t *testing.T) {
 		spec.BuildStep{Run: `mkdir -p "$NEM_OUTPUT"`})
 
 	var b bytes.Buffer
-	ctx := report.NewContext(context.Background(), report.New(&b, &b, report.Options{Quiet: true}))
+	ctx := console.NewContext(context.Background(), console.New(&b, &b, console.Options{Quiet: true}))
 	err := Build(ctx, h, nil, pkg, Options{Version: "v1.0.0"})
 	if err != nil {
 		t.Fatalf("Build: %v\n%s", err, b.String())
@@ -274,7 +317,7 @@ func TestBuildSourceDownloadReportsLiveByteProgress(t *testing.T) {
 	pkg.Base.Build.Source.URL = srv.URL
 
 	var b bytes.Buffer
-	ctx := report.NewContext(context.Background(), report.New(&b, &b, report.Options{IsTTY: true, Color: report.ColorNever}))
+	ctx := console.NewContext(context.Background(), console.New(&b, &b, console.Options{IsTTY: true, Color: console.ColorNever}))
 	err := Build(ctx, h, nil, pkg, Options{Version: "v1.0.0"})
 	if err != nil {
 		t.Fatalf("Build: %v\n%s", err, b.String())
@@ -391,7 +434,7 @@ func TestBuildRestampsAlreadyInstalledBuildDep(t *testing.T) {
 	pkg.Base.Build.Source.URL = srv.URL
 
 	var b bytes.Buffer
-	ctx := report.NewContext(context.Background(), report.New(&b, &b, report.Options{}))
+	ctx := console.NewContext(context.Background(), console.New(&b, &b, console.Options{}))
 	if err := Build(ctx, h, sources, pkg, Options{Version: "v1.0.0"}); err != nil {
 		t.Fatalf("Build: %v\n%s", err, b.String())
 	}
@@ -415,7 +458,7 @@ func TestBuildTestHookGetsAnInstallableArchive(t *testing.T) {
 
 	var gotArtifact string
 	data, out, err := runBuildCapture(t, h, pkg,
-		Options{Version: "v1", Test: func(_ context.Context, _ *spec.Package, _, artifactPath string) error {
+		Options{Version: "v1", Test: func(_ context.Context, _ console.Task, _ *spec.Package, _, artifactPath string) error {
 			gotArtifact = artifactPath
 			info, statErr := os.Stat(artifactPath)
 			if statErr != nil {
@@ -447,7 +490,7 @@ func TestBuildFailsWhenTheTestHookFails(t *testing.T) {
 	store := archive.NewDir(t.TempDir())
 	var hookCalled bool
 	_, err := runBuild(t, h, pkg,
-		Options{Version: "v1", LocalStore: store, Test: func(context.Context, *spec.Package, string, string) error {
+		Options{Version: "v1", LocalStore: store, Test: func(context.Context, console.Task, *spec.Package, string, string) error {
 			hookCalled = true
 			return errors.New("boom")
 		}})
@@ -470,7 +513,7 @@ func TestBuildTestHookAndLocalStoreShareTheSameArchiveBytes(t *testing.T) {
 	var hookBytes []byte
 	out, err := runBuild(t, h, pkg,
 		Options{Version: "v1.0.0", LocalStore: store,
-			Test: func(_ context.Context, _ *spec.Package, _, artifactPath string) error {
+			Test: func(_ context.Context, _ console.Task, _ *spec.Package, _, artifactPath string) error {
 				data, readErr := os.ReadFile(artifactPath)
 				if readErr != nil {
 					return readErr
@@ -595,8 +638,8 @@ func TestWarnUnlinkedDepRpathsNamesEveryMissingLinkDep(t *testing.T) {
 		{Name: "libassuan", OnLoaderPath: true},
 		{Name: "pinentry", OnPath: true},
 	}
-	ctx, rep := testx.ReporterContext(context.Background())
-	warnUnlinkedDepRpaths(ctx, "skopeo", "1.20.0", r, deps)
+	rep := &consoletest.Task{}
+	warnUnlinkedDepRpaths(rep, "skopeo", "1.20.0", r, deps)
 	want := []string{
 		"skopeo 1.20.0: rpath links libassuan without a runtime link dependency",
 		"skopeo 1.20.0: rpath links libgpg-error without a runtime link dependency",
@@ -620,8 +663,8 @@ func TestWarnUnlinkedDepRpathsIgnoresTransitiveDeps(t *testing.T) {
 		{Name: "libidn2", OnLoaderPath: true},
 		{Name: "pkg-config", OnPath: true},
 	}
-	ctx, rep := testx.ReporterContext(context.Background())
-	warnUnlinkedDepRpaths(ctx, "git", "2.52.0", r, deps)
+	rep := &consoletest.Task{}
+	warnUnlinkedDepRpaths(rep, "git", "2.52.0", r, deps)
 	if got := rep.Warns(); len(got) != 0 {
 		t.Fatalf("warns = %q, want none: brotli and libidn2 are libcurl's, not git's", got)
 	}

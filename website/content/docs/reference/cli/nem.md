@@ -26,6 +26,7 @@ nem sync                     # install what nem.lock pins
 | Flag | Description |
 |------|-------------|
 | `--color <string>` | colorize output: auto, always, or never (default `auto`) |
+| `--narration <string>` | narration format: auto, plain, or json (default `auto`) |
 | `-q, --quiet` | suppress narration output |
 | `--verbose` | show debug output |
 | `-v, --version` | version for nem |

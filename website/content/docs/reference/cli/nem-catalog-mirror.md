@@ -28,7 +28,7 @@ nem catalog mirror ghcr.io/vi-dev/nem-catalog:v3 registry.corp.example/nem/catal
 
 ## Global flags
 
-`--color`, `--quiet`, and `--verbose` apply to every command; see [nem](../nem/).
+`--color`, `--narration`, `--quiet`, and `--verbose` apply to every command; see [nem](../nem/).
 
 ## See also
 

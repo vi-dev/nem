@@ -10,8 +10,9 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/vi-dev/clix/console"
+
 	"github.com/vi-dev/nem/internal/home"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -20,9 +21,7 @@ type Meta struct {
 	Platform      spec.Platform
 }
 
-const progressChunk = 256 * 1024
-
-func Download(ctx context.Context, client *http.Client, url, wantSHA256, dir string, meta Meta, task report.Task) (string, error) {
+func Download(ctx context.Context, client *http.Client, url, wantSHA256, dir string, meta Meta, task console.Task) (string, error) {
 	path, got, err := DownloadUnverified(ctx, client, url, dir, meta, task)
 	if err != nil {
 		return "", err
@@ -34,7 +33,7 @@ func Download(ctx context.Context, client *http.Client, url, wantSHA256, dir str
 	return path, nil
 }
 
-func DownloadUnverified(ctx context.Context, client *http.Client, url, dir string, meta Meta, task report.Task) (string, string, error) {
+func DownloadUnverified(ctx context.Context, client *http.Client, url, dir string, meta Meta, task console.Task) (string, string, error) {
 	resp, err := get(ctx, client, url, meta)
 	if err != nil {
 		return "", "", err
@@ -60,7 +59,7 @@ func DownloadUnverified(ctx context.Context, client *http.Client, url, dir strin
 	return tmpPath, sum, nil
 }
 
-func DigestURL(ctx context.Context, client *http.Client, url string, meta Meta, task report.Task) (string, error) {
+func DigestURL(ctx context.Context, client *http.Client, url string, meta Meta, task console.Task) (string, error) {
 	resp, err := get(ctx, client, url, meta)
 	if err != nil {
 		return "", err
@@ -95,41 +94,20 @@ func get(ctx context.Context, client *http.Client, url string, meta Meta) (*http
 	}
 }
 
-func digest(resp *http.Response, w io.Writer, task report.Task) (string, error) {
+func digest(resp *http.Response, w io.Writer, task console.Task) (string, error) {
 	sum := sha256.New()
 	dst := io.MultiWriter(w, sum)
 	if task != nil {
-		dst = io.MultiWriter(w, sum, newProgressWriter(task, resp.ContentLength))
+		dst = io.MultiWriter(w, sum, console.ProgressWriter(task, resp.ContentLength))
 	}
 	written, err := io.Copy(dst, resp.Body)
 	if task != nil {
-		task.Progress(written, resp.ContentLength, report.Bytes)
+		task.Progress(written, resp.ContentLength, console.Bytes)
 	}
 	if err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(sum.Sum(nil)), nil
-}
-
-type progressWriter struct {
-	task     report.Task
-	total    int64
-	written  int64
-	reported int64
-}
-
-func newProgressWriter(task report.Task, total int64) *progressWriter {
-	return &progressWriter{task: task, total: total}
-}
-
-func (w *progressWriter) Write(p []byte) (int, error) {
-	n := len(p)
-	w.written += int64(n)
-	if w.written-w.reported >= progressChunk {
-		w.reported = w.written
-		w.task.Progress(w.written, w.total, report.Bytes)
-	}
-	return n, nil
 }
 
 func GitHubURL(repo, version, asset string) string {

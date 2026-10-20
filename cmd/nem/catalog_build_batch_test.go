@@ -8,10 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vi-dev/clix/console"
+
 	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/build"
 	"github.com/vi-dev/nem/internal/ocix/ocixtest"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
 )
@@ -146,7 +147,7 @@ func TestCatalogBuildMissingPlansAllIncompleteVersions(t *testing.T) {
 
 func TestRenderSummaryFailsAndHintsOnPushFailure(t *testing.T) {
 	var out, errb bytes.Buffer
-	testx.Swap(t, &console, report.New(&out, &errb, report.Options{Color: report.ColorNever}))
+	testx.Swap(t, &ui, console.New(&out, &errb, console.Options{Color: console.ColorNever}))
 
 	err := renderSummary([]build.SummaryRow{
 		{Name: "alpha", Version: "1.0.0", Result: "pushed", Detail: "-"},

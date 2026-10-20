@@ -12,5 +12,6 @@ Commands, file formats, the on-disk layout, and the variables nem reads and sets
   {{< card link="config-yaml/" title="config.yaml" subtitle="nem's global configuration: catalogs and per-host settings." >}}
   {{< card link="pkg-yaml/" title="pkg.yaml" subtitle="The package manifest: every field, with the rules lint enforces." >}}
   {{< card link="nem-home/" title="NEM_HOME" subtitle="The on-disk layout of everything nem manages." >}}
+  {{< card link="narration/" title="Narration" subtitle="The --narration flag and the JSON event stream for agents and CI." >}}
   {{< card link="environment/" title="Configuration variables" subtitle="Every environment variable nem reads, and every one it sets." >}}
 {{< /cards >}}

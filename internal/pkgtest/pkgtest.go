@@ -9,19 +9,25 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/vi-dev/clix/console"
+
 	"github.com/vi-dev/nem/internal/build"
 	"github.com/vi-dev/nem/internal/envx"
 	"github.com/vi-dev/nem/internal/fsx"
 	"github.com/vi-dev/nem/internal/home"
 	"github.com/vi-dev/nem/internal/install"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/usage"
 )
 
-func InstallAndRun(ctx context.Context, h home.Home, deps []build.ResolvedDep,
+type Output interface {
+	console.Lines
+	console.Streams
+}
+
+func InstallAndRun(ctx context.Context, out Output, h home.Home, deps []build.ResolvedDep,
 	pkg *spec.Package, version, catalogName, artifactPath string) (err error) {
-	rep := report.FromContext(ctx)
+	rep := console.FromContext(ctx)
 
 	r, recipeErr := pkg.Recipe(version)
 	if recipeErr != nil {
@@ -73,10 +79,10 @@ func InstallAndRun(ctx context.Context, h home.Home, deps []build.ResolvedDep,
 	}
 	if len(steps) == 0 {
 		if len(r.Test) > 0 {
-			rep.Info("No test of %s applies to %s; nothing asserted", pkg.Name, plat)
-			rep.Success("Installed %s %s (no test for %s)", pkg.Name, version, plat)
+			out.Infof("No test of %s applies to %s; nothing asserted", pkg.Name, plat)
+			out.Successf("Installed %s %s (no test for %s)", pkg.Name, version, plat)
 		} else {
-			rep.Success("Installed %s %s (declares no tests)", pkg.Name, version)
+			out.Successf("Installed %s %s (declares no tests)", pkg.Name, version)
 		}
 		return nil
 	}
@@ -115,13 +121,13 @@ func InstallAndRun(ctx context.Context, h home.Home, deps []build.ResolvedDep,
 		c := exec.CommandContext(ctx, "sh", "-c", loaderPrologue+s.Run)
 		c.Dir = scratch
 		c.Env = env
-		c.Stdout = rep.Out()
-		c.Stderr = rep.ErrOut()
+		c.Stdout = out.Out()
+		c.Stderr = out.ErrOut()
 		if runErr := c.Run(); runErr != nil {
 			return fmt.Errorf("test step %d (%q): %w", i+1, s.Run, runErr)
 		}
 	}
-	rep.Success("Tested %s %s (%s)", pkg.Name, version, report.Plural(len(steps), "step"))
+	out.Successf("Tested %s %s (%s)", pkg.Name, version, console.Plural(len(steps), "step"))
 	return nil
 }
 
@@ -155,19 +161,19 @@ func removeUsageRow(h home.Home, key string) error {
 	return usage.Save(h, idx)
 }
 
-func applyPackageEnv(r *spec.Recipe, name, installDir, version string, plat spec.Platform, env []string, rep report.Reporter) []string {
+func applyPackageEnv(r *spec.Recipe, name, installDir, version string, plat spec.Platform, env []string, rep console.Narrator) []string {
 	vars := map[string]string{}
 	for _, export := range r.Env {
 		if !spec.PlatformsInclude(export.Platforms, plat) {
 			continue
 		}
 		if envx.IsReserved(export.Name) {
-			rep.Warn("reserved env var %q from %s skipped", export.Name, name)
+			rep.Warnf("reserved env var %q from %s skipped", export.Name, name)
 			continue
 		}
 		value, err := envx.RenderEnvTemplate(export.Value, installDir, version)
 		if err != nil {
-			rep.Warn("env %q from %s: %v", export.Name, name, err)
+			rep.Warnf("env %q from %s: %v", export.Name, name, err)
 			continue
 		}
 		vars[export.Name] = value

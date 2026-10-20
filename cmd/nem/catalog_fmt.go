@@ -86,7 +86,7 @@ func newCatalogFmtCmd() *cobra.Command {
 				if err := editor.WriteFiles(ctx, name, formatted); err != nil {
 					return err
 				}
-				console.Success("Formatted %s", name)
+				ui.Successf("Formatted %s", name)
 			}
 			return nil
 		},

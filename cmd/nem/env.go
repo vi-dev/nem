@@ -113,13 +113,13 @@ func runEnv(shellName string) error {
 
 	result := envx.Compose(projManifest, globalManifest, projLock, globalLock, nemHome, installMetaLookup, os.LookupEnv)
 	for _, w := range result.Warnings {
-		console.Warn("%s", w)
+		ui.Warn(w)
 	}
 
 	script, err := shell.EnvScript(dialect, result, os.LookupEnv)
 	if err != nil {
 		return err
 	}
-	console.Data("%s", script)
+	ui.Data("%s", script)
 	return nil
 }

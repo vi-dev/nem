@@ -18,10 +18,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vi-dev/clix/console"
+	"github.com/vi-dev/clix/console/consoletest"
+
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/discover"
 	"github.com/vi-dev/nem/internal/fetch"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
 )
@@ -29,8 +31,8 @@ import (
 func runBump(t *testing.T, opts Options, target string) (res *Result, stderr string, err error) {
 	t.Helper()
 	var errb bytes.Buffer
-	console := report.New(io.Discard, &errb, report.Options{Color: report.ColorNever})
-	res, err = Run(report.NewContext(context.Background(), console), target, opts)
+	ui := console.New(io.Discard, &errb, console.Options{Color: console.ColorNever})
+	res, err = Run(console.NewContext(context.Background(), ui), target, opts)
 	return res, errb.String(), err
 }
 
@@ -974,7 +976,7 @@ func TestBumpCancellationEndsTasksAsCancelled(t *testing.T) {
 		cancel()
 		return nil, ctx.Err()
 	})
-	ctx, rep := testx.ReporterContext(ctx)
+	ctx, rep := consoletest.Context(ctx)
 
 	_, err := Run(ctx, dir, Options{})
 	if !errors.Is(err, context.Canceled) {
@@ -1000,7 +1002,7 @@ func TestBumpBackportHashesFrozenRecipePlatformsOnly(t *testing.T) {
 	testx.WriteFile(t, filepath.Join(dir, "pkgs", "tool", "recipe@1.yaml"),
 		"artifact: {url: \"https://example.com/{{.Version}}-{{.OS}}-{{.Arch}}\"}\ninstall: [{extract: {}}]\nplatforms: [linux/amd64]\n")
 	var hashed []string
-	testx.Swap(t, &digestURL, func(_ context.Context, _ *http.Client, url string, _ fetch.Meta, _ report.Task) (string, error) {
+	testx.Swap(t, &digestURL, func(_ context.Context, _ *http.Client, url string, _ fetch.Meta, _ console.Task) (string, error) {
 		hashed = append(hashed, url)
 		return "b", nil
 	})
@@ -1035,7 +1037,7 @@ func TestBumpBackportProbesMetaInTheFrozenRecipe(t *testing.T) {
 		return []discover.Discovered{{Version: "1.24.4", Meta: map[string]string{"date": "20260101"}}}, nil
 	})
 	var hashed []string
-	testx.Swap(t, &digestURL, func(_ context.Context, _ *http.Client, url string, _ fetch.Meta, _ report.Task) (string, error) {
+	testx.Swap(t, &digestURL, func(_ context.Context, _ *http.Client, url string, _ fetch.Meta, _ console.Task) (string, error) {
 		hashed = append(hashed, url)
 		return "b", nil
 	})

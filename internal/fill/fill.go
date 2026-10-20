@@ -9,6 +9,7 @@ import (
 	"sort"
 	"sync/atomic"
 
+	"github.com/vi-dev/clix/console"
 	"golang.org/x/sync/errgroup"
 	"oras.land/oras-go/v2"
 
@@ -17,7 +18,6 @@ import (
 	"github.com/vi-dev/nem/internal/home"
 	"github.com/vi-dev/nem/internal/netx"
 	"github.com/vi-dev/nem/internal/ocix"
-	"github.com/vi-dev/nem/internal/report"
 )
 
 type Options struct {
@@ -105,14 +105,12 @@ func Run(ctx context.Context, h home.Home, opts Options) (Summary, error) {
 }
 
 func stageCatalog(ctx context.Context, ref string) (*ocix.Store, error) {
-	labels := report.TaskLabels{
-		Run:     "Pulling catalog " + ref,
-		Segment: "pulling manifest",
-		Done:    "Pulled catalog " + ref,
-		Fail:    "Failed to pull catalog " + ref,
+	outcomes := console.Outcomes{
+		Done:   "Pulled catalog " + ref,
+		Failed: "Failed to pull catalog " + ref,
 	}
 	var store *ocix.Store
-	err := report.RunTask(ctx, labels, func(count report.ProgressFunc) error {
+	err := console.RunTask(ctx, "Pulling catalog "+ref, "pulling manifest", outcomes, func(count console.ProgressFunc) error {
 		src, srcTag, err := openCatalog(ref)
 		if err != nil {
 			return err

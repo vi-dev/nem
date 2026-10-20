@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
-	"errors"
+	"context"
 	"io"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/vi-dev/clix"
 
 	"github.com/vi-dev/nem/internal/home"
 	"github.com/vi-dev/nem/internal/project"
@@ -23,18 +25,14 @@ func execNem(t *testing.T, nemHomeDir string, in io.Reader, out, errOut io.Write
 	root.SetOut(out)
 	root.SetErr(errOut)
 	root.SetArgs(args)
-	return root.Execute()
+	_, err := clix.Execute(context.Background(), root, nemOptions())
+	return err
 }
 
 func runNem(t *testing.T, nemHomeDir string, args ...string) (string, string, error) {
 	t.Helper()
 	var out, errb bytes.Buffer
 	err := execNem(t, nemHomeDir, nil, &out, &errb, append(args, "--color", "never")...)
-	if err != nil && ranHook && console != nil {
-		if _, exit := errors.AsType[*ExitError](err); !exit {
-			console.Error(err, hintFor(err))
-		}
-	}
 	return out.String(), errb.String(), err
 }
 

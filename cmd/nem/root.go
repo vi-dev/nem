@@ -1,31 +1,53 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"os"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
+	"github.com/vi-dev/clix"
+	"github.com/vi-dev/clix/console"
 
 	"github.com/vi-dev/nem/internal/config"
 	"github.com/vi-dev/nem/internal/home"
 	"github.com/vi-dev/nem/internal/netx"
-	"github.com/vi-dev/nem/internal/report"
 )
 
 var (
-	console *report.Console
+	ui      *console.Console
 	nemHome home.Home
 	ranHook bool
-
-	flagQuiet   bool
-	flagVerbose bool
-	flagColor   string
 )
+
+func nemOptions() clix.Options {
+	return clix.Options{
+		App:       "nem",
+		Version:   version,
+		EnvPrefix: "NEM",
+		Hint:      hintFor,
+		Setup:     setup,
+	}
+}
+
+func setup(ctx context.Context, c *console.Console) (context.Context, error) {
+	ui = c
+	ranHook = true
+	nemHome = home.Resolve(os.Getenv)
+	hosts, warnings := config.LoadHostSettingsLenient(nemHome)
+	for _, w := range warnings {
+		c.Warnf("%s", w)
+	}
+	settings := make(map[string]netx.HostSettings, len(hosts))
+	for host, e := range hosts {
+		settings[host] = netx.HostSettings{CA: e.CA, PlainHTTP: e.PlainHTTP, Insecure: e.Insecure}
+	}
+	netx.Set(settings)
+	return ctx, nil
+}
 
 func newRoot() *cobra.Command {
 	ranHook = false
-	console = nil
+	ui = nil
 	nemHome = home.Home{}
 	root := &cobra.Command{
 		Use:   "nem",
@@ -40,40 +62,8 @@ func newRoot() *cobra.Command {
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			ranHook = true
-			mode, err := resolveColorMode(flagColor, os.Getenv("NO_COLOR") != "")
-			if err != nil {
-				ranHook = false
-				return err
-			}
-			console = report.New(cmd.OutOrStdout(), cmd.ErrOrStderr(), report.Options{
-				Quiet:   flagQuiet,
-				Verbose: flagVerbose,
-				Color:   mode,
-				IsTTY:   term.IsTerminal(int(os.Stderr.Fd())),
-			})
-			nemHome = home.Resolve(os.Getenv)
-			hosts, warnings := config.LoadHostSettingsLenient(nemHome)
-			for _, w := range warnings {
-				console.Warn("%s", w)
-			}
-
-			settings := make(map[string]netx.HostSettings, len(hosts))
-			for host, e := range hosts {
-				settings[host] = netx.HostSettings{CA: e.CA, PlainHTTP: e.PlainHTTP, Insecure: e.Insecure}
-			}
-			netx.Set(settings)
-			cmd.SetContext(report.NewContext(cmd.Context(), console))
-			return nil
-		},
 	}
 	root.SetVersionTemplate("{{.Version}}\n")
-	pf := root.PersistentFlags()
-	pf.BoolVarP(&flagQuiet, "quiet", "q", false, "suppress narration output")
-	pf.BoolVar(&flagVerbose, "verbose", false, "show debug output")
-	pf.StringVar(&flagColor, "color", "auto", "colorize output: auto, always, or never")
-	_ = root.RegisterFlagCompletionFunc("color", cobra.FixedCompletions([]string{"auto", "always", "never"}, cobra.ShellCompDirectiveNoFileComp))
 
 	root.AddGroup(
 		&cobra.Group{ID: groupEnvironment, Title: "Environment:"},
@@ -104,22 +94,4 @@ func addGrouped(parent *cobra.Command, groupID string, cmds ...*cobra.Command) {
 		c.GroupID = groupID
 	}
 	parent.AddCommand(cmds...)
-}
-
-func resolveColorMode(flagColor string, noColor bool) (report.Mode, error) {
-	var mode report.Mode
-	switch flagColor {
-	case "auto":
-		mode = report.ColorAuto
-	case "always":
-		mode = report.ColorAlways
-	case "never":
-		mode = report.ColorNever
-	default:
-		return 0, fmt.Errorf("invalid --color value %q (want auto, always, or never)", flagColor)
-	}
-	if mode == report.ColorAuto && noColor {
-		mode = report.ColorNever
-	}
-	return mode, nil
 }

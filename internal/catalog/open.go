@@ -6,13 +6,13 @@ import (
 	"os"
 	"strings"
 
+	"github.com/vi-dev/clix/console"
 	"oras.land/oras-go/v2"
 
 	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/config"
 	"github.com/vi-dev/nem/internal/home"
 	"github.com/vi-dev/nem/internal/ocix"
-	"github.com/vi-dev/nem/internal/report"
 )
 
 func OpenConfigured(cfg *config.Config, h home.Home) (*Set, error) {
@@ -88,14 +88,12 @@ func SetRemoteTarget(f func(ref string) (oras.ReadOnlyTarget, string, error)) (r
 }
 
 var openRemote = func(ctx context.Context, ref string) (Catalog, error) {
-	labels := report.TaskLabels{
-		Run:     "Pulling catalog " + ref,
-		Segment: "pulling manifest",
-		Done:    "Pulled catalog " + ref,
-		Fail:    "Failed to pull catalog " + ref,
+	outcomes := console.Outcomes{
+		Done:   "Pulled catalog " + ref,
+		Failed: "Failed to pull catalog " + ref,
 	}
 	var store *ocix.Store
-	err := report.RunTask(ctx, labels, func(progress report.ProgressFunc) error {
+	err := console.RunTask(ctx, "Pulling catalog "+ref, "pulling manifest", outcomes, func(progress console.ProgressFunc) error {
 		src, tag, err := remoteTarget(ref)
 		if err != nil {
 			return err
@@ -113,14 +111,12 @@ var openRemote = func(ctx context.Context, ref string) (Catalog, error) {
 }
 
 var openRemoteIndex = func(ctx context.Context, ref string) (Catalog, error) {
-	labels := report.TaskLabels{
-		Run:     "Reading catalog " + ref,
-		Segment: "reading index",
-		Done:    "Read catalog " + ref,
-		Fail:    "Failed to read catalog " + ref,
+	outcomes := console.Outcomes{
+		Done:   "Read catalog " + ref,
+		Failed: "Failed to read catalog " + ref,
 	}
 	var store *ocix.Store
-	err := report.RunTask(ctx, labels, func(report.ProgressFunc) error {
+	err := console.RunTask(ctx, "Reading catalog "+ref, "reading index", outcomes, func(console.ProgressFunc) error {
 		src, tag, err := remoteTarget(ref)
 		if err != nil {
 			return err

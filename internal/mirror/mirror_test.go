@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vi-dev/clix/console/consoletest"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
@@ -35,7 +36,7 @@ func TestRunStagesCatalogAndReadsSrcIndexOnce(t *testing.T) {
 
 	stagingOnly := &testx.CountingTarget{ReadOnlyTarget: srcStore}
 	wireCatalog(t, stagingOnly, srcTag, memory.New(), "v2")
-	stagingCtx, _ := testx.ReporterContext(context.Background())
+	stagingCtx, _ := consoletest.Context(context.Background())
 	if _, err := copyCatalog(stagingCtx, opts); err != nil {
 		t.Fatalf("copyCatalog: %v", err)
 	}
@@ -52,7 +53,7 @@ func TestRunStagesCatalogAndReadsSrcIndexOnce(t *testing.T) {
 	wireCatalog(t, counted, srcTag, memory.New(), "v2")
 	wireArchives(t, testx.NewArchiveFixtures(), testx.NewArchiveFixtures())
 
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	summary, err := Run(ctx, opts)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -79,7 +80,7 @@ func TestRunPublishesCatalogDigestChecked(t *testing.T) {
 	wireCatalog(t, srcStore, srcTag, dst, "mirrored")
 	wireArchives(t, testx.NewArchiveFixtures(), testx.NewArchiveFixtures())
 
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	if _, err := Run(ctx, Options{SrcRef: "example.com/cat:v2", DstRef: "internal.example.com/cat:mirrored"}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -99,7 +100,7 @@ func TestRunDryRunSkipsCatalogPublishEntirely(t *testing.T) {
 	dstOpened := wireCatalog(t, srcStore, srcTag, dst, "v2")
 	wireArchives(t, testx.NewArchiveFixtures(), testx.NewArchiveFixtures())
 
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	summary, err := Run(ctx, Options{SrcRef: "example.com/cat:v2", DstRef: "internal.example.com/cat:v2", DryRun: true})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -142,7 +143,7 @@ func TestRunCopiesAbsentAndHealsDifferingArchives(t *testing.T) {
 	wireCatalog(t, srcStore, srcTag, dstCatalog, "v2")
 	wireArchives(t, src, dst)
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	summary, err := Run(ctx, Options{SrcRef: "example.com/cat:v2", DstRef: "internal.example.com/cat:v2"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -158,7 +159,7 @@ func TestRunCopiesAbsentAndHealsDifferingArchives(t *testing.T) {
 	if presentTask == nil {
 		t.Fatal("no task for present")
 	}
-	if statuses := presentTask.Statuses(); len(statuses) != 1 || statuses[0] != "probing" {
+	if statuses := presentTask.Phases(); len(statuses) != 1 || statuses[0] != "probing" {
 		t.Fatalf("present statuses = %v, want [\"probing\"] only: present items must not add a status update", statuses)
 	}
 
@@ -166,7 +167,7 @@ func TestRunCopiesAbsentAndHealsDifferingArchives(t *testing.T) {
 	if absentTask == nil {
 		t.Fatal("no task for absent")
 	}
-	if statuses := absentTask.Statuses(); len(statuses) != 2 || statuses[0] != "probing" || statuses[1] != "copying 1.0.0" {
+	if statuses := absentTask.Phases(); len(statuses) != 2 || statuses[0] != "probing" || statuses[1] != "copying 1.0.0" {
 		t.Fatalf("absent statuses = %v, want [\"probing\" \"copying 1.0.0\"]", statuses)
 	}
 
@@ -191,7 +192,7 @@ func TestRunUnfilledIsSilent(t *testing.T) {
 	wireCatalog(t, srcStore, srcTag, dstCatalog, "v2")
 	wireArchives(t, testx.NewArchiveFixtures(), testx.NewArchiveFixtures())
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	summary, err := Run(ctx, Options{SrcRef: "example.com/cat:v2", DstRef: "internal.example.com/cat:v2"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -221,7 +222,7 @@ func TestRunPrebuiltMissingTagWarnsAndFails(t *testing.T) {
 	wireCatalog(t, srcStore, srcTag, dstCatalog, "v2")
 	wireArchives(t, testx.NewArchiveFixtures(), testx.NewArchiveFixtures())
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	summary, err := Run(ctx, Options{SrcRef: "example.com/cat:v2", DstRef: "internal.example.com/cat:v2"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -254,7 +255,7 @@ func TestRunAbsoluteOCIRefIsFullyIgnored(t *testing.T) {
 	dst := testx.NewArchiveFixtures()
 	wireArchives(t, src, dst)
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	summary, err := Run(ctx, Options{SrcRef: "example.com/cat:v2", DstRef: "internal.example.com/cat:v2"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -319,7 +320,7 @@ func TestRunWarnAndContinueSiblingCompletes(t *testing.T) {
 		return nil, fmt.Errorf("unexpected archives ref %s", ref)
 	}))
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	summary, err := Run(ctx, Options{SrcRef: "example.com/cat:v2", DstRef: "internal.example.com/cat:v2"})
 	if err != nil {
 		t.Fatalf("Run must not abort on an item failure: %v", err)
@@ -358,7 +359,7 @@ func TestRunCopyFailureIsWarnedAndCounted(t *testing.T) {
 	dst.Set("go", &testx.RejectPushTarget{Target: memory.New()})
 	wireArchives(t, src, dst)
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	summary, err := Run(ctx, Options{SrcRef: "example.com/cat:v2", DstRef: "internal.example.com/cat:v2"})
 	if err != nil {
 		t.Fatalf("Run must not abort on a copy failure: %v", err)
@@ -387,7 +388,7 @@ func TestRunMidCopyCancellationIsNotWarnedOrCounted(t *testing.T) {
 	dst.Set("go", &testx.CancelOnPushTarget{Target: memory.New(), Cancel: cancel})
 	wireArchives(t, src, dst)
 
-	ctx, rep := testx.ReporterContext(baseCtx)
+	ctx, rep := consoletest.Context(baseCtx)
 	summary, err := Run(ctx, Options{SrcRef: "example.com/cat:v2", DstRef: "internal.example.com/cat:v2"})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run error = %v, want context.Canceled", err)
@@ -432,7 +433,7 @@ func TestRunDeterministicSummaryUnderParallel(t *testing.T) {
 	wireCatalog(t, srcStore, srcTag, dstCatalog, "v2")
 	wireArchives(t, src, dst)
 
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	summary, err := Run(ctx, Options{SrcRef: "example.com/cat:v2", DstRef: "internal.example.com/cat:v2"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -444,7 +445,7 @@ func TestRunDeterministicSummaryUnderParallel(t *testing.T) {
 }
 
 func TestRunRejectsUntaggedRefs(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	if _, err := Run(ctx, Options{SrcRef: "example.com/cat", DstRef: "internal.example.com/cat:v2"}); err == nil {
 		t.Fatal("untagged src ref must be rejected")
 	}
@@ -462,7 +463,7 @@ func TestRunCtxCancelledBeforeStartAborts(t *testing.T) {
 	baseCtx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	ctx, _ := testx.ReporterContext(baseCtx)
+	ctx, _ := consoletest.Context(baseCtx)
 	_, err := Run(ctx, Options{SrcRef: "example.com/cat:v2", DstRef: "internal.example.com/cat:v2"})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run error = %v, want context.Canceled", err)
@@ -472,7 +473,7 @@ func TestRunCtxCancelledBeforeStartAborts(t *testing.T) {
 	}
 }
 
-func wantStableProgress(t *testing.T, taskName string, counts []testx.ProgressCall, wantTotal int64) {
+func wantStableProgress(t *testing.T, taskName string, counts []consoletest.ProgressCall, wantTotal int64) {
 	t.Helper()
 	if len(counts) == 0 {
 		t.Fatalf("no Progress calls recorded on the %s task", taskName)
@@ -499,7 +500,7 @@ func TestPullCatalogReportsProgressOnPullingTask(t *testing.T) {
 	wireCatalog(t, srcStore, srcTag, memory.New(), "v2")
 	wireArchives(t, testx.NewArchiveFixtures(), testx.NewArchiveFixtures())
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	opts := Options{SrcRef: "example.com/cat:v2", DstRef: "internal.example.com/cat:v2", DryRun: true}
 	if _, err := Run(ctx, opts); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -509,7 +510,7 @@ func TestPullCatalogReportsProgressOnPullingTask(t *testing.T) {
 	if task == nil {
 		t.Fatal("no Pulling catalog task")
 	}
-	if len(task.Statuses()) == 0 {
+	if len(task.Phases()) == 0 {
 		t.Fatal("no Status call recorded on the pull task: Progress alone never renders (segment stays \"\")")
 	}
 	wantStableProgress(t, "Pulling catalog example.com/cat:v2", task.ProgressCalls(), n+1)
@@ -530,7 +531,7 @@ func TestPushCatalogReportsProgressOnPushingTask(t *testing.T) {
 	wireCatalog(t, srcStore, srcTag, memory.New(), "v2")
 	wireArchives(t, testx.NewArchiveFixtures(), testx.NewArchiveFixtures())
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	opts := Options{SrcRef: "example.com/cat:v2", DstRef: "internal.example.com/cat:v2"}
 	if _, err := Run(ctx, opts); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -540,7 +541,7 @@ func TestPushCatalogReportsProgressOnPushingTask(t *testing.T) {
 	if task == nil {
 		t.Fatal("no Pushing catalog task")
 	}
-	if len(task.Statuses()) == 0 {
+	if len(task.Phases()) == 0 {
 		t.Fatal("no Status call recorded on the push task: Progress alone never renders (segment stays \"\")")
 	}
 	wantStableProgress(t, "Pushing catalog internal.example.com/cat:v2", task.ProgressCalls(), n+1)

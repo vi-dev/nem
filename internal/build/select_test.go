@@ -12,13 +12,14 @@ import (
 	"testing"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/vi-dev/clix/console"
+	"github.com/vi-dev/clix/console/consoletest"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/build"
 	"github.com/vi-dev/nem/internal/catalog"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
 )
@@ -717,7 +718,7 @@ func TestSelectMissingSelectsVersionsOfAFrozenBuildableRecipe(t *testing.T) {
 }
 
 func TestSelectMissingNarratesTheCheckAsOneTask(t *testing.T) {
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	const ref = "ghcr.io/org/cat:v2"
 	src := &fakeCatalogSource{
 		names: []string{"pretool", "tgttool"},
@@ -748,10 +749,10 @@ func TestSelectMissingNarratesTheCheckAsOneTask(t *testing.T) {
 	if done, _, outcome := task.Snapshot(); !done || outcome != "Checked 1 package: 2 incomplete versions, 1 prebuilt skipped" {
 		t.Fatalf("outcome = %q (done %v)", outcome, done)
 	}
-	if calls := task.ProgressCalls(); len(calls) == 0 || calls[len(calls)-1].Done != 2 || calls[len(calls)-1].Total != 2 || calls[len(calls)-1].Unit != report.Items {
+	if calls := task.ProgressCalls(); len(calls) == 0 || calls[len(calls)-1].Done != 2 || calls[len(calls)-1].Total != 2 || calls[len(calls)-1].Unit != console.Items {
 		t.Fatalf("progress = %+v, want it to reach 2/2 versions", calls)
 	}
-	if got := task.Statuses(); !slices.Contains(got, "checking") {
+	if got := task.Phases(); !slices.Contains(got, "checking") {
 		t.Fatalf("segments = %v, want \"checking\"", got)
 	}
 }

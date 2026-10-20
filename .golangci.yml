@@ -8,9 +8,27 @@ linters:
     forbidigo:
       forbid:
         - pattern: ^fmt\.F?[Pp]rint(f|ln)?$
-          msg: terminal output goes through report.Console (narration to stderr, Data/JSON/Table to stdout)
+          msg: terminal output goes through console.Console (narration to stderr, Data/JSON/Table to stdout)
         - pattern: ^print(ln)?$
-          msg: the print builtins bypass report.Console
+          msg: the print builtins bypass console.Console
+    govet:
+      enable:
+        - printf
+      settings:
+        printf:
+          funcs:
+            - Info
+            - Infof
+            - Success
+            - Successf
+            - Warn
+            - Warnf
+            - Debug
+            - Debugf
+            - Hint
+            - Hintf
+            - Prompt
+            - Promptf
     errcheck:
       exclude-functions:
         - (io.Closer).Close

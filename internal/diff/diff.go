@@ -7,11 +7,11 @@ import (
 	"slices"
 	"sync/atomic"
 
+	"github.com/vi-dev/clix/console"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/ocix"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -103,12 +103,12 @@ func Compare(ctx context.Context, base, target string, packages []string) (*Resu
 		changed bool
 	}
 	outcomes := make([]outcome, len(names))
-	subject := report.Plural(len(names), "package")
-	task := report.FromContext(ctx).Task("Comparing " + subject)
-	task.Segment("comparing")
+	subject := console.Plural(len(names), "package")
+	task := console.FromContext(ctx).Start("Comparing " + subject)
+	task.Phase("comparing")
 	var done atomic.Int64
 	total := int64(len(names))
-	task.Progress(0, total, report.Items)
+	task.Progress(0, total, console.Items)
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(compareConcurrency)
 	for i, p := range plans {
@@ -120,7 +120,7 @@ func Compare(ctx context.Context, base, target string, packages []string) (*Resu
 				}
 				outcomes[i] = outcome{change: c, changed: changed}
 			}
-			task.Progress(done.Add(1), total, report.Items)
+			task.Progress(done.Add(1), total, console.Items)
 			return nil
 		})
 	}

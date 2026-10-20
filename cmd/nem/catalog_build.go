@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/vi-dev/clix/console"
 
 	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/build"
@@ -125,7 +126,7 @@ func runCatalogBuild(cmd *cobra.Command, cat string, in buildInput) error {
 		return err
 	}
 	if len(plan.Entries) == 0 {
-		console.Success("Nothing to build")
+		ui.Success("Nothing to build")
 		return nil
 	}
 
@@ -142,7 +143,7 @@ func runCatalogBuild(cmd *cobra.Command, cat string, in buildInput) error {
 		return err
 	}
 	if len(rows) == 0 {
-		console.Success("Nothing to build on %s", spec.Current())
+		ui.Successf("Nothing to build on %s", spec.Current())
 		return nil
 	}
 	return renderSummary(rows)
@@ -151,12 +152,12 @@ func runCatalogBuild(cmd *cobra.Command, cat string, in buildInput) error {
 var runPkgTest = pkgtest.InstallAndRun
 
 func batchTestFor(set *catalog.Set) func(
-	*spec.Package, *archive.Dir) func(context.Context, *spec.Package, string, string) error {
-	return func(pkg *spec.Package, store *archive.Dir) func(context.Context, *spec.Package, string, string) error {
+	*spec.Package, *archive.Dir) func(context.Context, console.Task, *spec.Package, string, string) error {
+	return func(pkg *spec.Package, store *archive.Dir) func(context.Context, console.Task, *spec.Package, string, string) error {
 		if !hasTestSteps(pkg) {
 			return nil
 		}
-		return func(ctx context.Context, p *spec.Package, v, artifactPath string) error {
+		return func(ctx context.Context, task console.Task, p *spec.Package, v, artifactPath string) error {
 			r, err := p.Recipe(v)
 			if err != nil {
 				return err
@@ -168,7 +169,7 @@ func batchTestFor(set *catalog.Set) func(
 			if err != nil {
 				return err
 			}
-			return runPkgTest(ctx, nemHome, deps, p, v, "", artifactPath)
+			return runPkgTest(ctx, task, nemHome, deps, p, v, "", artifactPath)
 		}
 	}
 }
@@ -193,7 +194,7 @@ func renderPlan(plan build.Plan) {
 		}
 		rows[i] = []string{strconv.Itoa(e.Wave), e.Pkg.Name, e.Version, e.Reason, needs, strings.Join(plats, ",")}
 	}
-	console.Table([]string{"WAVE", "PACKAGE", "VERSION", "REASON", "NEEDS", "PLATFORMS"}, rows)
+	ui.Table([]string{"WAVE", "PACKAGE", "VERSION", "REASON", "NEEDS", "PLATFORMS"}, rows)
 }
 
 func narrateDryRunPushes(plan build.Plan, t *build.Target, push bool) error {
@@ -209,7 +210,7 @@ func narrateDryRunPushes(plan build.Plan, t *build.Target, push bool) error {
 		if err != nil {
 			return err
 		}
-		console.Info("Would push %s:%s (%s)", ref, e.Version, plat)
+		ui.Infof("Would push %s:%s (%s)", ref, e.Version, plat)
 	}
 	return nil
 }
@@ -226,17 +227,17 @@ func renderSummary(rows []build.SummaryRow) error {
 	for i, r := range rows {
 		table[i] = []string{r.Name, r.Version, r.Result, r.Detail}
 	}
-	console.Table([]string{"PACKAGE", "VERSION", "RESULT", "DETAIL"}, table)
+	ui.Table([]string{"PACKAGE", "VERSION", "RESULT", "DETAIL"}, table)
 
 	built, pushed, failed, skipped, pushFailed, err := build.Verdict(rows)
 	verdict := fmt.Sprintf("%d built (%d pushed), %d failed, %d skipped", built, pushed, failed, skipped)
 	if failed+skipped > 0 || pushFailed > 0 {
-		console.Warn("%s", verdict)
+		ui.Warn(verdict)
 	} else {
-		console.Success("%s", verdict)
+		ui.Success(verdict)
 	}
 	if pushFailed > 0 {
-		console.Hint("Re-run with --missing to retry failed pushes")
+		ui.Hint("Re-run with --missing to retry failed pushes")
 	}
 	return err
 }

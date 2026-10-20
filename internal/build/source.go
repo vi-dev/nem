@@ -7,13 +7,14 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/vi-dev/clix/console"
+
 	"github.com/vi-dev/nem/internal/extract"
 	"github.com/vi-dev/nem/internal/fetch"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
-func fetchSource(ctx context.Context, client *http.Client, url, wantSHA256, dir string, meta fetch.Meta, task report.Task) (path, sha256sum string, verified bool, err error) {
+func fetchSource(ctx context.Context, client *http.Client, url, wantSHA256, dir string, meta fetch.Meta, task console.Task) (path, sha256sum string, verified bool, err error) {
 	if wantSHA256 != "" {
 		path, err := fetch.Download(ctx, client, url, wantSHA256, dir, meta, task)
 		if err != nil {

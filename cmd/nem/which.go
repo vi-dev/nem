@@ -31,11 +31,11 @@ func runWhich(args []string) error {
 	for _, name := range args {
 		resolved, lookErr := lookPath(name, pathValue)
 		if lookErr != nil {
-			console.Warn("%s: not found", name)
+			ui.Warnf("%s: not found", name)
 			anyUnresolved = true
 			continue
 		}
-		console.Data("%s\n", resolved)
+		ui.Data("%s\n", resolved)
 	}
 	if anyUnresolved {
 		return &ExitError{Code: 1}

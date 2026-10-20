@@ -76,7 +76,7 @@ func runInfo(cmd *cobra.Command, arg string) error {
 		if f.value == "" {
 			continue
 		}
-		console.Data("%-12s %s\n", f.label+":", f.value)
+		ui.Data("%-12s %s\n", f.label+":", f.value)
 	}
 	return nil
 }

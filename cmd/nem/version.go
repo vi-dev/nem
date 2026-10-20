@@ -26,7 +26,7 @@ func newVersionCmd() *cobra.Command {
 			"  nem --version                # the version string alone",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			console.Data("%s", versionInfo())
+			ui.Data("%s", versionInfo())
 			return nil
 		},
 	}

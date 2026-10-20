@@ -6,11 +6,11 @@ import (
 	"slices"
 
 	"github.com/spf13/cobra"
+	"github.com/vi-dev/clix/console"
 
 	"github.com/vi-dev/nem/internal/envx"
 	"github.com/vi-dev/nem/internal/install"
 	"github.com/vi-dev/nem/internal/project"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -72,7 +72,7 @@ func runStatus(global bool) error {
 		}
 		rows = append(rows, []string{tool.Key.Name, tool.Version, catalog, lockedCell, installedCell})
 	}
-	console.Table([]string{"PACKAGE", "VERSION", "CATALOG", "LOCKED", "INSTALLED"}, rows)
+	ui.Table([]string{"PACKAGE", "VERSION", "CATALOG", "LOCKED", "INSTALLED"}, rows)
 
 	var other *project.Manifest
 	var otherLock *project.Lockfile
@@ -100,15 +100,15 @@ func runStatus(global bool) error {
 
 	result := envx.ComposeScope(m, other, lock, otherLock, nemHome, installMetaLookup, os.LookupEnv)
 	for _, w := range result.Warnings {
-		console.Warn("%s", w)
+		ui.Warn(w)
 	}
 	if len(result.Vars) > 0 {
-		console.Blank()
+		ui.Blank()
 		var envRows [][]string
 		for _, v := range result.Vars {
 			envRows = append(envRows, []string{v.Name, v.Value, v.Source})
 		}
-		console.Table([]string{"VARIABLE", "VALUE", "SOURCE"}, envRows)
+		ui.Table([]string{"VARIABLE", "VALUE", "SOURCE"}, envRows)
 	}
 	return nil
 }
@@ -118,12 +118,12 @@ func warnMissingInstalls(projLock, globalLock *project.Lockfile) {
 	if nProj == 0 && nGlobal == 0 {
 		return
 	}
-	console.BlankErr()
+	ui.BlankErr()
 	if nProj > 0 {
-		console.Warn("%s not installed — run `nem sync`", report.Plural(nProj, "project package"))
+		ui.Warnf("%s not installed — run `nem sync`", console.Plural(nProj, "project package"))
 	}
 	if nGlobal > 0 {
-		console.Warn("%s not installed — run `nem sync -g`", report.Plural(nGlobal, "global package"))
+		ui.Warnf("%s not installed — run `nem sync -g`", console.Plural(nGlobal, "global package"))
 	}
 }
 
@@ -146,12 +146,12 @@ func warnLinkDrift(lock *project.Lockfile, locked map[string]string) {
 		}
 		have, err := install.ReadLinks(dir)
 		if err != nil {
-			console.Warn("%s %s: cannot read dependency links — %v", e.Name, e.Version, err)
+			ui.Warnf("%s %s: cannot read dependency links — %v", e.Name, e.Version, err)
 			continue
 		}
 		for _, dep := range slices.Sorted(maps.Keys(have)) {
 			if want := locked[dep]; want != "" && want != have[dep] {
-				console.Warn("%s %s: linked to %s %s, this scope locks %s — run `nem sync`", e.Name, e.Version, dep, have[dep], want)
+				ui.Warnf("%s %s: linked to %s %s, this scope locks %s — run `nem sync`", e.Name, e.Version, dep, have[dep], want)
 			}
 		}
 	}

@@ -7,10 +7,10 @@ import (
 	"slices"
 	"sync/atomic"
 
+	"github.com/vi-dev/clix/console"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/vi-dev/nem/internal/catalog"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/resolve"
 	"github.com/vi-dev/nem/internal/spec"
 )
@@ -269,11 +269,11 @@ func SelectMissing(ctx context.Context, t *Target, scope []spec.Ref) ([]Selectio
 		}
 	}
 
-	task := report.FromContext(ctx).Task("Checking archives at " + t.Ref)
-	task.Segment("checking")
+	task := console.FromContext(ctx).Start("Checking archives at " + t.Ref)
+	task.Phase("checking")
 	total := int64(len(checks))
 	var done atomic.Int64
-	task.Progress(0, total, report.Items)
+	task.Progress(0, total, console.Items)
 	absent := make([][]spec.Platform, len(checks))
 	errs := make([]error, len(checks))
 	g, gctx := errgroup.WithContext(ctx)
@@ -290,7 +290,7 @@ func SelectMissing(ctx context.Context, t *Target, scope []spec.Ref) ([]Selectio
 					absent[i] = append(absent[i], plat)
 				}
 			}
-			task.Progress(done.Add(1), total, report.Items)
+			task.Progress(done.Add(1), total, console.Items)
 			return nil
 		})
 	}
@@ -310,7 +310,7 @@ func SelectMissing(ctx context.Context, t *Target, scope []spec.Ref) ([]Selectio
 		}
 	}
 	task.Done(fmt.Sprintf("Checked %s: %s, %d prebuilt skipped",
-		report.Plural(stats.Checked, "package"), report.Plural(len(sels), "incomplete version"), stats.Skipped))
+		console.Plural(stats.Checked, "package"), console.Plural(len(sels), "incomplete version"), stats.Skipped))
 	return sels, stats, nil
 }
 

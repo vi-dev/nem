@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/vi-dev/clix/console"
 	"golang.org/x/term"
 
 	"github.com/vi-dev/nem/internal/clean"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/usage"
 )
 
@@ -78,49 +78,49 @@ func runClean(cmd *cobra.Command, opts clean.Options, dryRun, yes bool) error {
 	}
 	plan := clean.Build(store, idx, opts, time.Now())
 	if len(plan.Entries) == 0 {
-		console.Success("Nothing to reclaim")
+		ui.Success("Nothing to reclaim")
 		return nil
 	}
 
 	rows := make([][]string, 0, len(plan.Entries))
 	for _, e := range plan.Entries {
-		rows = append(rows, []string{e.Path, e.Reason, report.FormatBytes(e.Size)})
+		rows = append(rows, []string{e.Path, e.Reason, console.FormatBytes(e.Size)})
 	}
-	console.Table([]string{"PATH", "REASON", "SIZE"}, rows)
-	console.Info("Total: %s", report.FormatBytes(plan.Total()))
+	ui.Table([]string{"PATH", "REASON", "SIZE"}, rows)
+	ui.Infof("Total: %s", console.FormatBytes(plan.Total()))
 
 	if dryRun {
 		return nil
 	}
 	if plan.Confirm && !yes {
-		console.BlankErr()
+		ui.BlankErr()
 		if !confirm(cmd, opts.All) {
-			console.Info("Nothing removed")
+			ui.Info("Nothing removed")
 			return nil
 		}
 	}
 
-	task := console.Task("Reclaiming")
+	task := ui.Start("Reclaiming")
 	var freedSoFar int64
 	obs := clean.Observer{
 		Removing: func(e clean.Entry) {
-			task.Segment(entryLabel(e))
+			task.Phase(entryLabel(e))
 			freedSoFar += e.Size
-			task.Progress(freedSoFar, -1, report.Bytes)
+			task.Progress(freedSoFar, -1, console.Bytes)
 		},
 		Skipped: func(e clean.Entry, reason string) {
-			console.Warn("Skipped %s: %s", entryLabel(e), reason)
+			ui.Warnf("Skipped %s: %s", entryLabel(e), reason)
 		},
 	}
 	freed, err := clean.Execute(nemHome, plan, obs)
 	if err != nil {
 		task.Fail("Failed to reclaim")
 		if freed > 0 {
-			console.Info("Reclaimed %s before the error below", report.FormatBytes(freed))
+			ui.Infof("Reclaimed %s before the error below", console.FormatBytes(freed))
 		}
 		return err
 	}
-	task.Done("Reclaimed " + report.FormatBytes(freed))
+	task.Done("Reclaimed " + console.FormatBytes(freed))
 	return nil
 }
 
@@ -136,7 +136,7 @@ func confirm(cmd *cobra.Command, all bool) bool {
 	if all {
 		question = "Remove EVERY installed package version? [y/N]: "
 	}
-	console.Prompt("%s", question)
+	ui.Prompt(question)
 
 	if cmd.InOrStdin() == os.Stdin {
 		if fd := int(os.Stdin.Fd()); term.IsTerminal(fd) {
@@ -146,7 +146,7 @@ func confirm(cmd *cobra.Command, all bool) bool {
 
 	line, err := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
 	answer := strings.ToLower(strings.TrimSpace(line))
-	console.Answer(answer)
+	ui.Answer(answer)
 	if err != nil && line == "" {
 		return false
 	}
@@ -169,7 +169,7 @@ func confirmRaw(fd int) bool {
 
 	key := buf[0]
 	if restoreErr == nil {
-		console.Answer(string(key))
+		ui.Answer(string(key))
 	}
 	return key == 'y' || key == 'Y'
 }

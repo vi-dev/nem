@@ -11,12 +11,12 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/vi-dev/clix/console"
 	"oras.land/oras-go/v2/registry"
 
 	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/netx"
 	"github.com/vi-dev/nem/internal/ocix"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -61,7 +61,7 @@ var remoteByRef = func(ctx context.Context, ref string, plat spec.Platform, dir 
 	return archive.Pull(ctx, repo, parsed.ReferenceOrDefault(), plat, dir)
 }
 
-func Acquire(ctx context.Context, pkg *spec.Package, version string, plat spec.Platform, src Source, dir string, task report.Task) (string, error) {
+func Acquire(ctx context.Context, pkg *spec.Package, version string, plat spec.Platform, src Source, dir string, task console.Task) (string, error) {
 	r, err := pkg.Recipe(version)
 	if err != nil {
 		return "", err
