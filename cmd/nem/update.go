@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/vi-dev/clix/console"
 
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/config"
@@ -13,7 +14,6 @@ import (
 	"github.com/vi-dev/nem/internal/install"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/project"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/resolve"
 	"github.com/vi-dev/nem/internal/spec"
 )
@@ -164,10 +164,10 @@ func runUpdate(cmd *cobra.Command, args []string, global, dryRun bool) error {
 		return err
 	}
 	if len(rows) == 0 {
-		console.Info("All packages up to date")
+		ui.Info("All packages up to date")
 	}
 	for _, r := range rows {
-		console.Success("Updated %s %s → %s", r[0], r[1], r[2])
+		ui.Successf("Updated %s %s → %s", r[0], r[1], r[2])
 	}
 	return nil
 }
@@ -198,22 +198,22 @@ func warnStaleCatalogs(cfg *config.Config, result *resolve.Result) {
 		if age < staleAfter {
 			continue
 		}
-		console.Warn("Catalog %s last updated %s ago", e.Catalog, agePhrase(age))
+		ui.Warnf("Catalog %s last updated %s ago", e.Catalog, agePhrase(age))
 		warned = true
 	}
 	if warned {
-		console.Hint("Run `nem catalog update`")
+		ui.Hint("Run `nem catalog update`")
 	}
 }
 
 func agePhrase(age time.Duration) string {
-	return report.Plural(max(int(age.Hours()/24), 1), "day")
+	return console.Plural(max(int(age.Hours()/24), 1), "day")
 }
 
 func reportUpdatePlan(rows [][]string) {
 	if len(rows) == 0 {
-		console.Info("All packages up to date")
+		ui.Info("All packages up to date")
 		return
 	}
-	console.Table([]string{"PACKAGE", "CURRENT", "LATEST"}, rows)
+	ui.Table([]string{"PACKAGE", "CURRENT", "LATEST"}, rows)
 }

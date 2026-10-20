@@ -6,12 +6,12 @@ import (
 	"runtime"
 	"sync/atomic"
 
+	"github.com/vi-dev/clix/console"
 	"golang.org/x/sync/errgroup"
 	"oras.land/oras-go/v2"
 
 	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/ocix"
-	"github.com/vi-dev/nem/internal/report"
 )
 
 type Options struct {
@@ -105,14 +105,12 @@ func copyCatalog(ctx context.Context, opts Options) (*ocix.Store, error) {
 }
 
 func pullCatalog(ctx context.Context, srcRef string) (*ocix.Store, error) {
-	labels := report.TaskLabels{
-		Run:     "Pulling catalog " + srcRef,
-		Segment: "pulling manifest",
-		Done:    "Pulled catalog " + srcRef,
-		Fail:    "Failed to pull catalog " + srcRef,
+	outcomes := console.Outcomes{
+		Done:   "Pulled catalog " + srcRef,
+		Failed: "Failed to pull catalog " + srcRef,
 	}
 	var store *ocix.Store
-	err := report.RunTask(ctx, labels, func(progress report.ProgressFunc) error {
+	err := console.RunTask(ctx, "Pulling catalog "+srcRef, "pulling manifest", outcomes, func(progress console.ProgressFunc) error {
 		src, srcTag, err := openSrcCatalog(srcRef)
 		if err != nil {
 			return err
@@ -130,13 +128,11 @@ func pullCatalog(ctx context.Context, srcRef string) (*ocix.Store, error) {
 }
 
 func pushCatalog(ctx context.Context, store *ocix.Store, dstRef string) error {
-	labels := report.TaskLabels{
-		Run:     "Pushing catalog " + dstRef,
-		Segment: "pushing manifest",
-		Done:    "Pushed catalog " + dstRef,
-		Fail:    "Failed to push catalog " + dstRef,
+	outcomes := console.Outcomes{
+		Done:   "Pushed catalog " + dstRef,
+		Failed: "Failed to push catalog " + dstRef,
 	}
-	return report.RunTask(ctx, labels, func(progress report.ProgressFunc) error {
+	return console.RunTask(ctx, "Pushing catalog "+dstRef, "pushing manifest", outcomes, func(progress console.ProgressFunc) error {
 		dst, dstTag, err := openDstCatalog(dstRef)
 		if err != nil {
 			return err

@@ -10,13 +10,13 @@ import (
 
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/vi-dev/clix/console"
 	"golang.org/x/sync/errgroup"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/errdef"
 
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/ocix"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -273,14 +273,14 @@ func pushPackages(ctx context.Context, target oras.Target, entries []pkgEntry, f
 }
 
 func pushOne(ctx context.Context, target oras.Target, e *pkgEntry, force bool) error {
-	r := report.FromContext(ctx)
+	r := console.FromContext(ctx)
 	if !force && e.status == StatusUnchanged {
-		r.Debug("Skipped %s %s (unchanged)", e.Name, e.Version)
+		r.Debugf("Skipped %s %s (unchanged)", e.Name, e.Version)
 		return nil
 	}
 
-	task := r.Task(fmt.Sprintf("Pushing %s %s", e.Name, e.Version))
-	task.Segment("pushing manifest")
+	task := r.Start(fmt.Sprintf("Pushing %s %s", e.Name, e.Version))
+	task.Phase("pushing manifest")
 	if _, err := ocix.PushPackageManifest(ctx, target, e.Files); err != nil {
 		task.Fail(fmt.Sprintf("Failed to push %s %s", e.Name, e.Version))
 		return fmt.Errorf("push %s: %w", e.Name, err)
@@ -294,9 +294,9 @@ func indexEntry(e pkgEntry) ocix.CatalogIndexEntry {
 }
 
 func compare(ctx context.Context, target oras.ReadOnlyTarget, ref string, tags []string, entries []pkgEntry, force bool, res *Result) ([]Package, error) {
-	r := report.FromContext(ctx)
+	r := console.FromContext(ctx)
 	with := ref + ":" + strings.Join(tags, ", ")
-	task := r.Task("Comparing with " + with)
+	task := r.Start("Comparing with " + with)
 	index, err := fetchTargetIndex(ctx, target, tags)
 	if err != nil {
 		task.Fail("Failed to compare with " + with)
@@ -305,7 +305,7 @@ func compare(ctx context.Context, target oras.ReadOnlyTarget, ref string, tags [
 	removed := classify(entries, index)
 	suffix := ""
 	if !index.found {
-		task.Segment("checking manifests")
+		task.Phase("checking manifests")
 		if err := markExisting(ctx, target, entries); err != nil {
 			task.Fail("Failed to compare with " + with)
 			return nil, err

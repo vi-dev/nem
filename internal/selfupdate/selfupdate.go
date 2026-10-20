@@ -15,10 +15,11 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/vi-dev/clix/console"
+
 	"github.com/vi-dev/nem/internal/extract"
 	"github.com/vi-dev/nem/internal/fetch"
 	"github.com/vi-dev/nem/internal/netx"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -32,7 +33,7 @@ type Updater struct {
 	Token        string
 }
 
-func (u *Updater) Update(ctx context.Context, version, exePath string, task report.Task) error {
+func (u *Updater) Update(ctx context.Context, version, exePath string, task console.Task) error {
 
 	installDir := filepath.Dir(exePath)
 	stage, err := os.CreateTemp(installDir, ".nem-update-*")

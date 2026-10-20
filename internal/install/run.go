@@ -2,19 +2,18 @@ package install
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"os"
 	"runtime"
 	"slices"
 
+	"github.com/vi-dev/clix/console"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/vi-dev/nem/internal/fetch"
 	"github.com/vi-dev/nem/internal/fsx"
 	"github.com/vi-dev/nem/internal/home"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -62,45 +61,32 @@ func Run(ctx context.Context, h home.Home, jobs []Job) error {
 }
 
 func runJob(gctx context.Context, h home.Home, job Job) error {
-	rep := report.FromContext(gctx)
+	rep := console.FromContext(gctx)
 	name, version := job.Pkg.Name, job.Version
 
 	label := fmt.Sprintf("Installing %s %s", name, version)
-	cancelled := fmt.Sprintf("Cancelled %s %s", name, version)
-
-	failedOutcome := fmt.Sprintf("Failed to install %s %s", name, version)
-
-	task := rep.Task(label)
-	if isCancellation(gctx, nil) {
-		task.Fail(cancelled)
-		return nil
+	o := console.Outcomes{
+		Done:      fmt.Sprintf("Installed %s %s", name, version),
+		Failed:    fmt.Sprintf("Failed to install %s %s", name, version),
+		Cancelled: fmt.Sprintf("Cancelled %s %s", name, version),
 	}
 
-	task.Segment("downloading")
+	task := rep.Start(label)
+	if gctx.Err() != nil {
+		return task.End(gctx, gctx.Err(), o)
+	}
+
+	task.Phase("downloading")
 	artifact, err := acquire(gctx, job.Pkg, version, spec.Current(), job.Source, h.Tmp(), task)
 	if err != nil {
-		if isCancellation(gctx, err) {
-			task.Fail(cancelled)
-			return nil
-		}
-		task.Fail(failedOutcome)
-		return err
+		return task.End(context.WithoutCancel(gctx), err, o)
 	}
 
 	defer os.Remove(artifact)
 
-	task.Segment("extracting")
-	if err := Install(gctx, h, job.Pkg, version, job.Catalog, artifact, job.Reinstall, job.Links); err != nil {
-		if isCancellation(gctx, err) {
-			task.Fail(cancelled)
-			return nil
-		}
-		task.Fail(failedOutcome)
-		return err
-	}
-
-	task.Done(fmt.Sprintf("Installed %s %s", name, version))
-	return nil
+	task.Phase("extracting")
+	err = Install(gctx, h, job.Pkg, version, job.Catalog, artifact, job.Reinstall, job.Links)
+	return task.End(context.WithoutCancel(gctx), err, o)
 }
 
 func relinkAll(ctx context.Context, h home.Home, jobs []Job) error {
@@ -112,7 +98,7 @@ func relinkAll(ctx context.Context, h home.Home, jobs []Job) error {
 		return err
 	}
 	defer release()
-	rep := report.FromContext(ctx)
+	rep := console.FromContext(ctx)
 	for _, job := range jobs {
 		name, version := job.Pkg.Name, job.Version
 		dir, err := h.PackageDir(name, version)
@@ -124,7 +110,7 @@ func relinkAll(ctx context.Context, h home.Home, jobs []Job) error {
 			return fmt.Errorf("relink %s@%s: %w", name, version, err)
 		}
 		for _, dep := range slices.Sorted(maps.Keys(retargeted)) {
-			rep.Debug("Relinked %s %s: %s %s → %s", name, version, dep, retargeted[dep], job.Links[dep])
+			rep.Debugf("Relinked %s %s: %s %s → %s", name, version, dep, retargeted[dep], job.Links[dep])
 		}
 	}
 	return nil
@@ -136,11 +122,4 @@ func NeedsRelayout(h home.Home, name, version string, links map[string]string) b
 	}
 	meta, err := ReadMeta(h, name, version)
 	return err != nil || meta.Layout < LayoutVersion
-}
-
-func isCancellation(gctx context.Context, err error) bool {
-	if err != nil {
-		return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
-	}
-	return gctx.Err() != nil
 }

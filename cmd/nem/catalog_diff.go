@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/vi-dev/clix"
 
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/diff"
@@ -29,7 +30,7 @@ func newCatalogDiffCmd() *cobra.Command {
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: argsUpTo(2, completeYAMLOrDir),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validateOutput(output); err != nil {
+			if err := clix.ValidateOutput(output); err != nil {
 				return err
 			}
 			if catalog.Local(args[0]) {
@@ -39,7 +40,7 @@ func newCatalogDiffCmd() *cobra.Command {
 				}
 				if len(findings) > 0 {
 					for _, f := range findings {
-						console.Warn("%s", f.String())
+						ui.Warn(f.String())
 					}
 					return &ExitError{Code: 1}
 				}
@@ -48,14 +49,14 @@ func newCatalogDiffCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if output == outputJSON {
-				if err := console.JSON(res.Changes); err != nil {
+			if output == "json" {
+				if err := ui.JSON(res.Changes); err != nil {
 					return err
 				}
 			} else {
 				renderDiffTable(res.Changes)
 			}
-			console.Success("%d changed (%d new, %d updated, %d removed), %d unchanged",
+			ui.Successf("%d changed (%d new, %d updated, %d removed), %d unchanged",
 				len(res.Changes), res.Count(diff.StatusNew), res.Count(diff.StatusUpdated),
 				res.Count(diff.StatusRemoved), res.Unchanged)
 			return nil
@@ -64,7 +65,7 @@ func newCatalogDiffCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&packages, "package", nil,
 		"compare this package (repeatable; default: every package)")
 	_ = cmd.RegisterFlagCompletionFunc("package", completeCatalogDirPackages)
-	addOutputFlag(cmd, &output)
+	clix.AddOutputFlag(cmd, &output)
 	return cmd
 }
 
@@ -77,7 +78,7 @@ func renderDiffTable(changes []diff.Change) {
 		table = append(table, []string{r.Name, r.Status, orDash(r.Base), orDash(r.Target),
 			orDash(strings.Join(r.Diff, ", "))})
 	}
-	console.Table([]string{"PACKAGE", "STATUS", "BASE", "TARGET", "DIFF"}, table)
+	ui.Table([]string{"PACKAGE", "STATUS", "BASE", "TARGET", "DIFF"}, table)
 }
 
 func orDash(s string) string {

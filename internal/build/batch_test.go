@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vi-dev/clix/console"
+	"github.com/vi-dev/clix/console/consoletest"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
@@ -20,7 +22,6 @@ import (
 	"github.com/vi-dev/nem/internal/home"
 	"github.com/vi-dev/nem/internal/install"
 	"github.com/vi-dev/nem/internal/project"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/resolve"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
@@ -146,7 +147,7 @@ func batchPlan(t *testing.T, pkgs map[string]*spec.Package, specs ...batchSpec) 
 func runBatch(t *testing.T, h home.Home, set *catalog.Set, plan Plan, opts BatchOptions) ([]SummaryRow, string) {
 	t.Helper()
 	var b bytes.Buffer
-	ctx := report.NewContext(context.Background(), report.New(&b, &b, report.Options{}))
+	ctx := console.NewContext(context.Background(), console.New(&b, &b, console.Options{}))
 	rows, err := RunBatch(ctx, h, set, plan, opts)
 	if err != nil {
 		t.Fatalf("RunBatch: %v\n%s", err, b.String())
@@ -227,11 +228,11 @@ func TestRunBatchHandsDepArchiveToDependentThroughLocalStore(t *testing.T) {
 
 	var tested []string
 	rows, out := runBatch(t, h, sources, plan, BatchOptions{
-		TestFor: func(p *spec.Package, store *archive.Dir) func(context.Context, *spec.Package, string, string) error {
+		TestFor: func(p *spec.Package, store *archive.Dir) func(context.Context, console.Task, *spec.Package, string, string) error {
 			if store == nil {
 				t.Error("TestFor must receive the batch's local store")
 			}
-			return func(_ context.Context, tp *spec.Package, version, artifactPath string) error {
+			return func(_ context.Context, _ console.Task, tp *spec.Package, version, artifactPath string) error {
 				tested = append(tested, tp.Name+"@"+version)
 				if _, err := os.Stat(artifactPath); err != nil {
 					return err
@@ -467,7 +468,7 @@ func TestRunBatchDirPushStagesIntoOverlay(t *testing.T) {
 	target := dirBatchTarget(t)
 	rows, out := runBatch(t, h, sources, batchPlan(t, pkgs, a, b), BatchOptions{
 		Target: target, Push: true,
-		TestFor: func(_ *spec.Package, store *archive.Dir) func(context.Context, *spec.Package, string, string) error {
+		TestFor: func(_ *spec.Package, store *archive.Dir) func(context.Context, console.Task, *spec.Package, string, string) error {
 			if store != target.Overlay {
 				t.Error("builds must stage into the target overlay store")
 			}
@@ -510,11 +511,11 @@ func TestRunBatchDirPushStagesNothingWhenTestsFail(t *testing.T) {
 	target := dirBatchTarget(t)
 	rows, out := runBatch(t, h, sources, batchPlan(t, pkgs, good, bad), BatchOptions{
 		Target: target, Push: true,
-		TestFor: func(pkg *spec.Package, _ *archive.Dir) func(context.Context, *spec.Package, string, string) error {
+		TestFor: func(pkg *spec.Package, _ *archive.Dir) func(context.Context, console.Task, *spec.Package, string, string) error {
 			if pkg.Name != "bravo" {
 				return nil
 			}
-			return func(context.Context, *spec.Package, string, string) error {
+			return func(context.Context, console.Task, *spec.Package, string, string) error {
 				return errors.New("smoke test exploded")
 			}
 		},
@@ -550,7 +551,7 @@ func TestRunBatchNoPushStillUsesTmpStore(t *testing.T) {
 	var duringStores []string
 	rows, out := runBatch(t, h, sources, batchPlan(t, pkgs, a), BatchOptions{
 		Target: target,
-		TestFor: func(_ *spec.Package, store *archive.Dir) func(context.Context, *spec.Package, string, string) error {
+		TestFor: func(_ *spec.Package, store *archive.Dir) func(context.Context, console.Task, *spec.Package, string, string) error {
 			duringWasOverlay = store == target.Overlay
 			duringStores = batchStoreDirs(t, h)
 			return nil
@@ -607,7 +608,7 @@ cp "$NEM_OUTPUT/bin/app" "$NEM_OUTPUT/libexec/a/b/c/d/app"`
 	rows, out := runBatch(t, h, sources, plan, BatchOptions{Target: &Target{Dir: "x", Overlay: store, Store: store}, Push: true})
 	assertRows(t, rows, []string{"demo@1.0.0 pushed -", "app@2.0.0 pushed -"}, out)
 
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	result, err := resolve.Resolve(ctx, []resolve.Tool{{Key: project.ToolKey{Name: "app"}}}, sources)
 	if err != nil {
 		t.Fatalf("resolve app: %v", err)
@@ -718,7 +719,7 @@ func TestRunBatchNarratesEachPushWithByteProgress(t *testing.T) {
 	plan := batchPlan(t, pkgs, a)
 	opts := BatchOptions{Target: target, Push: true}
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	if _, err := RunBatch(ctx, h, sources, plan, opts); err != nil {
 		t.Fatalf("RunBatch: %v", err)
 	}
@@ -733,18 +734,18 @@ func TestRunBatchNarratesEachPushWithByteProgress(t *testing.T) {
 	if done, _, outcome := push.Snapshot(); !done || outcome != "Pushed alpha 1.0.0" {
 		t.Fatalf("outcome = %q (done %v)", outcome, done)
 	}
-	if got := push.Statuses(); !slices.Contains(got, "uploading") {
+	if got := push.Phases(); !slices.Contains(got, "uploading") {
 		t.Fatalf("segments = %v, want \"uploading\"", got)
 	}
 	calls := push.ProgressCalls()
-	if len(calls) == 0 || calls[len(calls)-1].Unit != report.Bytes || calls[len(calls)-1].Total <= 0 || calls[len(calls)-1].Done != calls[len(calls)-1].Total {
+	if len(calls) == 0 || calls[len(calls)-1].Unit != console.Bytes || calls[len(calls)-1].Total <= 0 || calls[len(calls)-1].Done != calls[len(calls)-1].Total {
 		t.Fatalf("progress = %+v, want byte progress reaching the archive size", calls)
 	}
 	if slices.ContainsFunc(rep.Successes(), func(s string) bool { return strings.HasPrefix(s, "Pushed ") }) {
 		t.Fatalf("pushed outcomes must come from the task, not bare Success lines: %v", rep.Successes())
 	}
 
-	ctx, rep = testx.ReporterContext(context.Background())
+	ctx, rep = consoletest.Context(context.Background())
 	if _, err := RunBatch(ctx, h, sources, plan, opts); err != nil {
 		t.Fatalf("second RunBatch: %v", err)
 	}
@@ -764,7 +765,7 @@ func TestRunBatchFailedPushFailsItsTask(t *testing.T) {
 		return &testx.RejectPushTarget{Target: memory.New()}, nil
 	}}
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	rows, err := RunBatch(ctx, h, sources, batchPlan(t, pkgs, a), BatchOptions{Target: target, Push: true})
 	if err != nil {
 		t.Fatalf("RunBatch: %v", err)

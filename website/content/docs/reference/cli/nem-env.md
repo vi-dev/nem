@@ -28,7 +28,7 @@ nem env --shell zsh          # render for a specific shell
 
 ## Global flags
 
-`--color`, `--quiet`, and `--verbose` apply to every command; see [nem](../nem/).
+`--color`, `--narration`, `--quiet`, and `--verbose` apply to every command; see [nem](../nem/).
 
 ## See also
 

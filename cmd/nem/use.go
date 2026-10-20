@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/vi-dev/clix/console"
 
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/config"
@@ -16,7 +17,6 @@ import (
 	"github.com/vi-dev/nem/internal/install"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/project"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/resolve"
 )
 
@@ -190,16 +190,14 @@ func updateNeverUpdatedCatalogs(ctx context.Context, cfg *config.Config, set *ca
 		if err != nil {
 			return err
 		}
-		labels := report.TaskLabels{
-			Run:     "Updating catalog " + n.Name,
-			Segment: "pulling manifest",
-			Done:    "Updated catalog " + n.Name,
-			Fail:    "Failed to update catalog " + n.Name,
+		outcomes := console.Outcomes{
+			Done:   "Updated catalog " + n.Name,
+			Failed: "Failed to update catalog " + n.Name,
 		}
-		if err := report.RunTask(ctx, labels, func(count report.ProgressFunc) error {
+		if err := console.RunTask(ctx, "Updating catalog "+n.Name, "pulling manifest", outcomes, func(count console.ProgressFunc) error {
 			return updateCatalogStore(ctx, e.Ref, store, count)
 		}); err != nil {
-			console.Warn("Resolving without catalog %s: %v", n.Name, err)
+			ui.Warnf("Resolving without catalog %s: %v", n.Name, err)
 			continue
 		}
 	}

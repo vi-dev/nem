@@ -2,12 +2,15 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/vi-dev/nem/internal/report"
+	"github.com/vi-dev/clix"
 )
 
 func TestRootHelpGroups(t *testing.T) {
@@ -69,35 +72,70 @@ func TestRootHookWarnsOnMalformedConfigAndKeepsRunning(t *testing.T) {
 	}
 }
 
-func TestResolveColorMode(t *testing.T) {
-	cases := []struct {
-		name    string
-		flag    string
-		noColor bool
-		want    report.Mode
-		wantErr bool
-	}{
-		{name: "auto without NO_COLOR", flag: "auto", noColor: false, want: report.ColorAuto},
-		{name: "auto with NO_COLOR downgrades to never", flag: "auto", noColor: true, want: report.ColorNever},
-		{name: "always with NO_COLOR still wins", flag: "always", noColor: true, want: report.ColorAlways},
-		{name: "never with NO_COLOR stays never", flag: "never", noColor: true, want: report.ColorNever},
-		{name: "invalid value errors", flag: "sometimes", noColor: false, wantErr: true},
+func TestNarrationEnvInvalidValueExitsTwo(t *testing.T) {
+	t.Setenv("NEM_NARRATION", "bogus")
+	t.Setenv("NEM_HOME", t.TempDir())
+	var out, errb bytes.Buffer
+	root := newRoot()
+	root.SetOut(&out)
+	root.SetErr(&errb)
+	root.SetArgs([]string{"env", "--color", "never"})
+	code, err := clix.Execute(context.Background(), root, nemOptions())
+	if err == nil {
+		t.Fatal("want error for an invalid NEM_NARRATION value")
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got, err := resolveColorMode(c.flag, c.noColor)
-			if c.wantErr {
-				if err == nil {
-					t.Fatalf("want error for flag %q", c.flag)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("resolveColorMode(%q, %v): %v", c.flag, c.noColor, err)
-			}
-			if got != c.want {
-				t.Fatalf("resolveColorMode(%q, %v) = %v, want %v", c.flag, c.noColor, got, c.want)
-			}
-		})
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	want := `Error: invalid NEM_NARRATION value "bogus" (want auto, plain, or json)`
+	if !strings.Contains(errb.String(), want) {
+		t.Fatalf("stderr = %q, want it to contain %q", errb.String(), want)
+	}
+}
+
+func TestNarrationFlagAppearsInHelp(t *testing.T) {
+	var out bytes.Buffer
+	if err := execNem(t, t.TempDir(), nil, &out, new(bytes.Buffer), "--help"); err != nil {
+		t.Fatalf("--help: %v", err)
+	}
+	if !strings.Contains(out.String(), "--narration") {
+		t.Fatalf("help output missing --narration:\n%s", out.String())
+	}
+}
+
+func settledGoroutines() int {
+	n := runtime.NumGoroutine()
+	stable := 0
+	deadline := time.Now().Add(2 * time.Second)
+	for stable < 5 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+		m := runtime.NumGoroutine()
+		if m == n {
+			stable++
+		} else {
+			n, stable = m, 0
+		}
+	}
+	return n
+}
+
+func TestEnvCommandNarratesNothing(t *testing.T) {
+	nemHomeDir := t.TempDir()
+	projDir := t.TempDir()
+	chdir(t, projDir)
+	if err := os.WriteFile(filepath.Join(projDir, "nem.toml"), []byte("[env]\nFOO = \"bar\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	before := settledGoroutines()
+	_, errb, err := runNem(t, nemHomeDir, "env")
+	if err != nil {
+		t.Fatalf("env: %v\n%s", err, errb)
+	}
+	if errb != "" {
+		t.Fatalf("stderr = %q, want it empty", errb)
+	}
+	if after := settledGoroutines(); after != before {
+		t.Fatalf("goroutines = %d after env, want %d", after, before)
 	}
 }

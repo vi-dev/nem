@@ -13,13 +13,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vi-dev/clix/console"
+
 	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/fetch"
 	"github.com/vi-dev/nem/internal/home"
 	"github.com/vi-dev/nem/internal/install"
 	"github.com/vi-dev/nem/internal/netx"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/resolve"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/usage"
@@ -28,14 +29,14 @@ import (
 type Options struct {
 	Version string
 
-	Test func(ctx context.Context, pkg *spec.Package, version, artifactPath string) error
+	Test func(ctx context.Context, task console.Task, pkg *spec.Package, version, artifactPath string) error
 
 	LocalStore *archive.Dir
 }
 
 func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package,
 	opts Options) error {
-	rep := report.FromContext(ctx)
+	rep := console.FromContext(ctx)
 	if err := pkg.Validate(); err != nil {
 		return err
 	}
@@ -52,22 +53,17 @@ func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package
 		return errors.New("package has no build section")
 	}
 
-	task := rep.Task(fmt.Sprintf("Building %s %s", pkg.Name, version))
+	task := rep.Start(fmt.Sprintf("Building %s %s", pkg.Name, version))
 	err = buildPackage(ctx, h, set, pkg, r, version, opts, task)
-	switch {
-	case err == nil:
-		task.Done(fmt.Sprintf("Built %s %s", pkg.Name, version))
-	case report.IsCancellation(err) || ctx.Err() != nil:
-		task.Fail(fmt.Sprintf("Cancelled %s %s", pkg.Name, version))
-	default:
-		task.Fail(fmt.Sprintf("Failed to build %s %s", pkg.Name, version))
-	}
-	return err
+	return task.End(ctx, err, console.Outcomes{
+		Done:      fmt.Sprintf("Built %s %s", pkg.Name, version),
+		Failed:    fmt.Sprintf("Failed to build %s %s", pkg.Name, version),
+		Cancelled: fmt.Sprintf("Cancelled %s %s", pkg.Name, version),
+	})
 }
 
 func buildPackage(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package, r *spec.Recipe,
-	version string, opts Options, task report.Task) error {
-	rep := report.FromContext(ctx)
+	version string, opts Options, task console.Task) error {
 	var steps []spec.BuildStep
 	for _, step := range r.Build.Steps {
 		if spec.PlatformsInclude(step.Platforms, spec.Current()) {
@@ -91,21 +87,21 @@ func buildPackage(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.
 		return err
 	}
 	if !verified {
-		rep.Info("Record for reproducibility: sourceSha256: %s", sha)
+		task.Infof("Record for reproducibility: sourceSha256: %s", sha)
 	}
 
 	srcDir := filepath.Join(staging, "src")
 	if err := os.MkdirAll(srcDir, 0o755); err != nil {
 		return fmt.Errorf("create source dir: %w", err)
 	}
-	task.Segment("unpacking")
+	task.Phase("unpacking")
 	srcRoot, err := unpackSource(path, srcDir, sourceSingleName(pkg, version))
 	if err != nil {
 		return err
 	}
 
 	if len(r.Build.Deps) > 0 {
-		task.Segment("installing deps")
+		task.Phase("installing deps")
 	}
 	deps, err := ResolveDeps(ctx, h, set, pkg.Name, r.Platforms, r.Build.Deps, opts.LocalStore)
 	if err != nil {
@@ -124,25 +120,25 @@ func buildPackage(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.
 	env = ScrubEnv(env, []string{"PWD"}, "PWD="+srcRoot)
 
 	for i, step := range steps {
-		task.Segment(fmt.Sprintf("step %d/%d", i+1, len(steps)))
+		task.Phase(fmt.Sprintf("step %d/%d", i+1, len(steps)))
 		c := exec.CommandContext(ctx, "sh", "-c", step.Run)
 		c.Dir = srcRoot
 		c.Env = env
-		c.Stdout = rep.Out()
-		c.Stderr = rep.ErrOut()
+		c.Stdout = task.Out()
+		c.Stderr = task.ErrOut()
 		if err := c.Run(); err != nil {
 			return fmt.Errorf("build step %d (%q): %w", i+1, step.Run, err)
 		}
 	}
 
 	if n := r.Build.Normalize; n == nil || *n {
-		task.Segment("normalizing")
+		task.Phase("normalizing")
 		if err := normalizeOutput(outputDir); err != nil {
 			return fmt.Errorf("normalize output: %w", err)
 		}
 	}
 
-	task.Segment("verifying")
+	task.Phase("verifying")
 	packagesRoot := h.Packages()
 	vs, err := VerifyConformance(outputDir, []string{staging, packagesRoot})
 	if err != nil {
@@ -151,7 +147,7 @@ func buildPackage(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.
 	if len(vs) > 0 {
 		return conformanceError(vs)
 	}
-	warnUnlinkedDepRpaths(ctx, pkg.Name, version, r, deps)
+	warnUnlinkedDepRpaths(task, pkg.Name, version, r, deps)
 
 	var data []byte
 	if opts.Test != nil || opts.LocalStore != nil {
@@ -163,7 +159,7 @@ func buildPackage(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.
 	}
 
 	if err := os.RemoveAll(staging); err != nil {
-		rep.Warn("sweep build staging: %v", err)
+		task.Warnf("sweep build staging: %v", err)
 	}
 
 	if opts.Test != nil {
@@ -173,14 +169,14 @@ func buildPackage(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.
 		}
 
 		defer os.Remove(tmpArchive)
-		task.Segment("testing")
-		if err := opts.Test(ctx, pkg, version, tmpArchive); err != nil {
+		task.Phase("testing")
+		if err := opts.Test(ctx, task, pkg, version, tmpArchive); err != nil {
 			return err
 		}
 	}
 
 	if opts.LocalStore != nil {
-		task.Segment("staging archive")
+		task.Phase("staging archive")
 		target, err := opts.LocalStore.OpenRW(ctx, pkg.Name)
 		if err != nil {
 			return fmt.Errorf("stage archive locally: %w", err)
@@ -198,7 +194,7 @@ func buildPackage(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.
 	return nil
 }
 
-func fetchBuildSource(ctx context.Context, pkg *spec.Package, version, staging string, task report.Task) (path, sha string, verified bool, err error) {
+func fetchBuildSource(ctx context.Context, pkg *spec.Package, version, staging string, task console.Task) (path, sha string, verified bool, err error) {
 	var want string
 	for _, v := range pkg.Versions {
 		if v.Version == version {
@@ -211,7 +207,7 @@ func fetchBuildSource(ctx context.Context, pkg *spec.Package, version, staging s
 		return "", "", false, err
 	}
 
-	task.Segment("downloading source")
+	task.Phase("downloading source")
 	return fetchSource(ctx, netx.Client(), url, want, staging,
 		fetch.Meta{Name: pkg.Name, Version: version, Platform: spec.Current()}, task)
 }
@@ -276,7 +272,7 @@ func writeTempArchive(h home.Home, name string, data []byte) (string, error) {
 	return f.Name(), nil
 }
 
-func warnUnlinkedDepRpaths(ctx context.Context, pkgName, version string, r *spec.Recipe, deps []ResolvedDep) {
+func warnUnlinkedDepRpaths(lines console.Lines, pkgName, version string, r *spec.Recipe, deps []ResolvedDep) {
 	plat := spec.Current()
 	linked := make(map[string]bool, len(r.Deps))
 	for _, d := range r.Deps {
@@ -296,15 +292,14 @@ func warnUnlinkedDepRpaths(ctx context.Context, pkgName, version string, r *spec
 			unlinked[d.Name] = true
 		}
 	}
-	rep := report.FromContext(ctx)
 	for _, name := range slices.Sorted(maps.Keys(unlinked)) {
-		rep.Warn("%s %s: rpath links %s without a runtime link dependency", pkgName, version, name)
+		lines.Warnf("%s %s: rpath links %s without a runtime link dependency", pkgName, version, name)
 	}
 }
 
 func conformanceError(vs []Violation) error {
 	var msg strings.Builder
-	fmt.Fprintf(&msg, "%s:", report.Plural(len(vs), "conformance violation"))
+	fmt.Fprintf(&msg, "%s:", console.Plural(len(vs), "conformance violation"))
 	for _, v := range vs {
 		fmt.Fprintf(&msg, "\n  %s: %s (%s)", v.File, v.Ref, v.Reason)
 	}

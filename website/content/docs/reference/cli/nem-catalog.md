@@ -54,7 +54,7 @@ nem catalog lint .                                      # validate a checkout
 
 ## Global flags
 
-`--color`, `--quiet`, and `--verbose` apply to every command; see [nem](../nem/).
+`--color`, `--narration`, `--quiet`, and `--verbose` apply to every command; see [nem](../nem/).
 
 ## See also
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/vi-dev/nem/internal/build"
 	"github.com/vi-dev/nem/internal/home"
+	"github.com/vi-dev/nem/internal/pkgtest"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -37,6 +38,30 @@ func TestCatalogBuildStreamsBuildStepOutputToTheCommandStreams(t *testing.T) {
 	}
 }
 
+func TestCatalogBuildShowsAnUnterminatedStepLineBeforeTheFailure(t *testing.T) {
+	nemHomeDir := t.TempDir()
+	tgz := makeTarGz(t, map[string]string{"src/README": "hi"})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(tgz) }))
+	defer srv.Close()
+
+	dir := writeLintFixture(t, map[string]string{
+		"tool": "schema: 2\nname: tool\n" +
+			"artifact: {oci: \":{{.Version}}\"}\ninstall: [{extract: {}}]\n" +
+			"versions: [v1.0.0]\nbuild:\n  source: {url: \"" + srv.URL + "\"}\n  output: out\n" +
+			"  steps:\n    - run: \"printf 'configure: no newline' >&2 && exit 1\"\n",
+	})
+
+	_, errb, err := runNem(t, nemHomeDir, "catalog", "build", dir, "--package", "tool@v1.0.0")
+	if err == nil {
+		t.Fatalf("catalog build must fail when its step fails:\n%s", errb)
+	}
+	line := strings.Index(errb, "configure: no newline")
+	failure := strings.Index(errb, "ERROR Failed to build")
+	if line < 0 || failure < 0 || line > failure {
+		t.Fatalf("want the step's line before the ERROR Failed to build line, got:\n%s", errb)
+	}
+}
+
 func TestCatalogBuildSkipsTestHookWhenManifestDeclaresNoTests(t *testing.T) {
 	nemHomeDir := t.TempDir()
 	tgz := makeTarGz(t, map[string]string{"src/README": "hi"})
@@ -52,7 +77,7 @@ func TestCatalogBuildSkipsTestHookWhenManifestDeclaresNoTests(t *testing.T) {
 
 	called := false
 	orig := runPkgTest
-	runPkgTest = func(ctx context.Context, h home.Home, deps []build.ResolvedDep,
+	runPkgTest = func(ctx context.Context, out pkgtest.Output, h home.Home, deps []build.ResolvedDep,
 		pkg *spec.Package, version, catalogName, artifactPath string) error {
 		called = true
 		return nil
@@ -104,7 +129,7 @@ func TestBatchTestForSkipsPackagesWithoutTestSteps(t *testing.T) {
 	if test == nil {
 		t.Fatal("a package whose frozen recipe has test steps must get a test hook")
 	}
-	if err := test(context.Background(), frozen, "2.0.0", ""); err != nil {
+	if err := test(context.Background(), nil, frozen, "2.0.0", ""); err != nil {
 		t.Fatalf("a version without test steps must pass the hook: %v", err)
 	}
 }

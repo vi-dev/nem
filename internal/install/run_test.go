@@ -12,8 +12,10 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/vi-dev/clix/console"
+	"github.com/vi-dev/clix/console/consoletest"
+
 	"github.com/vi-dev/nem/internal/fetch"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
 )
@@ -54,7 +56,7 @@ func TestInstallWritesMetaFromTheCoveringRecipe(t *testing.T) {
 	}
 }
 
-func withAcquire(t *testing.T, fn func(ctx context.Context, pkg *spec.Package, version string, plat spec.Platform, src fetch.Source, dir string, task report.Task) (string, error)) {
+func withAcquire(t *testing.T, fn func(ctx context.Context, pkg *spec.Package, version string, plat spec.Platform, src fetch.Source, dir string, task console.Task) (string, error)) {
 	t.Helper()
 	testx.Swap(t, &acquire, fn)
 }
@@ -66,7 +68,7 @@ func TestRunAllJobsInstallReportDiscard(t *testing.T) {
 	var mu sync.Mutex
 	artifacts := map[string]string{}
 
-	withAcquire(t, func(_ context.Context, pkg *spec.Package, version string, _ spec.Platform, _ fetch.Source, dir string, _ report.Task) (string, error) {
+	withAcquire(t, func(_ context.Context, pkg *spec.Package, version string, _ spec.Platform, _ fetch.Source, dir string, _ console.Task) (string, error) {
 		f, err := os.CreateTemp(dir, pkg.Name+"-*.artifact")
 		if err != nil {
 			return "", err
@@ -90,7 +92,7 @@ func TestRunAllJobsInstallReportDiscard(t *testing.T) {
 		jobs[i] = Job{Pkg: copyToolPkg(fmt.Sprintf("tool%d", i)), Version: "v1.0.0", Catalog: "official"}
 	}
 
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	if err := Run(ctx, h, jobs); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -142,7 +144,7 @@ func TestRunSkipsAlreadyInstalledAcquireNotCalled(t *testing.T) {
 
 	var mu sync.Mutex
 	var called []string
-	withAcquire(t, func(_ context.Context, pkg *spec.Package, version string, _ spec.Platform, _ fetch.Source, dir string, _ report.Task) (string, error) {
+	withAcquire(t, func(_ context.Context, pkg *spec.Package, version string, _ spec.Platform, _ fetch.Source, dir string, _ console.Task) (string, error) {
 		mu.Lock()
 		called = append(called, pkg.Name)
 		mu.Unlock()
@@ -158,7 +160,7 @@ func TestRunSkipsAlreadyInstalledAcquireNotCalled(t *testing.T) {
 		return f.Name(), nil
 	})
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	jobs := []Job{
 		{Pkg: installedPkg, Version: "v1.0.0", Catalog: "official"},
 		{Pkg: freshPkg, Version: "v1.0.0", Catalog: "official"},
@@ -195,7 +197,7 @@ func TestRunSkipsAlreadyInstalledAcquireNotCalled(t *testing.T) {
 
 func TestRunFailFastCancelsRestJobs(t *testing.T) {
 	h := testx.Home(t)
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 
 	const n = 4
 	jobs := make([]Job, n)
@@ -205,7 +207,7 @@ func TestRunFailFastCancelsRestJobs(t *testing.T) {
 
 	bootErr := errors.New("boom")
 	var winnerTaken atomic.Bool
-	withAcquire(t, func(ctx context.Context, pkg *spec.Package, version string, _ spec.Platform, _ fetch.Source, dir string, _ report.Task) (string, error) {
+	withAcquire(t, func(ctx context.Context, pkg *spec.Package, version string, _ spec.Platform, _ fetch.Source, dir string, _ console.Task) (string, error) {
 		if winnerTaken.CompareAndSwap(false, true) {
 			return "", bootErr
 		}
@@ -251,24 +253,73 @@ func TestRunFailFastCancelsRestJobs(t *testing.T) {
 	}
 }
 
-func TestIsCancellationTrustsOnlyTheJobsOwnError(t *testing.T) {
-	doneCtx, cancel := context.WithCancel(context.Background())
+type cancelAfterChecks struct {
+	context.Context
+	checks atomic.Int32
+	allow  int32
+}
+
+func (c *cancelAfterChecks) Err() error {
+	if c.checks.Add(1) <= c.allow {
+		return nil
+	}
+	return context.Canceled
+}
+
+func writeArtifact(dir, name string) (string, error) {
+	f, err := os.CreateTemp(dir, name+"-*.artifact")
+	if err != nil {
+		return "", err
+	}
+	if _, err := f.WriteString("binary-" + name); err != nil {
+		f.Close()
+		return "", err
+	}
+	return f.Name(), f.Close()
+}
+
+func TestRunJobSucceedsUnderCancelledGroupContextReadsDone(t *testing.T) {
+	h := testx.Home(t)
+	if err := os.MkdirAll(h.Tmp(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	base, rep := consoletest.Context(context.Background())
+	ctx := &cancelAfterChecks{Context: base, allow: 2}
+
+	withAcquire(t, func(_ context.Context, pkg *spec.Package, _ string, _ spec.Platform, _ fetch.Source, dir string, _ console.Task) (string, error) {
+		return writeArtifact(dir, pkg.Name)
+	})
+
+	if err := runJob(ctx, h, Job{Pkg: copyToolPkg("late"), Version: "v1.0.0", Catalog: "official"}); err != nil {
+		t.Fatalf("runJob: %v", err)
+	}
+	if ctx.Err() == nil {
+		t.Fatal("group context must read as cancelled once the job's work is done")
+	}
+	done, failed, outcome := rep.TaskFor("Installing late v1.0.0").Snapshot()
+	if !done || failed || outcome != "Installed late v1.0.0" {
+		t.Fatalf("Snapshot = %v %v %q, want Done %q", done, failed, outcome, "Installed late v1.0.0")
+	}
+}
+
+func TestRunJobCancelledBeforeWorkReadsCancelled(t *testing.T) {
+	h := testx.Home(t)
+	base, cancel := context.WithCancel(context.Background())
 	cancel()
+	ctx, rep := consoletest.Context(base)
 
-	realErr := errors.New("checksum mismatch")
-	if isCancellation(doneCtx, realErr) {
-		t.Fatal("a real unrelated error must not be classified as cancellation just because gctx is already done")
-	}
-	if !isCancellation(doneCtx, context.Canceled) {
-		t.Fatal("context.Canceled itself must be classified as cancellation")
-	}
-	if !isCancellation(doneCtx, nil) {
-		t.Fatal("with no error to inspect, an already-done gctx must be classified as cancellation")
-	}
+	withAcquire(t, func(context.Context, *spec.Package, string, spec.Platform, fetch.Source, string, console.Task) (string, error) {
+		t.Fatal("acquire must not be called when the group context is already cancelled")
+		return "", nil
+	})
 
-	freshCtx := context.Background()
-	if isCancellation(freshCtx, nil) {
-		t.Fatal("a live gctx with no error must not be classified as cancellation")
+	err := runJob(ctx, h, Job{Pkg: copyToolPkg("early"), Version: "v1.0.0", Catalog: "official"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("runJob error = %v, want context.Canceled", err)
+	}
+	done, failed, outcome := rep.TaskFor("Installing early v1.0.0").Snapshot()
+	if done || !failed || outcome != "Cancelled early v1.0.0" {
+		t.Fatalf("Snapshot = %v %v %q, want failed %q", done, failed, outcome, "Cancelled early v1.0.0")
 	}
 }
 
@@ -278,14 +329,14 @@ func TestRunConcurrentRealErrorsAreNotMisclassifiedAsCancelled(t *testing.T) {
 	}
 
 	h := testx.Home(t)
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 
 	errA := errors.New("checksum mismatch for joba")
 	errB := errors.New("checksum mismatch for jobb")
 
 	var bothStarted sync.WaitGroup
 	bothStarted.Add(2)
-	withAcquire(t, func(_ context.Context, pkg *spec.Package, _ string, _ spec.Platform, _ fetch.Source, _ string, _ report.Task) (string, error) {
+	withAcquire(t, func(_ context.Context, pkg *spec.Package, _ string, _ spec.Platform, _ fetch.Source, _ string, _ console.Task) (string, error) {
 		bothStarted.Done()
 		bothStarted.Wait()
 		switch pkg.Name {
@@ -332,9 +383,9 @@ func TestRunReturnsCtxErrorWhenAllJobsCancelledWithoutOwnError(t *testing.T) {
 
 	baseCtx, cancel := context.WithCancel(context.Background())
 	cancel()
-	ctx, _ := testx.ReporterContext(baseCtx)
+	ctx, _ := consoletest.Context(baseCtx)
 
-	withAcquire(t, func(context.Context, *spec.Package, string, spec.Platform, fetch.Source, string, report.Task) (string, error) {
+	withAcquire(t, func(context.Context, *spec.Package, string, spec.Platform, fetch.Source, string, console.Task) (string, error) {
 		t.Fatal("acquire must not be called when ctx is already cancelled before Run starts")
 		return "", nil
 	})
@@ -358,7 +409,7 @@ func TestRunReturnsCtxErrorWhenAllJobsCancelledWithoutOwnError(t *testing.T) {
 
 func TestRunInstallFailureRemovesArtifact(t *testing.T) {
 	h := testx.Home(t)
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 
 	pkg := &spec.Package{
 		Name:     "badinstall",
@@ -372,7 +423,7 @@ func TestRunInstallFailureRemovesArtifact(t *testing.T) {
 	}
 
 	var artifactPath string
-	withAcquire(t, func(_ context.Context, p *spec.Package, _ string, _ spec.Platform, _ fetch.Source, dir string, _ report.Task) (string, error) {
+	withAcquire(t, func(_ context.Context, p *spec.Package, _ string, _ spec.Platform, _ fetch.Source, dir string, _ console.Task) (string, error) {
 		f, err := os.CreateTemp(dir, p.Name+"-*.artifact")
 		if err != nil {
 			return "", err
@@ -423,7 +474,7 @@ func TestRunReinstallReplacesExistingVersion(t *testing.T) {
 
 	var acquireCalls int32
 	serveBytes := func(content string) {
-		withAcquire(t, func(_ context.Context, p *spec.Package, _ string, _ spec.Platform, _ fetch.Source, dir string, _ report.Task) (string, error) {
+		withAcquire(t, func(_ context.Context, p *spec.Package, _ string, _ spec.Platform, _ fetch.Source, dir string, _ console.Task) (string, error) {
 			atomic.AddInt32(&acquireCalls, 1)
 			f, err := os.CreateTemp(dir, p.Name+"-*.artifact")
 			if err != nil {
@@ -514,7 +565,7 @@ func TestRunReinstallsInstalledVersionWithOldLayout(t *testing.T) {
 	}
 
 	var acquireCalls int32
-	withAcquire(t, func(_ context.Context, p *spec.Package, _ string, _ spec.Platform, _ fetch.Source, dir string, _ report.Task) (string, error) {
+	withAcquire(t, func(_ context.Context, p *spec.Package, _ string, _ spec.Platform, _ fetch.Source, dir string, _ console.Task) (string, error) {
 		atomic.AddInt32(&acquireCalls, 1)
 		f, err := os.CreateTemp(dir, p.Name+"-*.artifact")
 		if err != nil {
@@ -561,7 +612,7 @@ func TestRunLeavesOldLayoutAloneWithoutLinkDeps(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(installDir, metaFileName), []byte("package: plain\nversion: v1.0.0\ncatalog: official\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	withAcquire(t, func(context.Context, *spec.Package, string, spec.Platform, fetch.Source, string, report.Task) (string, error) {
+	withAcquire(t, func(context.Context, *spec.Package, string, spec.Platform, fetch.Source, string, console.Task) (string, error) {
 		t.Fatal("acquire must not be called for an installed package without link deps")
 		return "", nil
 	})
@@ -581,12 +632,12 @@ func TestRunRelinksInstalledDependents(t *testing.T) {
 	if err := Install(context.Background(), h, app, "1.0.0", "official", artifact, false, map[string]string{"zlib": "1.3.1"}); err != nil {
 		t.Fatalf("pre-install: %v", err)
 	}
-	withAcquire(t, func(context.Context, *spec.Package, string, spec.Platform, fetch.Source, string, report.Task) (string, error) {
+	withAcquire(t, func(context.Context, *spec.Package, string, spec.Platform, fetch.Source, string, console.Task) (string, error) {
 		t.Fatal("acquire must not be called to relink an installed package")
 		return "", nil
 	})
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	job := Job{Pkg: app, Version: "1.0.0", Catalog: "official", Links: map[string]string{"zlib": "1.3.2"}}
 	if err := Run(ctx, h, []Job{job}); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -613,11 +664,11 @@ func TestRunLeavesLinksAloneWhenAnInstallFails(t *testing.T) {
 		t.Fatalf("pre-install: %v", err)
 	}
 	notFound := errors.New("archive not found")
-	withAcquire(t, func(context.Context, *spec.Package, string, spec.Platform, fetch.Source, string, report.Task) (string, error) {
+	withAcquire(t, func(context.Context, *spec.Package, string, spec.Platform, fetch.Source, string, console.Task) (string, error) {
 		return "", notFound
 	})
 
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	jobs := []Job{
 		{Pkg: app, Version: "1.0.0", Catalog: "official", Links: map[string]string{"zlib": "1.3.2"}},
 		{Pkg: copyToolPkg("zlib"), Version: "1.3.2", Catalog: "official"},

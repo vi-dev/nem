@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
+	"github.com/vi-dev/clix/console/consoletest"
 	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/vi-dev/nem/internal/ocix/ocixtest"
 	"github.com/vi-dev/nem/internal/spec"
-	"github.com/vi-dev/nem/internal/testx"
 )
 
 func TestClassify(t *testing.T) {
@@ -58,8 +58,8 @@ func TestMirrorVersionDryRunCopiesNothing(t *testing.T) {
 	ocixtest.PushFakeArchive(t, src, "1.0.0", map[string][]byte{"linux/amd64": []byte("payload")})
 	dst := memory.New()
 
-	ctx, rep := testx.ReporterContext(ctx)
-	got := mirrorVersion(ctx, src, dst, "go", "1.0.0", false, true, rep.Task("test"))
+	ctx, rep := consoletest.Context(ctx)
+	got := mirrorVersion(ctx, src, dst, "go", "1.0.0", false, true, rep.Start("test"))
 	if got != outcomeCopied {
 		t.Fatalf("outcome = %v, want outcomeCopied (would-copy still counts)", got)
 	}
@@ -69,7 +69,7 @@ func TestMirrorVersionDryRunCopiesNothing(t *testing.T) {
 	if len(rep.Infos()) != 0 {
 		t.Fatalf("infos = %v, want none: per-item progress must not print", rep.Infos())
 	}
-	statuses := rep.TaskFor("test").Statuses()
+	statuses := rep.TaskFor("test").Phases()
 	if len(statuses) != 1 || statuses[0] != "would copy 1.0.0" {
 		t.Fatalf("statuses = %v, want [\"would copy 1.0.0\"]", statuses)
 	}

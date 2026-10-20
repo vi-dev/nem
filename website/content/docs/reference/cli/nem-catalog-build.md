@@ -34,7 +34,7 @@ nem catalog build . --dry-run                   # show the plan and its waves
 
 ## Global flags
 
-`--color`, `--quiet`, and `--verbose` apply to every command; see [nem](../nem/).
+`--color`, `--narration`, `--quiet`, and `--verbose` apply to every command; see [nem](../nem/).
 
 ## See also
 

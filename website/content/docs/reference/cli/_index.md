@@ -3,7 +3,7 @@ title: Commands
 weight: 1
 ---
 
-Every `nem` command, grouped as in `nem --help`. Every command also accepts `--color`, `--quiet`, and `--verbose`; see [nem](nem/).
+Every `nem` command, grouped as in `nem --help`. Every command also accepts `--color`, `--narration`, `--quiet`, and `--verbose`; see [nem](nem/).
 
 ### Environment
 

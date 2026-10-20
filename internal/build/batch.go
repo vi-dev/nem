@@ -8,10 +8,11 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/vi-dev/clix/console"
+
 	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/home"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -20,7 +21,7 @@ type BatchOptions struct {
 	Push   bool
 	Force  bool
 
-	TestFor func(pkg *spec.Package, store *archive.Dir) func(ctx context.Context, p *spec.Package, version, artifactPath string) error
+	TestFor func(pkg *spec.Package, store *archive.Dir) func(ctx context.Context, task console.Task, p *spec.Package, version, artifactPath string) error
 }
 
 type SummaryRow struct {
@@ -32,7 +33,7 @@ type SummaryRow struct {
 
 func RunBatch(ctx context.Context, h home.Home, set *catalog.Set,
 	plan Plan, opts BatchOptions) ([]SummaryRow, error) {
-	rep := report.FromContext(ctx)
+	rep := console.FromContext(ctx)
 	entries := currentPlatformEntries(plan)
 	if len(entries) == 0 {
 		return nil, nil
@@ -53,7 +54,7 @@ func RunBatch(ctx context.Context, h home.Home, set *catalog.Set,
 	for _, e := range entries {
 		name := e.Pkg.Name
 		if dep, ok := firstExhaustedNeed(e.Needs, live); ok {
-			rep.Warn("Skipping %s@%s: dependency %s failed (all versions)", name, e.Version, dep)
+			rep.Warnf("Skipping %s@%s: dependency %s failed (all versions)", name, e.Version, dep)
 			rows = append(rows, SummaryRow{Name: name, Version: e.Version,
 				Result: "skipped", Detail: fmt.Sprintf("needs %s (all versions failed)", dep)})
 			live[name]--
@@ -65,7 +66,7 @@ func RunBatch(ctx context.Context, h home.Home, set *catalog.Set,
 			bopts.Test = opts.TestFor(e.Pkg, store)
 		}
 		if err := Build(ctx, h, set, e.Pkg, bopts); err != nil {
-			rep.Warn("%s@%s failed: %v", name, e.Version, err)
+			rep.Warnf("%s@%s failed: %v", name, e.Version, err)
 			rows = append(rows, SummaryRow{Name: name, Version: e.Version,
 				Result: "failed", Detail: firstLine(err.Error())})
 			live[name]--
@@ -142,18 +143,18 @@ func firstExhaustedNeed(needs []string, live map[string]int) (string, bool) {
 }
 
 func pushBuiltEntry(ctx context.Context, store *archive.Dir, name, version string, opts BatchOptions) SummaryRow {
-	rep := report.FromContext(ctx)
+	rep := console.FromContext(ctx)
 	row := SummaryRow{Name: name, Version: version, Result: "built", Detail: "-"}
 	if !opts.Push {
 		return row
 	}
-	task := rep.Task(fmt.Sprintf("Pushing %s %s", name, version))
+	task := rep.Start(fmt.Sprintf("Pushing %s %s", name, version))
 	if opts.Target.IsDir() {
 		row.Result = "pushed"
 		task.Done(fmt.Sprintf("Pushed %s %s", name, version))
 		return row
 	}
-	task.Segment("uploading")
+	task.Phase("uploading")
 	switch pushed, err := pushFromStore(ctx, store, name, version, opts, task); {
 	case err != nil:
 		row.Detail = "push failed: " + firstLine(err.Error())
@@ -170,7 +171,7 @@ func pushBuiltEntry(ctx context.Context, store *archive.Dir, name, version strin
 	return row
 }
 
-func pushFromStore(ctx context.Context, store *archive.Dir, name, version string, opts BatchOptions, task report.Task) (bool, error) {
+func pushFromStore(ctx context.Context, store *archive.Dir, name, version string, opts BatchOptions, task console.Task) (bool, error) {
 	staged, err := store.Open(ctx, name)
 	if err != nil {
 		return false, err

@@ -32,7 +32,7 @@ nem self update --version v0.3.0    # a specific release
 
 ## Global flags
 
-`--color`, `--quiet`, and `--verbose` apply to every command; see [nem](../nem/).
+`--color`, `--narration`, `--quiet`, and `--verbose` apply to every command; see [nem](../nem/).
 
 ## See also
 

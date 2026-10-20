@@ -14,8 +14,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/vi-dev/clix/console"
+
 	"github.com/vi-dev/nem/internal/fetch"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
 )
@@ -23,8 +24,8 @@ import (
 func runBumpVerbose(t *testing.T, opts Options, target string) (res *Result, stderr string, err error) {
 	t.Helper()
 	var errb bytes.Buffer
-	console := report.New(io.Discard, &errb, report.Options{Color: report.ColorNever, Verbose: true})
-	res, err = Run(report.NewContext(context.Background(), console), target, opts)
+	ui := console.New(io.Discard, &errb, console.Options{Color: console.ColorNever, Verbose: true})
+	res, err = Run(console.NewContext(context.Background(), ui), target, opts)
 	return res, errb.String(), err
 }
 
@@ -119,7 +120,7 @@ func forbidDownloads(t *testing.T) *[]string {
 	t.Helper()
 	var downloaded []string
 	var mu sync.Mutex
-	testx.Swap(t, &digestURL, func(_ context.Context, _ *http.Client, url string, _ fetch.Meta, _ report.Task) (string, error) {
+	testx.Swap(t, &digestURL, func(_ context.Context, _ *http.Client, url string, _ fetch.Meta, _ console.Task) (string, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		downloaded = append(downloaded, url)

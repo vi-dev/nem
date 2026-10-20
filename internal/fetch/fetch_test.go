@@ -14,9 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vi-dev/clix/console/consoletest"
+
 	"github.com/vi-dev/nem/internal/fetch"
 	"github.com/vi-dev/nem/internal/spec"
-	"github.com/vi-dev/nem/internal/testx"
 )
 
 func testMeta() fetch.Meta {
@@ -187,7 +188,7 @@ func TestDownloadFeedsProgress(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ft := &testx.Task{}
+	ft := &consoletest.Task{}
 	dir := t.TempDir()
 	path, err := fetch.Download(context.Background(), srv.Client(), srv.URL, want, dir, testMeta(), ft)
 	if err != nil {
@@ -208,7 +209,7 @@ func TestDownloadFeedsProgress(t *testing.T) {
 	}
 }
 
-func TestDownloadFeedsProgressPeriodically(t *testing.T) {
+func TestDownloadProgressOnlyIncreases(t *testing.T) {
 	body := bytes.Repeat([]byte("x"), 600*1024)
 	sum := sha256.Sum256(body)
 	want := hex.EncodeToString(sum[:])
@@ -218,7 +219,7 @@ func TestDownloadFeedsProgressPeriodically(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ft := &testx.Task{}
+	ft := &consoletest.Task{}
 	dir := t.TempDir()
 	path, err := fetch.Download(context.Background(), srv.Client(), srv.URL, want, dir, testMeta(), ft)
 	if err != nil {
@@ -228,7 +229,7 @@ func TestDownloadFeedsProgressPeriodically(t *testing.T) {
 
 	calls := ft.ProgressCalls()
 	if len(calls) < 2 {
-		t.Fatalf("want multiple periodic Progress calls for a %d-byte body, got %d", len(body), len(calls))
+		t.Fatalf("want multiple Progress calls for a %d-byte body, got %d", len(body), len(calls))
 	}
 	for i := 1; i < len(calls); i++ {
 		if calls[i].Done < calls[i-1].Done {

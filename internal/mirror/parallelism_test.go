@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vi-dev/clix/console/consoletest"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
@@ -80,7 +81,7 @@ func TestRunPackagesFanOutInParallel(t *testing.T) {
 	wireArchivesWithSrcDelay(t, delay, &gauge)
 
 	opts := Options{SrcRef: "example.com/cat:v2", DstRef: "internal.example.com/cat:v2"}
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	start := time.Now()
 	summary, err := Run(ctx, opts)
 	elapsed := time.Since(start)
@@ -134,7 +135,7 @@ func TestRunTasksRegisterBeforeProbingCompletes(t *testing.T) {
 	var gauge inFlightGauge
 	wireArchivesWithSrcDelay(t, delay, &gauge)
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	runDone := make(chan struct{})
 	go func() {
 		defer close(runDone)

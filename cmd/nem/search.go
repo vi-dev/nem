@@ -46,7 +46,7 @@ func runSearch(cmd *cobra.Command, query string) error {
 		return err
 	}
 	for _, name := range neverUpdated {
-		console.Warn("Catalog %s never updated — run `nem catalog update %s`", name, name)
+		ui.Warnf("Catalog %s never updated — run `nem catalog update %s`", name, name)
 	}
 
 	q := strings.ToLower(query)
@@ -68,9 +68,9 @@ func runSearch(cmd *cobra.Command, query string) error {
 
 	if len(hits) == 0 {
 		if query == "" {
-			console.Warn("No packages available (run nem catalog update)")
+			ui.Warn("No packages available (run nem catalog update)")
 		} else {
-			console.Warn("No packages match %q", query)
+			ui.Warnf("No packages match %q", query)
 		}
 		return nil
 	}
@@ -79,7 +79,7 @@ func runSearch(cmd *cobra.Command, query string) error {
 	for i, h := range hits {
 		rows[i] = []string{h.Name, h.Latest, h.Catalog, h.Description}
 	}
-	console.Table([]string{"NAME", "VERSION", "CATALOG", "DESCRIPTION"}, rows)
+	ui.Table([]string{"NAME", "VERSION", "CATALOG", "DESCRIPTION"}, rows)
 	return nil
 }
 

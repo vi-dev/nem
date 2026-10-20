@@ -7,9 +7,10 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/vi-dev/clix/console"
+
 	"github.com/vi-dev/nem/internal/fetch"
 	"github.com/vi-dev/nem/internal/netx"
-	"github.com/vi-dev/nem/internal/report"
 )
 
 var newGitHub = func(token string) *fetch.GitHub {
@@ -73,13 +74,13 @@ func (r *releases) lookup(ctx context.Context, repo, tag string) (map[string]str
 	return ent.digests, ent.err
 }
 
-func hashArtifact(ctx context.Context, rel *releases, url, what string, fmeta fetch.Meta, task report.Task) (string, error) {
+func hashArtifact(ctx context.Context, rel *releases, url, what string, fmeta fetch.Meta, task console.Task) (string, error) {
 	sum, err := rel.digest(ctx, url)
 	if err == nil {
 		return sum, nil
 	}
 	if !errors.Is(err, errNotGitHubRelease) {
-		report.FromContext(ctx).Debug("Downloading %s %s %s: %v", fmeta.Name, fmeta.Version, what, err)
+		console.FromContext(ctx).Debugf("Downloading %s %s %s: %v", fmeta.Name, fmeta.Version, what, err)
 	}
 	return digestURL(ctx, netx.Client(), url, fmeta, task)
 }

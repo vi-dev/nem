@@ -71,7 +71,7 @@ func runSync(cmd *cobra.Command, global bool) error {
 		hit, err := set.Lookup(cmd.Context(), project.ToolKey{Catalog: entry.Catalog, Name: entry.Name})
 		if err != nil {
 			if installed {
-				console.Debug("Skipping %s %s: %v", entry.Name, entry.Version, err)
+				ui.Debugf("Skipping %s %s: %v", entry.Name, entry.Version, err)
 				continue
 			}
 			return err
@@ -83,7 +83,7 @@ func runSync(cmd *cobra.Command, global bool) error {
 		r, err := hit.Pkg.Recipe(entry.Version)
 		if err != nil {
 			if installed {
-				console.Debug("Skipping %s %s: %v", entry.Name, entry.Version, err)
+				ui.Debugf("Skipping %s %s: %v", entry.Name, entry.Version, err)
 				continue
 			}
 			return err
@@ -118,17 +118,17 @@ func digestMismatch(entry project.LockEntry, current string) error {
 func warnManifestDrift(manifestPath string, lock *project.Lockfile) {
 	m, err := project.LoadManifest(manifestPath)
 	if err != nil {
-		console.Warn("Skipping drift check, cannot read %s: %v", manifestPath, err)
+		ui.Warnf("Skipping drift check, cannot read %s: %v", manifestPath, err)
 		return
 	}
 	for _, tool := range m.Tools {
 		if tool.Version == "" {
-			console.Warn("%s declares %s without a version — pin one in nem.toml or run `nem use %s@<version>`",
+			ui.Warnf("%s declares %s without a version — pin one in nem.toml or run `nem use %s@<version>`",
 				manifestPath, tool.Key.Name, tool.Key.String())
 			continue
 		}
 		if !lock.Covers(tool) {
-			console.Warn("%s declares %s@%s, which %s does not cover — run `nem lock`",
+			ui.Warnf("%s declares %s@%s, which %s does not cover — run `nem lock`",
 				manifestPath, tool.Key.String(), tool.Version, lock.Path)
 		}
 	}

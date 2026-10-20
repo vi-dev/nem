@@ -1,5 +1,5 @@
 package ocix
 
-import "github.com/vi-dev/nem/internal/report"
+import "github.com/vi-dev/clix/console"
 
-type ProgressFunc = report.ProgressFunc
+type ProgressFunc = console.ProgressFunc

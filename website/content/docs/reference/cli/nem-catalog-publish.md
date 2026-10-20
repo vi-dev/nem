@@ -34,7 +34,7 @@ nem catalog publish registry.example/nem/catalog --dry-run                # what
 
 ## Global flags
 
-`--color`, `--quiet`, and `--verbose` apply to every command; see [nem](../nem/).
+`--color`, `--narration`, `--quiet`, and `--verbose` apply to every command; see [nem](../nem/).
 
 ## See also
 

@@ -2,9 +2,9 @@ package main
 
 import (
 	"github.com/spf13/cobra"
+	"github.com/vi-dev/clix/console"
 
 	"github.com/vi-dev/nem/internal/mirror"
-	"github.com/vi-dev/nem/internal/report"
 )
 
 func newCatalogMirrorCmd() *cobra.Command {
@@ -31,11 +31,11 @@ func newCatalogMirrorCmd() *cobra.Command {
 				verb = "Would mirror"
 			}
 			if summary.Failed > 0 {
-				console.Success("%s %s, %s, %s failed",
-					verb, report.Plural(summary.Packages, "package"), report.Plural(summary.Copied, "tag"), report.Plural(summary.Failed, "tag"))
+				ui.Successf("%s %s, %s, %s failed",
+					verb, console.Plural(summary.Packages, "package"), console.Plural(summary.Copied, "tag"), console.Plural(summary.Failed, "tag"))
 				return &ExitError{Code: 1}
 			}
-			console.Success("%s %s, %s", verb, report.Plural(summary.Packages, "package"), report.Plural(summary.Copied, "tag"))
+			ui.Successf("%s %s, %s", verb, console.Plural(summary.Packages, "package"), console.Plural(summary.Copied, "tag"))
 			return nil
 		},
 	}

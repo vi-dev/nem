@@ -97,7 +97,7 @@ func runActivate(args []string, printOnly bool) error {
 	}
 
 	if printOnly || !stdoutIsTTY() {
-		console.Data("%s", shell.HookBlock(dialect))
+		ui.Data("%s", shell.HookBlock(dialect))
 		return nil
 	}
 
@@ -108,8 +108,8 @@ func runActivate(args []string, printOnly bool) error {
 	if err := shell.InstallBlock(rcPath, dialect); err != nil {
 		return err
 	}
-	console.Success("Activated nem for %s", name)
-	console.Hint(fmt.Sprintf("Restart your shell or run: source %s", rcPath))
+	ui.Successf("Activated nem for %s", name)
+	ui.Hint(fmt.Sprintf("Restart your shell or run: source %s", rcPath))
 	return nil
 }
 
@@ -127,6 +127,6 @@ func runDeactivate(args []string) error {
 	if err := shell.RemoveBlock(rcPath); err != nil {
 		return err
 	}
-	console.Success("Deactivated nem for %s", name)
+	ui.Successf("Deactivated nem for %s", name)
 	return nil
 }

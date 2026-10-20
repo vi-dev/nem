@@ -8,35 +8,35 @@ import (
 
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/vi-dev/clix/console"
 	"oras.land/oras-go/v2"
 
 	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/fetch"
 	"github.com/vi-dev/nem/internal/home"
 	"github.com/vi-dev/nem/internal/ocix"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
 func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledManifest, store *ocix.Store, archives archive.ReadWriteStore, agg *aggregator) {
-	rep := report.FromContext(ctx)
+	rep := console.FromContext(ctx)
 	label := fmt.Sprintf("Filling %s", nm.Title)
 	failedOutcome := fmt.Sprintf("Failed to fill %s", nm.Title)
 
-	task := rep.Task(label)
-	task.Segment("probing")
+	task := rep.Start(label)
+	task.Phase("probing")
 
 	files, _, err := store.Files(ctx, nm.Title)
 	if err != nil {
 		agg.failed.Add(1)
-		rep.Warn("%s: %v", nm.Title, err)
+		rep.Warnf("%s: %v", nm.Title, err)
 		task.Fail(failedOutcome)
 		return
 	}
 	pkg, err := spec.ParseFiles(files)
 	if err != nil {
 		agg.failed.Add(1)
-		rep.Warn("%s: %v", nm.Title, err)
+		rep.Warnf("%s: %v", nm.Title, err)
 		task.Fail(failedOutcome)
 		return
 	}
@@ -54,7 +54,7 @@ func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledM
 	target, err := archives.OpenRW(ctx, nm.Title)
 	if err != nil {
 		agg.failed.Add(1)
-		rep.Warn("%s: %v", nm.Title, err)
+		rep.Warnf("%s: %v", nm.Title, err)
 		task.Fail(failedOutcome)
 		return
 	}
@@ -64,7 +64,7 @@ func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledM
 	for _, v := range pkg.Versions {
 		r, err := pkg.Recipe(v.Version)
 		if err != nil {
-			rep.Warn("%s %s: %v", nm.Title, v.Version, err)
+			rep.Warnf("%s %s: %v", nm.Title, v.Version, err)
 			failed = true
 			agg.failed.Add(1)
 			continue
@@ -75,10 +75,10 @@ func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledM
 		cancelled := false
 		idx, err := archive.FetchIndex(ctx, target, v.Version)
 		if err != nil && !errors.Is(err, archive.ErrNotFound) {
-			if report.IsCancellation(err) {
+			if console.IsCancellation(err) {
 				break
 			}
-			rep.Warn("%s %s: %v", nm.Title, v.Version, err)
+			rep.Warnf("%s %s: %v", nm.Title, v.Version, err)
 			failed = true
 			agg.failed.Add(1)
 			continue
@@ -123,12 +123,12 @@ func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledM
 				entries[i] = b.desc
 			}
 			if _, err := archive.Commit(ctx, target, v.Version, entries); err != nil {
-				if report.IsCancellation(err) {
+				if console.IsCancellation(err) {
 					cancelled = true
 				} else {
 					agg.failed.Add(int64(len(batch)))
 					failed = true
-					rep.Warn("%s %s: publish archive index: %v", pkg.Name, v.Version, err)
+					rep.Warnf("%s %s: publish archive index: %v", pkg.Name, v.Version, err)
 				}
 			} else {
 				for _, b := range batch {
@@ -158,7 +158,7 @@ func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledM
 		if opts.DryRun {
 			verb = "Would fill"
 		}
-		task.Done(fmt.Sprintf("%s %s (%s, %s)", verb, nm.Title, report.Plural(filled, "fill"), report.Plural(healed, "heal")))
+		task.Done(fmt.Sprintf("%s %s (%s, %s)", verb, nm.Title, console.Plural(filled, "fill"), console.Plural(healed, "heal")))
 	default:
 		task.Discard()
 	}
@@ -188,11 +188,11 @@ type batchedManifest struct {
 	heal bool
 }
 
-func fillItem(ctx context.Context, h home.Home, archives oras.Target, idx ocispec.Index, pkg *spec.Package, version string, plat spec.Platform, dryRun bool, task report.Task) (itemOutcome, ocispec.Descriptor) {
-	rep := report.FromContext(ctx)
+func fillItem(ctx context.Context, h home.Home, archives oras.Target, idx ocispec.Index, pkg *spec.Package, version string, plat spec.Platform, dryRun bool, task console.Task) (itemOutcome, ocispec.Descriptor) {
+	rep := console.FromContext(ctx)
 	sha, err := pkg.Sha256(version, plat)
 	if err != nil {
-		rep.Warn("%s %s %s: %v", pkg.Name, version, plat, err)
+		rep.Warnf("%s %s %s: %v", pkg.Name, version, plat, err)
 		return outcomeFailed, ocispec.Descriptor{}
 	}
 	want := digest.NewDigestFromEncoded(digest.SHA256, sha)
@@ -202,10 +202,10 @@ func fillItem(ctx context.Context, h home.Home, archives oras.Target, idx ocispe
 	case errors.Is(err, archive.ErrNotFound):
 		return doFill(ctx, h, archives, pkg, version, plat, sha, dryRun, false, task)
 	case err != nil:
-		if report.IsCancellation(err) {
+		if console.IsCancellation(err) {
 			return outcomeCancelled, ocispec.Descriptor{}
 		}
-		rep.Warn("%s %s %s: %v", pkg.Name, version, plat, err)
+		rep.Warnf("%s %s %s: %v", pkg.Name, version, plat, err)
 		return outcomeFailed, ocispec.Descriptor{}
 	case desc.Digest == want:
 		return outcomePresent, ocispec.Descriptor{}
@@ -214,47 +214,47 @@ func fillItem(ctx context.Context, h home.Home, archives oras.Target, idx ocispe
 	}
 }
 
-func doFill(ctx context.Context, h home.Home, archives oras.Target, pkg *spec.Package, version string, plat spec.Platform, sha string, dryRun, heal bool, task report.Task) (itemOutcome, ocispec.Descriptor) {
-	rep := report.FromContext(ctx)
+func doFill(ctx context.Context, h home.Home, archives oras.Target, pkg *spec.Package, version string, plat spec.Platform, sha string, dryRun, heal bool, task console.Task) (itemOutcome, ocispec.Descriptor) {
+	rep := console.FromContext(ctx)
 	outcome, verb, wouldVerb := outcomeFilled, "filling", "would fill"
 	if heal {
 		outcome, verb, wouldVerb = outcomeHealed, "healing", "would heal"
 	}
 
 	if dryRun {
-		task.Segment(fmt.Sprintf("%s %s %s", wouldVerb, version, plat))
+		task.Phase(fmt.Sprintf("%s %s %s", wouldVerb, version, plat))
 		return outcome, ocispec.Descriptor{}
 	}
-	task.Segment(fmt.Sprintf("%s %s %s", verb, version, plat))
+	task.Phase(fmt.Sprintf("%s %s %s", verb, version, plat))
 
 	url, err := fetch.UpstreamURL(pkg, version, plat)
 	if err != nil {
-		rep.Warn("%s %s %s: %v", pkg.Name, version, plat, err)
+		rep.Warnf("%s %s %s: %v", pkg.Name, version, plat, err)
 		return outcomeFailed, ocispec.Descriptor{}
 	}
 	meta := fetch.Meta{Name: pkg.Name, Version: version, Platform: plat}
 	path, err := fetch.Download(ctx, httpClient, url, sha, h.Tmp(), meta, task)
 	if err != nil {
-		if report.IsCancellation(err) {
+		if console.IsCancellation(err) {
 			return outcomeCancelled, ocispec.Descriptor{}
 		}
-		rep.Warn("%s %s %s: %v", pkg.Name, version, plat, err)
+		rep.Warnf("%s %s %s: %v", pkg.Name, version, plat, err)
 		return outcomeFailed, ocispec.Descriptor{}
 	}
 	defer os.Remove(path)
 
 	info, err := os.Stat(path)
 	if err != nil {
-		rep.Warn("%s %s %s: %v", pkg.Name, version, plat, err)
+		rep.Warnf("%s %s %s: %v", pkg.Name, version, plat, err)
 		return outcomeFailed, ocispec.Descriptor{}
 	}
 
 	entry, err := archive.Stage(ctx, archives, plat, archive.ProgressBlob(archive.FileBlob(path, sha, info.Size()), task))
 	if err != nil {
-		if report.IsCancellation(err) {
+		if console.IsCancellation(err) {
 			return outcomeCancelled, ocispec.Descriptor{}
 		}
-		rep.Warn("%s %s %s: %v", pkg.Name, version, plat, err)
+		rep.Warnf("%s %s %s: %v", pkg.Name, version, plat, err)
 		return outcomeFailed, ocispec.Descriptor{}
 	}
 

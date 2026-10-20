@@ -11,11 +11,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vi-dev/clix/console"
+
 	"github.com/vi-dev/nem/internal/build"
 	"github.com/vi-dev/nem/internal/clean"
 	"github.com/vi-dev/nem/internal/envx"
 	"github.com/vi-dev/nem/internal/home"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
 	"github.com/vi-dev/nem/internal/usage"
@@ -93,16 +94,16 @@ func runInstall(t *testing.T, h home.Home, pkg *spec.Package, artifact string) e
 func runInstallOut(t *testing.T, h home.Home, pkg *spec.Package, artifact string) (string, error) {
 	t.Helper()
 	var b bytes.Buffer
-	ctx := report.NewContext(context.Background(), report.New(&b, &b, report.Options{}))
-	err := InstallAndRun(ctx, h, nil, pkg, "v1", "", artifact)
+	c := console.New(&b, &b, console.Options{})
+	err := InstallAndRun(console.NewContext(context.Background(), c), c, h, nil, pkg, "v1", "", artifact)
 	return b.String(), err
 }
 
 func runInstallWithDeps(t *testing.T, h home.Home, deps []build.ResolvedDep, pkg *spec.Package, artifact string) (string, error) {
 	t.Helper()
 	var b bytes.Buffer
-	ctx := report.NewContext(context.Background(), report.New(&b, &b, report.Options{}))
-	err := InstallAndRun(ctx, h, deps, pkg, "v1", "", artifact)
+	c := console.New(&b, &b, console.Options{})
+	err := InstallAndRun(console.NewContext(context.Background(), c), c, h, deps, pkg, "v1", "", artifact)
 	return b.String(), err
 }
 

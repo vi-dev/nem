@@ -12,14 +12,13 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+	"github.com/vi-dev/clix"
 
 	"github.com/vi-dev/nem/internal/envx"
 	"github.com/vi-dev/nem/internal/project"
 )
 
-type ExitError struct{ Code int }
-
-func (e *ExitError) Error() string { return fmt.Sprintf("exit status %d", e.Code) }
+type ExitError = clix.ExitError
 
 func newExecCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -58,7 +57,7 @@ func composedPath() (envx.Result, string, error) {
 
 	result := envx.Compose(projManifest, globalManifest, projLock, globalLock, nemHome, installMetaLookup, os.LookupEnv)
 	for _, w := range result.Warnings {
-		console.Warn("%s", w)
+		ui.Warn(w)
 	}
 
 	pathValue := prependPath(result.Path, envValue(os.Environ(), "PATH"))
@@ -76,7 +75,7 @@ func runExec(cmd *cobra.Command, args []string) error {
 
 	resolved, lookErr := lookPath(args[0], pathValue)
 	if lookErr != nil {
-		console.Error(fmt.Errorf("command %s not found", args[0]), "Run `nem use <pkg>` or `nem sync`")
+		ui.Error(fmt.Errorf("command %s not found", args[0]), "Run `nem use <pkg>` or `nem sync`")
 		return &ExitError{Code: exitCodeFor(lookErr)}
 	}
 
@@ -89,7 +88,7 @@ func runExec(cmd *cobra.Command, args []string) error {
 
 	if err := child.Run(); err != nil {
 		if _, ran := errors.AsType[*exec.ExitError](err); !ran {
-			console.Error(fmt.Errorf("command %s: %w", args[0], startCause(err)), "")
+			ui.Error(fmt.Errorf("command %s: %w", args[0], startCause(err)), "")
 		}
 		return &ExitError{Code: exitCodeFor(err)}
 	}

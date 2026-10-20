@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/vi-dev/clix/console"
+	"github.com/vi-dev/clix/console/consoletest"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
@@ -21,7 +23,6 @@ import (
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/ocix/ocixtest"
 	"github.com/vi-dev/nem/internal/publish/publishtest"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 	"github.com/vi-dev/nem/internal/testx"
 )
@@ -39,7 +40,7 @@ func TestRunStagesCatalogAndReadsSrcIndexOnce(t *testing.T) {
 
 	stagingOnly := &testx.CountingTarget{ReadOnlyTarget: store}
 	wireCatalog(t, stagingOnly, tag)
-	stagingCtx, _ := testx.ReporterContext(context.Background())
+	stagingCtx, _ := consoletest.Context(context.Background())
 	if _, err := stageCatalog(stagingCtx, "example.com/cat:v2"); err != nil {
 		t.Fatalf("stageCatalog: %v", err)
 	}
@@ -56,7 +57,7 @@ func TestRunStagesCatalogAndReadsSrcIndexOnce(t *testing.T) {
 	wireCatalog(t, counted, tag)
 	wireArchives(t, testx.NewArchiveFixtures())
 
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	summary, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -92,7 +93,7 @@ func TestRunPresentSkipsDownload(t *testing.T) {
 	archives.Set("go", s)
 	wireArchives(t, archives)
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	summary, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -115,7 +116,7 @@ func TestRunPresentSkipsDownload(t *testing.T) {
 	if done, failed, _ := task.Snapshot(); done || failed {
 		t.Fatalf("go task resolved via Done/Fail (done=%v failed=%v), want Discard only", done, failed)
 	}
-	if statuses := task.Statuses(); len(statuses) != 1 || statuses[0] != "probing" {
+	if statuses := task.Phases(); len(statuses) != 1 || statuses[0] != "probing" {
 		t.Fatalf("statuses = %v, want [\"probing\"] only: present items must not add a status update", statuses)
 	}
 }
@@ -141,7 +142,7 @@ func TestRunReadsEachArchiveIndexOncePerVersion(t *testing.T) {
 	archives.Set("go", counted)
 	wireArchives(t, archives)
 
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	if _, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2"}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -179,8 +180,8 @@ func TestRunReportsByteProgressForDownloadAndUpload(t *testing.T) {
 		"go": urlPkg("go", "1.0.0", up.URL+"/go/{{.Version}}", testx.Sha256Hex(payload)),
 	})
 	wireCatalog(t, store, tag)
-	ctx, rep := testx.ReporterContext(context.Background())
-	observer := &uploadObserver{Target: memory.New(), size: int64(len(payload)), task: func() *testx.Task { return rep.TaskFor("Filling go") }}
+	ctx, rep := consoletest.Context(context.Background())
+	observer := &uploadObserver{Target: memory.New(), size: int64(len(payload)), task: func() *consoletest.Task { return rep.TaskFor("Filling go") }}
 	archives := testx.NewArchiveFixtures()
 	archives.Set("go", observer)
 	wireArchives(t, archives)
@@ -190,9 +191,9 @@ func TestRunReportsByteProgressForDownloadAndUpload(t *testing.T) {
 	}
 
 	size := int64(len(payload))
-	reached := func(calls []testx.ProgressCall) bool {
-		return slices.ContainsFunc(calls, func(c testx.ProgressCall) bool {
-			return c.Unit == report.Bytes && c.Done == size && c.Total == size
+	reached := func(calls []consoletest.ProgressCall) bool {
+		return slices.ContainsFunc(calls, func(c consoletest.ProgressCall) bool {
+			return c.Unit == console.Bytes && c.Done == size && c.Total == size
 		})
 	}
 	if !observer.pushed {
@@ -209,10 +210,10 @@ func TestRunReportsByteProgressForDownloadAndUpload(t *testing.T) {
 type uploadObserver struct {
 	oras.Target
 	size   int64
-	task   func() *testx.Task
+	task   func() *consoletest.Task
 	pushed bool
-	before []testx.ProgressCall
-	during []testx.ProgressCall
+	before []consoletest.ProgressCall
+	during []consoletest.ProgressCall
 }
 
 func (o *uploadObserver) Push(ctx context.Context, desc ocispec.Descriptor, r io.Reader) error {
@@ -247,7 +248,7 @@ func TestRunHealsStaleArchive(t *testing.T) {
 	archives.Set("go", s)
 	wireArchives(t, archives)
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	summary, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -262,13 +263,13 @@ func TestRunHealsStaleArchive(t *testing.T) {
 	}
 	wantStatus := "healing 1.0.0 " + stalePlat.String()
 	var sawHealing bool
-	for _, s := range task.Statuses() {
+	for _, s := range task.Phases() {
 		if s == wantStatus {
 			sawHealing = true
 		}
 	}
 	if !sawHealing {
-		t.Fatalf("statuses = %v, want %q among them", task.Statuses(), wantStatus)
+		t.Fatalf("statuses = %v, want %q among them", task.Phases(), wantStatus)
 	}
 
 	for _, plat := range spec.SupportedPlatforms {
@@ -298,7 +299,7 @@ func TestRunFillsMultiPlatformWithOneIndexCommit(t *testing.T) {
 	archives.Set("go", counted)
 	wireArchives(t, archives)
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	summary, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -326,13 +327,13 @@ func TestRunFillsMultiPlatformWithOneIndexCommit(t *testing.T) {
 	}
 	wantStatus := "filling 1.0.0 " + spec.SupportedPlatforms[0].String()
 	var sawFilling bool
-	for _, s := range task.Statuses() {
+	for _, s := range task.Phases() {
 		if s == wantStatus {
 			sawFilling = true
 		}
 	}
 	if !sawFilling {
-		t.Fatalf("statuses = %v, want %q among them", task.Statuses(), wantStatus)
+		t.Fatalf("statuses = %v, want %q among them", task.Phases(), wantStatus)
 	}
 
 	for _, plat := range spec.SupportedPlatforms {
@@ -372,7 +373,7 @@ func TestRunPartialBatchCommitsSuccessfulPlatforms(t *testing.T) {
 	archives.Set("go", counted)
 	wireArchives(t, archives)
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	summary, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2"})
 	if err != nil {
 		t.Fatalf("Run must not abort on an item failure: %v", err)
@@ -429,7 +430,7 @@ func TestRunBatchCommitFailureCountsAsFailedNotFilled(t *testing.T) {
 		return &rejectIndexTagTarget{Target: memory.New()}, nil
 	}))
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	summary, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2"})
 	if err != nil {
 		t.Fatalf("Run must not abort on a commit failure: %v", err)
@@ -459,7 +460,7 @@ func TestRunNotFillablePackageIsSilentAggregate(t *testing.T) {
 	archives := testx.NewArchiveFixtures()
 	wireArchives(t, archives)
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	summary, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -495,7 +496,7 @@ func TestRunUpstream404WarnsAndFailsNotAborts(t *testing.T) {
 	wireCatalog(t, store, tag)
 	wireArchives(t, testx.NewArchiveFixtures())
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	summary, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2"})
 	if err != nil {
 		t.Fatalf("Run must not abort on a 404: %v", err)
@@ -543,7 +544,7 @@ func TestRunWarnAndContinueSiblingCompletes(t *testing.T) {
 		return healthyArchives, nil
 	}))
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	summary, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2"})
 	if err != nil {
 		t.Fatalf("Run must not abort on an item failure: %v", err)
@@ -584,7 +585,7 @@ func TestRunPublishFailureIsWarnedAndCounted(t *testing.T) {
 		return &testx.RejectPushTarget{Target: memory.New()}, nil
 	}))
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	summary, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2"})
 	if err != nil {
 		t.Fatalf("Run must not abort on a publish failure: %v", err)
@@ -613,7 +614,7 @@ func TestRunMidPublishCancellationIsNotWarnedOrCounted(t *testing.T) {
 		return &testx.CancelOnPushTarget{Target: memory.New(), Cancel: cancel}, nil
 	}))
 
-	ctx, rep := testx.ReporterContext(baseCtx)
+	ctx, rep := consoletest.Context(baseCtx)
 	summary, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2"})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run error = %v, want context.Canceled", err)
@@ -659,7 +660,7 @@ func TestRunDryRunPlansEverythingNoIO(t *testing.T) {
 	archives.Set("missing", &noPushTarget{Target: memory.New(), t: t})
 	wireArchives(t, archives)
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	summary, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2", DryRun: true})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -692,19 +693,19 @@ func TestRunDryRunPlansEverythingNoIO(t *testing.T) {
 	}
 
 	var sawWouldFill, sawWouldHeal bool
-	for _, s := range missingTask.Statuses() {
+	for _, s := range missingTask.Phases() {
 		if strings.HasPrefix(s, "would fill 1.0.0 ") {
 			sawWouldFill = true
 		}
 	}
-	for _, s := range staleTask.Statuses() {
+	for _, s := range staleTask.Phases() {
 		if strings.HasPrefix(s, "would heal 1.0.0 ") {
 			sawWouldHeal = true
 		}
 	}
 	if !sawWouldFill || !sawWouldHeal {
 		t.Fatalf("missing statuses = %v, stale statuses = %v, want would-fill/would-heal status transitions",
-			missingTask.Statuses(), staleTask.Statuses())
+			missingTask.Phases(), staleTask.Phases())
 	}
 
 	if _, err := archives.Open("missing").(oras.ReadOnlyTarget).Resolve(context.Background(), "1.0.0"); err == nil {
@@ -720,7 +721,7 @@ func TestRunDryRunNeverCreatesTmpDir(t *testing.T) {
 	wireArchives(t, testx.NewArchiveFixtures())
 
 	h := bareHome(t)
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	if _, err := Run(ctx, h, Options{CatalogRef: "example.com/cat:v2", DryRun: true}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -754,7 +755,7 @@ func TestRunPkgScopingFiltersToNamed(t *testing.T) {
 	archives := testx.NewArchiveFixtures()
 	wireArchives(t, archives)
 
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	summary, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2", Packages: []string{"go"}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -777,7 +778,7 @@ func TestRunPkgScopingUnknownNameErrors(t *testing.T) {
 	archives := testx.NewArchiveFixtures()
 	wireArchives(t, archives)
 
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	_, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2", Packages: []string{"zzz", "go", "aaa"}})
 	var nf *catalog.PackageNotFoundError
 	if !errors.As(err, &nf) || nf.Name != "aaa" || !slices.Equal(nf.Catalogs, []string{"example.com/cat:v2"}) {
@@ -834,7 +835,7 @@ func TestRunDeterministicSummaryUnderParallel(t *testing.T) {
 	wireCatalog(t, store, tag)
 	wireArchives(t, archives)
 
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	summary, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -846,7 +847,7 @@ func TestRunDeterministicSummaryUnderParallel(t *testing.T) {
 }
 
 func TestRunRejectsUntaggedRef(t *testing.T) {
-	ctx, _ := testx.ReporterContext(context.Background())
+	ctx, _ := consoletest.Context(context.Background())
 	if _, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat"}); err == nil {
 		t.Fatal("untagged catalog ref must be rejected")
 	}
@@ -866,7 +867,7 @@ func TestRunCtxCancelledBeforeStartAborts(t *testing.T) {
 	baseCtx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	ctx, _ := testx.ReporterContext(baseCtx)
+	ctx, _ := consoletest.Context(baseCtx)
 	_, err := Run(ctx, newHome(t), Options{CatalogRef: "example.com/cat:v2"})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run error = %v, want context.Canceled", err)
@@ -887,7 +888,7 @@ func TestStageCatalogReportsProgressOnStagingTask(t *testing.T) {
 	wireCatalog(t, store, tag)
 	wireArchives(t, testx.NewArchiveFixtures())
 
-	ctx, rep := testx.ReporterContext(context.Background())
+	ctx, rep := consoletest.Context(context.Background())
 	opts := Options{CatalogRef: "example.com/cat:v2", DryRun: true}
 	if _, err := Run(ctx, newHome(t), opts); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -897,7 +898,7 @@ func TestStageCatalogReportsProgressOnStagingTask(t *testing.T) {
 	if task == nil {
 		t.Fatal("no Pulling catalog task")
 	}
-	if len(task.Statuses()) == 0 {
+	if len(task.Phases()) == 0 {
 		t.Fatal("no Status call recorded on the staging task: Progress alone never renders (segment stays \"\")")
 	}
 	counts := task.ProgressCalls()

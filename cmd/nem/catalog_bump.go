@@ -5,9 +5,10 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/vi-dev/clix"
+	"github.com/vi-dev/clix/console"
 
 	"github.com/vi-dev/nem/internal/bump"
-	"github.com/vi-dev/nem/internal/report"
 )
 
 func newCatalogBumpCmd() *cobra.Command {
@@ -37,7 +38,7 @@ func newCatalogBumpCmd() *cobra.Command {
 			if len(args) == 1 {
 				cat = args[0]
 			}
-			if err := validateOutput(output); err != nil {
+			if err := clix.ValidateOutput(output); err != nil {
 				return err
 			}
 			refs, err := parsePackageRefs(packages)
@@ -48,14 +49,14 @@ func newCatalogBumpCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if output == outputJSON {
-				if err := console.JSON(res.Rows); err != nil {
+			if output == "json" {
+				if err := ui.JSON(res.Rows); err != nil {
 					return err
 				}
 			}
-			console.Success("%s", bumpSummary(res, dryRun))
+			ui.Success(bumpSummary(res, dryRun))
 			for _, h := range bumpHints(res) {
-				console.Hint(h)
+				ui.Hint(h)
 			}
 			if res.Failed() > 0 {
 				return &ExitError{Code: 1}
@@ -68,7 +69,7 @@ func newCatalogBumpCmd() *cobra.Command {
 	_ = cmd.RegisterFlagCompletionFunc("package", completeCatalogDirPackages)
 	cmd.Flags().IntVar(&backfill, "backfill", 0, "also ensure the newest <n> discovered versions have entries")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report the versions that would be added without downloading or writing anything")
-	addOutputFlag(cmd, &output)
+	clix.AddOutputFlag(cmd, &output)
 	return cmd
 }
 
@@ -79,7 +80,7 @@ func bumpSummary(res *bump.Result, dryRun bool) string {
 		if dryRun {
 			verb = "Would bump"
 		}
-		parts = append(parts, verb+" "+report.Plural(n, "package"))
+		parts = append(parts, verb+" "+console.Plural(n, "package"))
 	}
 	if n := res.Failed(); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d failed", n))

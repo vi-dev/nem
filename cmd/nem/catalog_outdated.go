@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/vi-dev/clix"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/vi-dev/nem/internal/catalog"
@@ -40,7 +41,7 @@ func newCatalogOutdatedCmd() *cobra.Command {
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: firstArgOnly(completeYAMLOrDir),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validateOutput(output); err != nil {
+			if err := clix.ValidateOutput(output); err != nil {
 				return err
 			}
 			ctx := cmd.Context()
@@ -86,7 +87,7 @@ func newCatalogOutdatedCmd() *cobra.Command {
 				}
 				if pkg.VersionDiscovery == nil {
 					skipped++
-					console.Debug("Skipping %s: no versionDiscovery", pkg.Name)
+					ui.Debugf("Skipping %s: no versionDiscovery", pkg.Name)
 					continue
 				}
 				checked = append(checked, pkg)
@@ -114,21 +115,21 @@ func newCatalogOutdatedCmd() *cobra.Command {
 					tableRows = append(tableRows, []string{r.Name, r.Current, r.Latest})
 				}
 			}
-			if output == outputJSON {
-				if err := console.JSON(rows); err != nil {
+			if output == "json" {
+				if err := ui.JSON(rows); err != nil {
 					return err
 				}
 			} else if len(tableRows) > 0 {
-				console.Table([]string{"PACKAGE", "CURRENT", "LATEST"}, tableRows)
+				ui.Table([]string{"PACKAGE", "CURRENT", "LATEST"}, tableRows)
 			}
-			console.Success("%s", outdatedSummary(outdated, failed, len(checked)-outdated-failed, skipped))
+			ui.Success(outdatedSummary(outdated, failed, len(checked)-outdated-failed, skipped))
 			return nil
 		},
 	}
 	cmd.Flags().StringArrayVar(&packages, "package", nil,
 		"check this package (repeatable; default: every package)")
 	_ = cmd.RegisterFlagCompletionFunc("package", completeCatalogDirPackages)
-	addOutputFlag(cmd, &output)
+	clix.AddOutputFlag(cmd, &output)
 	return cmd
 }
 
@@ -137,12 +138,12 @@ func checkOutdated(ctx context.Context, pkg *spec.Package, explicit bool) outdat
 	if len(pkg.Versions) > 0 {
 		row.Current = pkg.Versions[0].Version
 	}
-	task := console.Task("Checking " + pkg.Name)
-	task.Segment("discovering")
+	task := ui.Start("Checking " + pkg.Name)
+	task.Phase("discovering")
 	latest, err := discoverLatest(ctx, pkg)
 	if err != nil {
 		row.Error = err.Error()
-		console.Warn("%s: discovery failed: %v", pkg.Name, err)
+		ui.Warnf("%s: discovery failed: %v", pkg.Name, err)
 		task.Fail("Failed to check " + pkg.Name)
 		return row
 	}

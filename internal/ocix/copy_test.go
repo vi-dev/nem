@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/vi-dev/clix/console"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/memory"
@@ -25,7 +26,6 @@ import (
 	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/ocix/ocixtest"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -143,7 +143,7 @@ func TestCopyIndexClosureWithProgressNoExtraRequests(t *testing.T) {
 	}
 
 	withProgress := &countingTarget{ReadOnlyTarget: newFixture(t)}
-	if _, err := ocix.CopyIndexClosureWithProgress(ctx, withProgress, "v2", memory.New(), "v2", func(int64, int64, report.Unit) {}); err != nil {
+	if _, err := ocix.CopyIndexClosureWithProgress(ctx, withProgress, "v2", memory.New(), "v2", func(int64, int64, console.Unit) {}); err != nil {
 		t.Fatalf("CopyIndexClosureWithProgress: %v", err)
 	}
 

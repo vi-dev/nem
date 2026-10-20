@@ -6,33 +6,33 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/vi-dev/clix/console"
 	"oras.land/oras-go/v2"
 
 	"github.com/vi-dev/nem/internal/archive"
 	"github.com/vi-dev/nem/internal/ocix"
-	"github.com/vi-dev/nem/internal/report"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
 func mirrorPackage(ctx context.Context, opts Options, manifest ocix.TitledManifest, store *ocix.Store, srcArchives archive.Store, dstArchives archive.ReadWriteStore, agg *aggregator) {
-	rep := report.FromContext(ctx)
+	rep := console.FromContext(ctx)
 	label := fmt.Sprintf("Mirroring %s", manifest.Title)
 	failedOutcome := fmt.Sprintf("Failed to mirror %s", manifest.Title)
 
-	task := rep.Task(label)
-	task.Segment("probing")
+	task := rep.Start(label)
+	task.Phase("probing")
 
 	files, _, err := store.Files(ctx, manifest.Title)
 	if err != nil {
 		agg.failed.Add(1)
-		rep.Warn("%s: %v", manifest.Title, err)
+		rep.Warnf("%s: %v", manifest.Title, err)
 		task.Fail(failedOutcome)
 		return
 	}
 	pkg, err := spec.ParseFiles(files)
 	if err != nil {
 		agg.failed.Add(1)
-		rep.Warn("%s: %v", manifest.Title, err)
+		rep.Warnf("%s: %v", manifest.Title, err)
 		task.Fail(failedOutcome)
 		return
 	}
@@ -50,14 +50,14 @@ func mirrorPackage(ctx context.Context, opts Options, manifest ocix.TitledManife
 	src, err := srcArchives.Open(ctx, manifest.Title)
 	if err != nil {
 		agg.failed.Add(1)
-		rep.Warn("%s: %v", manifest.Title, err)
+		rep.Warnf("%s: %v", manifest.Title, err)
 		task.Fail(failedOutcome)
 		return
 	}
 	dst, err := dstArchives.OpenRW(ctx, manifest.Title)
 	if err != nil {
 		agg.failed.Add(1)
-		rep.Warn("%s: %v", manifest.Title, err)
+		rep.Warnf("%s: %v", manifest.Title, err)
 		task.Fail(failedOutcome)
 		return
 	}
@@ -69,7 +69,7 @@ func mirrorPackage(ctx context.Context, opts Options, manifest ocix.TitledManife
 			break
 		}
 		if p.err != nil {
-			rep.Warn("%s %s: %v", manifest.Title, p.version, p.err)
+			rep.Warnf("%s %s: %v", manifest.Title, p.version, p.err)
 			agg.failed.Add(1)
 			failed = true
 			continue
@@ -98,7 +98,7 @@ func mirrorPackage(ctx context.Context, opts Options, manifest ocix.TitledManife
 		if opts.DryRun {
 			verb = "Would mirror"
 		}
-		task.Done(fmt.Sprintf("%s %s (%s)", verb, manifest.Title, report.Plural(copied, "tag")))
+		task.Done(fmt.Sprintf("%s %s (%s)", verb, manifest.Title, console.Plural(copied, "tag")))
 	default:
 		task.Discard()
 	}
@@ -146,21 +146,21 @@ const (
 	outcomeCancelled
 )
 
-func mirrorVersion(ctx context.Context, src oras.ReadOnlyTarget, dst oras.Target, name, version string, prebuilt, dryRun bool, task report.Task) versionOutcome {
-	rep := report.FromContext(ctx)
+func mirrorVersion(ctx context.Context, src oras.ReadOnlyTarget, dst oras.Target, name, version string, prebuilt, dryRun bool, task console.Task) versionOutcome {
+	rep := console.FromContext(ctx)
 	srcDesc, err := archive.ResolveIndex(ctx, src, version)
 	switch {
 	case errors.Is(err, archive.ErrNotFound):
 		if prebuilt {
-			rep.Warn("%s %s: archive missing from source", name, version)
+			rep.Warnf("%s %s: archive missing from source", name, version)
 			return outcomeFailed
 		}
 		return outcomeUnfilled
 	case err != nil:
-		if report.IsCancellation(err) {
+		if console.IsCancellation(err) {
 			return outcomeCancelled
 		}
-		rep.Warn("%s %s: %v", name, version, err)
+		rep.Warnf("%s %s: %v", name, version, err)
 		return outcomeFailed
 	}
 
@@ -171,23 +171,23 @@ func mirrorVersion(ctx context.Context, src oras.ReadOnlyTarget, dst oras.Target
 			return outcomePresent
 		}
 	case !errors.Is(err, archive.ErrNotFound):
-		if report.IsCancellation(err) {
+		if console.IsCancellation(err) {
 			return outcomeCancelled
 		}
-		rep.Warn("%s %s: %v", name, version, err)
+		rep.Warnf("%s %s: %v", name, version, err)
 		return outcomeFailed
 	}
 
 	if dryRun {
-		task.Segment(fmt.Sprintf("would copy %s", version))
+		task.Phase(fmt.Sprintf("would copy %s", version))
 		return outcomeCopied
 	}
-	task.Segment(fmt.Sprintf("copying %s", version))
+	task.Phase(fmt.Sprintf("copying %s", version))
 	if _, err := ocix.CopyTag(ctx, src, dst, version); err != nil {
-		if report.IsCancellation(err) {
+		if console.IsCancellation(err) {
 			return outcomeCancelled
 		}
-		rep.Warn("%s %s: %v", name, version, err)
+		rep.Warnf("%s %s: %v", name, version, err)
 		return outcomeFailed
 	}
 	return outcomeCopied
