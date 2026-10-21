@@ -1,6 +1,6 @@
 ---
 title: nem update
-weight: 38
+weight: 40
 ---
 
 Update declared packages to their latest versions.

@@ -247,10 +247,7 @@ func enumerate(ctx context.Context, cat string) ([]pkgEntry, error) {
 		if err != nil {
 			return nil, fmt.Errorf("compute manifest descriptor for %s: %w", name, err)
 		}
-		var version string
-		if len(pkg.Versions) > 0 {
-			version = pkg.Versions[0].Version
-		}
+		version := pkg.Latest()
 		out = append(out, pkgEntry{Files: files, Name: pkg.Name, Description: pkg.Description, Version: version, Schema: pkg.Schema, manifest: desc})
 	}
 	return out, nil

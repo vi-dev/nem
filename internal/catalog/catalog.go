@@ -28,8 +28,9 @@ func digestOfFiles(files spec.Files) (string, error) {
 }
 
 func versionsOf(pkg *spec.Package) []string {
-	out := make([]string, len(pkg.Versions))
-	for i, v := range pkg.Versions {
+	offered := pkg.Offered()
+	out := make([]string, len(offered))
+	for i, v := range offered {
 		out[i] = v.Version
 	}
 	return out

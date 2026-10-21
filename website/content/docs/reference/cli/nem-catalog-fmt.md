@@ -1,6 +1,6 @@
 ---
 title: nem catalog fmt
-weight: 11
+weight: 12
 ---
 
 Rewrite package manifests to canonical form.

@@ -1,6 +1,6 @@
 ---
 title: nem catalog mirror
-weight: 14
+weight: 15
 ---
 
 Replicate a catalog and its archives to another registry.

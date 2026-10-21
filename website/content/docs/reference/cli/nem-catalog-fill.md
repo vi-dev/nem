@@ -1,6 +1,6 @@
 ---
 title: nem catalog fill
-weight: 10
+weight: 11
 ---
 
 Download a catalog's upstream artifacts and publish them as archives.

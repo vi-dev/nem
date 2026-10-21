@@ -65,6 +65,7 @@ Every `nem` command, grouped as in `nem --help`. Every command also accepts `--c
 | [nem catalog build](nem-catalog-build/) | Build a catalog's build-from-source packages on the host platform |
 | [nem catalog bump](nem-catalog-bump/) | Add newer upstream versions to package manifests |
 | [nem catalog diff](nem-catalog-diff/) | Compare a base catalog's package manifests against a target catalog |
+| [nem catalog exclude](nem-catalog-exclude/) | Exclude package versions, with a reason shown to users |
 | [nem catalog fill](nem-catalog-fill/) | Download a catalog's upstream artifacts and publish them as archives |
 | [nem catalog fmt](nem-catalog-fmt/) | Rewrite package manifests to canonical form |
 | [nem catalog lint](nem-catalog-lint/) | Validate package manifests in a catalog |
@@ -72,6 +73,7 @@ Every `nem` command, grouped as in `nem --help`. Every command also accepts `--c
 | [nem catalog outdated](nem-catalog-outdated/) | Report packages whose upstream has a newer version |
 | [nem catalog publish](nem-catalog-publish/) | Publish a catalog to an OCI registry |
 | [nem catalog test](nem-catalog-test/) | Install packages and run their declared test steps |
+| [nem catalog unexclude](nem-catalog-unexclude/) | Lift the exclusion of package versions |
 
 ### nem completion
 

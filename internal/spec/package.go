@@ -31,7 +31,10 @@ type VersionEntry struct {
 	Meta         map[string]string
 	Sha256       map[string]string
 	SourceSha256 string
+	Excluded     *Exclusion
 }
+
+type Exclusion struct{ Reason, Use string }
 
 type Discovery struct {
 	GitHub *GitHubDiscovery

@@ -1,6 +1,6 @@
 ---
 title: nem self
-weight: 33
+weight: 35
 ---
 
 Manage this nem installation.

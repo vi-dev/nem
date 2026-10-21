@@ -1,6 +1,6 @@
 ---
 title: nem catalog update
-weight: 20
+weight: 22
 ---
 
 Update oci catalogs from their remote.

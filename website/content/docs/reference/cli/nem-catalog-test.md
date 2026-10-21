@@ -1,6 +1,6 @@
 ---
 title: nem catalog test
-weight: 19
+weight: 20
 ---
 
 Install packages and run their declared test steps.

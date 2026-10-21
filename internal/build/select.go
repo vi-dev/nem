@@ -68,10 +68,10 @@ func SelectAll(ctx context.Context, t *Target) ([]Selection, error) {
 	}
 	var sels []Selection
 	for _, pkg := range pkgs {
-		if len(pkg.Versions) == 0 || !buildable(pkg.LatestRecipe()) {
+		if pkg.Latest() == "" || !buildable(pkg.LatestRecipe()) {
 			continue
 		}
-		sel, err := selection(pkg, pkg.Versions[0].Version, "latest")
+		sel, err := selection(pkg, pkg.Latest(), "latest")
 		if err != nil {
 			return nil, err
 		}
@@ -114,7 +114,10 @@ func selectPackage(ctx context.Context, t *Target, selector string) (*spec.Packa
 	}
 	version := ref.Version
 	if version == "" {
-		version = pkg.Versions[0].Version
+		version = pkg.Latest()
+	}
+	if ex := pkg.Exclusion(version); ex != nil {
+		return nil, "", &catalog.VersionExcludedError{Name: pkg.Name, Version: version, Catalog: t.Ref, Reason: ex.Reason, Use: ex.Use}
 	}
 	return pkg, version, nil
 }
@@ -235,6 +238,9 @@ func SelectMissing(ctx context.Context, t *Target, scope []spec.Ref) ([]Selectio
 			if !pkg.HasEqualVersion(ref.Version) {
 				return nil, MissingStats{}, &catalog.VersionNotFoundError{Name: ref.Name, Version: ref.Version, Catalog: t.Ref}
 			}
+			if ex := pkg.Exclusion(ref.Version); ex != nil {
+				return nil, MissingStats{}, &catalog.VersionExcludedError{Name: ref.Name, Version: ref.Version, Catalog: t.Ref, Reason: ex.Reason, Use: ex.Use}
+			}
 			versions = []string{ref.Version}
 		}
 		if !anyBuildable(pkg, versions) {
@@ -315,8 +321,9 @@ func SelectMissing(ctx context.Context, t *Target, scope []spec.Ref) ([]Selectio
 }
 
 func versionsOf(pkg *spec.Package) []string {
-	out := make([]string, len(pkg.Versions))
-	for i, v := range pkg.Versions {
+	offered := pkg.Offered()
+	out := make([]string, len(offered))
+	for i, v := range offered {
 		out[i] = v.Version
 	}
 	return out

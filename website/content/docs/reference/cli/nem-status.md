@@ -1,6 +1,6 @@
 ---
 title: nem status
-weight: 35
+weight: 37
 ---
 
 Show declared packages and composed environment variables.

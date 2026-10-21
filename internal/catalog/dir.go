@@ -113,10 +113,7 @@ func (d *Dir) Summaries(ctx context.Context) ([]Summary, error) {
 		if err != nil {
 			continue
 		}
-		latest := ""
-		if len(pkg.Versions) > 0 {
-			latest = pkg.Versions[0].Version
-		}
+		latest := pkg.Latest()
 		summaries = append(summaries, Summary{Name: pkg.Name, Description: pkg.Description, Latest: latest})
 	}
 	sort.Slice(summaries, func(i, j int) bool { return summaries[i].Name < summaries[j].Name })

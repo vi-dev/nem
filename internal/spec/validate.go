@@ -44,6 +44,9 @@ func (p *Package) Validate() error {
 		if !TagRE.MatchString(v.Version) {
 			return fmt.Errorf("versions[%d] (%s): version is not a valid oci tag (it names the package's archive tag)", i, v.Version)
 		}
+		if err := p.validateExclusion(v); err != nil {
+			return fmt.Errorf("versions[%d] (%s): %w", i, v.Version, err)
+		}
 		for k, val := range v.Meta {
 			if !metaKeyRE.MatchString(k) {
 				return fmt.Errorf("versions[%d] (%s): invalid meta key %q", i, v.Version, k)
@@ -52,6 +55,9 @@ func (p *Package) Validate() error {
 				return fmt.Errorf("versions[%d] (%s): meta %s must not be empty", i, v.Version, k)
 			}
 		}
+	}
+	if p.Latest() == "" {
+		return errors.New("every version is excluded; remove the package instead")
 	}
 	if err := p.Base.validate(p.coveredBy(&p.Base)); err != nil {
 		return err
@@ -67,12 +73,49 @@ func (p *Package) Validate() error {
 
 func (p *Package) coveredBy(r *Recipe) []VersionEntry {
 	var out []VersionEntry
-	for _, v := range p.Versions {
+	for _, v := range p.Offered() {
 		if p.selectRecipe(v.Version) == r {
 			out = append(out, v)
 		}
 	}
 	return out
+}
+
+const maxExclusionReason = 300
+
+func (p *Package) validateExclusion(v VersionEntry) error {
+	ex := v.Excluded
+	if ex == nil {
+		return nil
+	}
+	if p.Schema < SchemaExcluded {
+		return fmt.Errorf("excluded requires schema %d", SchemaExcluded)
+	}
+	reason := strings.TrimSpace(ex.Reason)
+	switch {
+	case reason == "":
+		return errors.New("excluded requires a reason")
+	case strings.ContainsAny(reason, "\r\n"):
+		return errors.New("excluded reason must be a single line")
+	case len(reason) > maxExclusionReason:
+		return fmt.Errorf("excluded reason is %d characters; the limit is %d", len(reason), maxExclusionReason)
+	}
+	if ex.Use == "" {
+		return nil
+	}
+	if ex.Use == v.Version {
+		return errors.New("excluded use must name another version")
+	}
+	for _, e := range p.Versions {
+		if e.Version != ex.Use {
+			continue
+		}
+		if e.Excluded != nil {
+			return fmt.Errorf("excluded use %s is itself excluded", ex.Use)
+		}
+		return nil
+	}
+	return fmt.Errorf("excluded use %s is not a listed version", ex.Use)
 }
 
 func (p *Package) validateDiscovery() error {

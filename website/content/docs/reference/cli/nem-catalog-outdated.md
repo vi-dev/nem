@@ -1,6 +1,6 @@
 ---
 title: nem catalog outdated
-weight: 15
+weight: 16
 ---
 
 Report packages whose upstream has a newer version.

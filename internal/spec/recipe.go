@@ -93,8 +93,9 @@ func (p *Package) Recipe(version string) (*Recipe, error) {
 }
 
 func (p *Package) LatestRecipe() *Recipe {
-	if len(p.Versions) == 0 {
+	latest := p.Latest()
+	if latest == "" {
 		return &p.Base
 	}
-	return p.selectRecipe(p.Versions[0].Version)
+	return p.selectRecipe(latest)
 }

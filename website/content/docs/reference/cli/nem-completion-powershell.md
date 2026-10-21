@@ -1,6 +1,6 @@
 ---
 title: nem completion powershell
-weight: 25
+weight: 27
 ---
 
 Generate the autocompletion script for powershell.

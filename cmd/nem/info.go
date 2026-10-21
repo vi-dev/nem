@@ -60,6 +60,9 @@ func runInfo(cmd *cobra.Command, arg string) error {
 	versions := make([]string, len(pkg.Versions))
 	for i, v := range pkg.Versions {
 		versions[i] = v.Version
+		if v.Excluded != nil {
+			versions[i] += " (excluded: " + v.Excluded.Reason + ")"
+		}
 	}
 
 	fields := []struct{ label, value string }{

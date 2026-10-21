@@ -99,7 +99,7 @@ must not carry identity keys. See [Frozen recipes](../../writing-packages/recipe
 
 | Key | Required | Meaning |
 |---|---|---|
-| `schema` | yes | `3`; `2` is still accepted and `nem catalog fmt` rewrites it. |
+| `schema` | yes | `3`, or `4` for a package that excludes a version; `2` is still accepted and `nem catalog fmt` rewrites it to `3`. |
 | `name` | yes | Package name, `^[a-z0-9][a-z0-9._-]*$`. Also the directory name under `pkgs/`. |
 | `description` | no | One line, shown by `nem search` and `nem info`. |
 | `homepage` | no | URL shown by `nem info`. |
@@ -342,8 +342,9 @@ versions:
 | `meta` | Extra values per version; keys `^[A-Za-z][A-Za-z0-9_]*$`, values non-empty. Reachable as `.Meta.<key>` in `artifact.url`, `artifact.github.asset`, and `build.source.url`, and filled from discovery's named groups. |
 | `sha256` | A map from platform to a 64-character lowercase hex digest. Required for `url` and `github` artifacts, and it must cover every supported platform; lint checks presence per platform, not the value, which a wrong digest fails at install time. |
 | `sourceSha256` | The digest of the source archive for a built package. |
+| `excluded` | Marks the version as excluded; requires `schema: 4`. Either a one-line reason (at most 300 characters) or a mapping `{reason, use}`, where `use` names a listed version that is not excluded. The resolver never picks an excluded version, and asking for one exactly fails with the reason. `sha256` is optional on an excluded entry, and at least one version must not be excluded. |
 
-A `nem use` without a version takes the first entry. `nem catalog lint`
+A `nem use` without a version takes the first entry that is not excluded. `nem catalog lint`
 rejects a list that is not strictly newest first, duplicates included, and
 `nem catalog bump` inserts new versions in order. The resolver steps further down the list only when
 another package requires an older or `compat`-constrained version; it never

@@ -1,6 +1,6 @@
 ---
 title: nem self update
-weight: 34
+weight: 36
 ---
 
 Update nem to the latest build on its channel.

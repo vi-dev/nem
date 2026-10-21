@@ -32,7 +32,7 @@ func newCompatConflictError(name string, compats ...string) *CompatConflictError
 func selectHighest(versions []spec.VersionEntry, compat string) string {
 	best := ""
 	for _, v := range versions {
-		if !spec.MatchesPrefix(v.Version, compat) {
+		if v.Excluded != nil || !spec.MatchesPrefix(v.Version, compat) {
 			continue
 		}
 		if best == "" || spec.CompareVersions(v.Version, best) > 0 {

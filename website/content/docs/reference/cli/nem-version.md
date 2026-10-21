@@ -1,6 +1,6 @@
 ---
 title: nem version
-weight: 40
+weight: 42
 ---
 
 Print the version of nem.

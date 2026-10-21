@@ -293,7 +293,7 @@ func apply(ctx context.Context, editor catalog.Editor, name string, files spec.F
 	}
 
 	for _, v := range added {
-		if !hasVersionEntry(check, v) {
+		if !check.HasVersion(v) {
 			return nil, "", fmt.Errorf("edited manifest is missing %s", v)
 		}
 	}
@@ -456,8 +456,4 @@ func buildOCIEntry(ctx context.Context, pkg *spec.Package, r *spec.Recipe, targe
 	}
 	e.SourceSha256 = sum
 	return e, nil
-}
-
-func hasVersionEntry(pkg *spec.Package, v string) bool {
-	return slices.ContainsFunc(pkg.Versions, func(e spec.VersionEntry) bool { return e.Version == v })
 }

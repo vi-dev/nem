@@ -43,7 +43,7 @@ func Build(ctx context.Context, h home.Home, set *catalog.Set, pkg *spec.Package
 
 	version := opts.Version
 	if version == "" {
-		version = pkg.Versions[0].Version
+		version = pkg.Latest()
 	}
 	r, err := pkg.Recipe(version)
 	if err != nil {

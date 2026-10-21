@@ -30,6 +30,10 @@ type Change struct {
 	Base   string   `json:"base,omitempty"`
 	Target string   `json:"target,omitempty"`
 	Diff   []string `json:"diff"`
+	// Excluded lists versions base excludes that target does not; Unexcluded
+	// lists versions target excludes that base offers again.
+	Excluded   []string `json:"excluded,omitempty"`
+	Unexcluded []string `json:"unexcluded,omitempty"`
 }
 
 type Result struct {
@@ -262,6 +266,7 @@ func loadChange(ctx context.Context, base, target catalog.Entry, p plan) (Change
 		c.Base = latest(b.pkg)
 		c.Diff = versionsOf(b.pkg)
 		c.Build = anyBuilds(b.pkg, c.Diff)
+		c.Excluded = newlyExcluded(b.pkg, nil)
 	case b == nil:
 		c.Status = StatusRemoved
 		c.Build = anyBuilds(t.pkg, versionsOf(t.pkg))
@@ -274,6 +279,8 @@ func loadChange(ctx context.Context, base, target catalog.Entry, p plan) (Change
 		c.Target = latest(t.pkg)
 		c.Diff = changedVersions(b.pkg, t.pkg)
 		c.Build = anyBuilds(b.pkg, c.Diff)
+		c.Excluded = newlyExcluded(b.pkg, t.pkg)
+		c.Unexcluded = newlyExcluded(t.pkg, b.pkg)
 	}
 	return c, true, nil
 }
@@ -288,24 +295,32 @@ func anyBuilds(pkg *spec.Package, versions []string) bool {
 }
 
 func latest(pkg *spec.Package) string {
-	if len(pkg.Versions) == 0 {
-		return ""
-	}
-	return pkg.Versions[0].Version
+	return pkg.Latest()
 }
 
 func versionsOf(pkg *spec.Package) []string {
-	out := make([]string, 0, len(pkg.Versions))
-	for _, v := range pkg.Versions {
+	offered := pkg.Offered()
+	out := make([]string, 0, len(offered))
+	for _, v := range offered {
 		out = append(out, v.Version)
+	}
+	return out
+}
+
+func newlyExcluded(base, target *spec.Package) []string {
+	var out []string
+	for _, v := range base.Versions {
+		if v.Excluded != nil && (target == nil || target.Exclusion(v.Version) == nil) {
+			out = append(out, v.Version)
+		}
 	}
 	return out
 }
 
 func changedVersions(base, target *spec.Package) []string {
 	var out []string
-	for _, v := range base.Versions {
-		if !target.HasEqualVersion(v.Version) {
+	for _, v := range base.Offered() {
+		if !target.HasEqualVersion(v.Version) || target.Exclusion(v.Version) != nil {
 			out = append(out, v.Version)
 			continue
 		}
@@ -315,8 +330,8 @@ func changedVersions(base, target *spec.Package) []string {
 			out = append(out, v.Version)
 		}
 	}
-	if len(out) == 0 && len(base.Versions) > 0 {
-		out = append(out, base.Versions[0].Version)
+	if latest := base.Latest(); len(out) == 0 && latest != "" {
+		out = append(out, latest)
 	}
 	return out
 }

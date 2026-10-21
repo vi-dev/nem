@@ -1,6 +1,6 @@
 ---
 title: nem catalog reorder
-weight: 18
+weight: 19
 ---
 
 Reorder catalog precedence.

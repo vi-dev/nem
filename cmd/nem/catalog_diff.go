@@ -76,9 +76,9 @@ func renderDiffTable(changes []diff.Change) {
 	table := make([][]string, 0, len(changes))
 	for _, r := range changes {
 		table = append(table, []string{r.Name, r.Status, orDash(r.Base), orDash(r.Target),
-			orDash(strings.Join(r.Diff, ", "))})
+			orDash(strings.Join(r.Diff, ", ")), orDash(exclusionChanges(r))})
 	}
-	ui.Table([]string{"PACKAGE", "STATUS", "BASE", "TARGET", "DIFF"}, table)
+	ui.Table([]string{"PACKAGE", "STATUS", "BASE", "TARGET", "DIFF", "EXCLUSIONS"}, table)
 }
 
 func orDash(s string) string {
@@ -86,4 +86,15 @@ func orDash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+func exclusionChanges(c diff.Change) string {
+	parts := make([]string, 0, len(c.Excluded)+len(c.Unexcluded))
+	for _, v := range c.Excluded {
+		parts = append(parts, v+" excluded")
+	}
+	for _, v := range c.Unexcluded {
+		parts = append(parts, v+" lifted")
+	}
+	return strings.Join(parts, ", ")
 }

@@ -92,10 +92,7 @@ func (f *File) Summaries(_ context.Context) ([]Summary, error) {
 	if err != nil {
 		return nil, err
 	}
-	latest := ""
-	if len(pkg.Versions) > 0 {
-		latest = pkg.Versions[0].Version
-	}
+	latest := pkg.Latest()
 	return []Summary{{Name: pkg.Name, Description: pkg.Description, Latest: latest}}, nil
 }
 

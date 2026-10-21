@@ -57,6 +57,7 @@ func Lint(ctx context.Context, cat string, packages ...string) ([]Finding, error
 			}
 			findings = append(findings, lintPackage(name, files)...)
 		}
+		findings = append(findings, lintExcludedDeps(ctx, entry.Catalog, selected)...)
 		sortFindings(findings)
 		return findings, nil
 	}
@@ -79,6 +80,7 @@ func Lint(ctx context.Context, cat string, packages ...string) ([]Finding, error
 		}
 		findings = append(findings, lintPackage(name, files)...)
 	}
+	findings = append(findings, lintExcludedDeps(ctx, entry.Catalog, names)...)
 	sortFindings(findings)
 	return findings, nil
 }
@@ -129,6 +131,65 @@ func lintPackage(id string, files spec.Files) []Finding {
 	findings = append(findings, lintVersionOrder(id, pkg)...)
 	findings = append(findings, lintTestSteps(id, pkg)...)
 	findings = append(findings, lintRecipes(id, pkg)...)
+	findings = append(findings, lintSchema(id, pkg)...)
+	return findings
+}
+
+func lintSchema(id string, pkg *spec.Package) []Finding {
+	if pkg.Schema < spec.SchemaExcluded || len(pkg.Offered()) < len(pkg.Versions) {
+		return nil
+	}
+	return []Finding{{Pkg: id, Msg: fmt.Sprintf("schema %d is only needed for excluded versions; lower it to 3 to keep the package digest stable", pkg.Schema)}}
+}
+
+// lintExcludedDeps reports exact dependencies, from the named packages, on
+// versions their own catalog excludes: every install of the dependent would
+// fail at resolve time.
+func lintExcludedDeps(ctx context.Context, cat catalog.Catalog, names []string) []Finding {
+	pkgs := map[string]*spec.Package{}
+	load := func(name string) *spec.Package {
+		if pkg, ok := pkgs[name]; ok {
+			return pkg
+		}
+		var pkg *spec.Package
+		if files, err := cat.ReadFiles(ctx, name); err == nil {
+			pkg, _ = spec.ParseFiles(files)
+		}
+		pkgs[name] = pkg
+		return pkg
+	}
+	var findings []Finding
+	for _, name := range names {
+		pkg := load(name)
+		if pkg == nil {
+			continue
+		}
+		seen := map[*spec.Recipe]bool{}
+		for _, v := range pkg.Offered() {
+			r, err := pkg.Recipe(v.Version)
+			if err != nil || seen[r] {
+				continue
+			}
+			seen[r] = true
+			deps := slices.Clone(r.Deps)
+			if r.Build != nil {
+				deps = append(deps, r.Build.Deps...)
+			}
+			for _, d := range deps {
+				if d.Version == "" {
+					continue
+				}
+				dep := load(d.Name)
+				if dep == nil {
+					continue
+				}
+				if ex := dep.Exclusion(d.Version); ex != nil {
+					findings = append(findings, Finding{Pkg: name,
+						Msg: fmt.Sprintf("%sdepends on %s@%s, which is excluded: %s", recipeLabel(r), d.Name, d.Version, ex.Reason)})
+				}
+			}
+		}
+	}
 	return findings
 }
 
@@ -148,11 +209,11 @@ func lintRecipes(id string, pkg *spec.Package) []Finding {
 				Msg: fmt.Sprintf("%s covers no listed version; delete it", spec.RecipeFileName(f.Prefix))})
 		}
 	}
-	if len(pkg.Versions) > 0 {
+	if latest := pkg.Latest(); latest != "" {
 		if r := pkg.LatestRecipe(); r.Prefix != "" {
 			findings = append(findings, Finding{Pkg: id,
 				Msg: fmt.Sprintf("%s does not cover the latest version %s (%s does)",
-					spec.PkgFileName, pkg.Versions[0].Version, spec.RecipeFileName(r.Prefix))})
+					spec.PkgFileName, latest, spec.RecipeFileName(r.Prefix))})
 		}
 	}
 	return findings

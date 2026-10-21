@@ -1,6 +1,6 @@
 ---
 title: nem completion
-weight: 22
+weight: 24
 ---
 
 Generate the autocompletion script for the specified shell.

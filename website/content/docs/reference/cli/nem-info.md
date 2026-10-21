@@ -1,6 +1,6 @@
 ---
 title: nem info
-weight: 30
+weight: 32
 ---
 
 Show a package's details and available versions.

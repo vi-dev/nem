@@ -1,6 +1,6 @@
 ---
 title: nem which
-weight: 41
+weight: 43
 ---
 
 Show where a command resolves in the composed environment.

@@ -1,6 +1,6 @@
 ---
 title: nem search
-weight: 32
+weight: 34
 ---
 
 Search catalogs for packages.

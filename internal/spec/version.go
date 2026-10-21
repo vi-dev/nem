@@ -74,3 +74,45 @@ func (p *Package) HasEqualVersion(v string) bool {
 	}
 	return false
 }
+
+// HasVersion reports an entry spelled exactly version; HasEqualVersion also
+// accepts spellings that compare equal.
+func (p *Package) HasVersion(version string) bool {
+	for _, e := range p.Versions {
+		if e.Version == version {
+			return true
+		}
+	}
+	return false
+}
+
+// Exclusion is the exclusion of the entry that compares equal to version, so
+// every spelling Recipe accepts is checked.
+func (p *Package) Exclusion(version string) *Exclusion {
+	for _, e := range p.Versions {
+		if CompareVersions(version, e.Version) == 0 {
+			return e.Excluded
+		}
+	}
+	return nil
+}
+
+// Latest is the newest version that is not excluded, or "" when none is.
+func (p *Package) Latest() string {
+	for _, e := range p.Versions {
+		if e.Excluded == nil {
+			return e.Version
+		}
+	}
+	return ""
+}
+
+func (p *Package) Offered() []VersionEntry {
+	var out []VersionEntry
+	for _, e := range p.Versions {
+		if e.Excluded == nil {
+			out = append(out, e)
+		}
+	}
+	return out
+}

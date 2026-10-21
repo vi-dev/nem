@@ -1,6 +1,6 @@
 ---
 title: nem completion fish
-weight: 24
+weight: 26
 ---
 
 Generate the autocompletion script for fish.

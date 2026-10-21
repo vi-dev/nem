@@ -50,6 +50,20 @@ func (e *VersionNotFoundError) Error() string {
 	return fmt.Sprintf("version %s of package %s not found in catalog %s", e.Version, e.Name, e.Catalog)
 }
 
+type VersionExcludedError struct {
+	Name, Version, Catalog string
+	Reason, Use            string
+	RequiredBy             string
+}
+
+func (e *VersionExcludedError) Error() string {
+	by := ""
+	if e.RequiredBy != "" {
+		by = " (required by " + e.RequiredBy + ")"
+	}
+	return fmt.Sprintf("version %s of package %s is excluded by catalog %s%s: %s", e.Version, e.Name, e.Catalog, by, e.Reason)
+}
+
 type DigestMismatchError struct{ Name, Version, Locked, Current string }
 
 func (e *DigestMismatchError) Error() string {

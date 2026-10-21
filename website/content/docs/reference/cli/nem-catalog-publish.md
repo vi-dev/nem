@@ -1,6 +1,6 @@
 ---
 title: nem catalog publish
-weight: 16
+weight: 17
 ---
 
 Publish a catalog to an OCI registry.

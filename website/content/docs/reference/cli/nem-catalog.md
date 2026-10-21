@@ -44,6 +44,7 @@ nem catalog lint .                                      # validate a checkout
 | [build](../nem-catalog-build/) | Build a catalog's build-from-source packages on the host platform |
 | [bump](../nem-catalog-bump/) | Add newer upstream versions to package manifests |
 | [diff](../nem-catalog-diff/) | Compare a base catalog's package manifests against a target catalog |
+| [exclude](../nem-catalog-exclude/) | Exclude package versions, with a reason shown to users |
 | [fill](../nem-catalog-fill/) | Download a catalog's upstream artifacts and publish them as archives |
 | [fmt](../nem-catalog-fmt/) | Rewrite package manifests to canonical form |
 | [lint](../nem-catalog-lint/) | Validate package manifests in a catalog |
@@ -51,6 +52,7 @@ nem catalog lint .                                      # validate a checkout
 | [outdated](../nem-catalog-outdated/) | Report packages whose upstream has a newer version |
 | [publish](../nem-catalog-publish/) | Publish a catalog to an OCI registry |
 | [test](../nem-catalog-test/) | Install packages and run their declared test steps |
+| [unexclude](../nem-catalog-unexclude/) | Lift the exclusion of package versions |
 
 ## Global flags
 

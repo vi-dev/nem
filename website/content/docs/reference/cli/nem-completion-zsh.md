@@ -1,6 +1,6 @@
 ---
 title: nem completion zsh
-weight: 26
+weight: 28
 ---
 
 Generate the autocompletion script for zsh.

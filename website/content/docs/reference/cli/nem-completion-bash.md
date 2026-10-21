@@ -1,6 +1,6 @@
 ---
 title: nem completion bash
-weight: 23
+weight: 25
 ---
 
 Generate the autocompletion script for bash.

@@ -1,6 +1,6 @@
 ---
 title: nem catalog list
-weight: 13
+weight: 14
 ---
 
 List configured catalogs.

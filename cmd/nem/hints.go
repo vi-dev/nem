@@ -23,9 +23,6 @@ func hintFor(err error) string {
 	if _, ok := errors.AsType[*spec.UnsupportedSchemaError](err); ok {
 		return "Run `nem self update`"
 	}
-	if _, ok := errors.AsType[*spec.UnsupportedSchemaError](err); ok {
-		return "Run `nem self update`"
-	}
 	if _, ok := errors.AsType[*catalog.NotFoundError](err); ok {
 		return "Run `nem catalog add <name> <ref>`"
 	}
@@ -34,6 +31,15 @@ func hintFor(err error) string {
 	}
 	if _, ok := errors.AsType[*resolve.UnsupportedPlatformError](err); ok {
 		return "This package supports none of nem's platforms"
+	}
+	if ee, ok := errors.AsType[*catalog.VersionExcludedError](err); ok {
+		switch {
+		case ee.RequiredBy != "":
+			return fmt.Sprintf("Package %s requires an excluded version; update or unuse it", ee.RequiredBy)
+		case ee.Use != "":
+			return fmt.Sprintf("Use %s@%s instead", ee.Name, ee.Use)
+		}
+		return fmt.Sprintf("Pick another version; `nem info %s` lists them", ee.Name)
 	}
 	if _, ok := errors.AsType[*catalog.DigestMismatchError](err); ok {
 		return "Re-lock with `nem use <pkg>@<version>`"

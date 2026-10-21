@@ -2,6 +2,7 @@ package resolve
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -144,15 +145,15 @@ func (c *collector) walk(ctx context.Context, d demand, platform spec.Platform, 
 		c.fail(err)
 		return
 	}
-	c.walkDeps(ctx, r.Deps, platform, visited)
+	c.walkDeps(ctx, r.Deps, platform, visited, d.pkg.Name+"@"+c.provisionalVersion(d))
 }
 
-func (c *collector) walkDeps(ctx context.Context, deps []spec.Dep, platform spec.Platform, visited map[string]bool) {
+func (c *collector) walkDeps(ctx context.Context, deps []spec.Dep, platform spec.Platform, visited map[string]bool, from string) {
 	for _, dep := range deps {
 		if !spec.PlatformsInclude(dep.Platforms, platform) {
 			continue
 		}
-		d, ok, err := c.demandFor(ctx, dep, platform)
+		d, ok, err := c.demandFor(ctx, dep, platform, from)
 		if err != nil {
 			c.fail(err)
 			continue
@@ -163,12 +164,12 @@ func (c *collector) walkDeps(ctx context.Context, deps []spec.Dep, platform spec
 	}
 }
 
-func (c *collector) demandFor(ctx context.Context, dep spec.Dep, platform spec.Platform) (demand, bool, error) {
+func (c *collector) demandFor(ctx context.Context, dep spec.Dep, platform spec.Platform, from string) (demand, bool, error) {
 	hit, err := c.lookup(ctx, dep.Name)
 	if err != nil {
 		return demand{}, false, err
 	}
-	d, err := edgeDemand(dep, hit.Pkg, hit.Entry.Name, hit.Digest)
+	d, err := edgeDemand(dep, hit.Pkg, hit.Entry.Name, hit.Digest, from)
 	if err != nil {
 		return demand{}, false, err
 	}
@@ -247,7 +248,7 @@ func changedPicks(prev, next map[string]string) []string {
 	return names
 }
 
-func edgeDemand(dep spec.Dep, pkg *spec.Package, catName, digest string) (demand, error) {
+func edgeDemand(dep spec.Dep, pkg *spec.Package, catName, digest, from string) (demand, error) {
 	d := demand{link: dep.Kind == spec.DepKindLink, catalog: catName, digest: digest, pkg: pkg}
 	switch {
 	case dep.Compat != "":
@@ -257,12 +258,19 @@ func edgeDemand(dep spec.Dep, pkg *spec.Package, catName, digest string) (demand
 		d.kind, d.compat = demandRanged, dep.Compat
 	case dep.Version != "":
 		version, err := resolveVersion(pkg, dep.Name, dep.Version, catName)
+		if ee, ok := errors.AsType[*catalog.VersionExcludedError](err); ok {
+			ee.RequiredBy = from
+		}
 		if err != nil {
 			return demand{}, err
 		}
 		d.kind, d.version = demandExact, version
 	default:
-		d.kind, d.version = demandFloating, pkg.Versions[0].Version
+		version, err := resolveVersion(pkg, dep.Name, "", catName)
+		if err != nil {
+			return demand{}, err
+		}
+		d.kind, d.version = demandFloating, version
 	}
 	return d, nil
 }
@@ -318,7 +326,7 @@ func Dependencies(ctx context.Context, name string, platforms []spec.Platform, d
 	return settle(ctx, set, nil, func(col *collector) {
 		for _, platform := range spec.SupportedPlatforms {
 			if spec.PlatformsInclude(platforms, platform) {
-				col.walkDeps(ctx, deps, platform, map[string]bool{name: true})
+				col.walkDeps(ctx, deps, platform, map[string]bool{name: true}, name)
 			}
 		}
 	})
@@ -439,7 +447,7 @@ func pickVersion(versions []spec.VersionEntry, demands []demand) string {
 	ranged := slices.ContainsFunc(demands, func(d demand) bool { return d.kind == demandRanged })
 	best := ""
 	for _, v := range versions {
-		if !satisfiesAll(v.Version, demands) {
+		if v.Excluded != nil || !satisfiesAll(v.Version, demands) {
 			continue
 		}
 		if !ranged {
@@ -482,12 +490,19 @@ func pinnedOf(demands []demand) *demand {
 
 func resolveVersion(pkg *spec.Package, name, version, catName string) (string, error) {
 	if version == "" {
-		return pkg.Versions[0].Version, nil
+		if latest := pkg.Latest(); latest != "" {
+			return latest, nil
+		}
+		return "", &catalog.VersionNotFoundError{Name: name, Version: "latest", Catalog: catName}
 	}
 	for _, v := range pkg.Versions {
-		if v.Version == version {
-			return version, nil
+		if v.Version != version {
+			continue
 		}
+		if ex := v.Excluded; ex != nil {
+			return "", &catalog.VersionExcludedError{Name: name, Version: version, Catalog: catName, Reason: ex.Reason, Use: ex.Use}
+		}
+		return version, nil
 	}
 	return "", &catalog.VersionNotFoundError{Name: name, Version: version, Catalog: catName}
 }

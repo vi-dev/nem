@@ -1,6 +1,6 @@
 ---
 title: nem lock
-weight: 31
+weight: 33
 ---
 
 Regenerate the lockfile from nem.toml and install.

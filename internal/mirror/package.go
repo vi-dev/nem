@@ -112,7 +112,7 @@ type versionPlan struct {
 
 func planVersions(pkg *spec.Package) []versionPlan {
 	var plans []versionPlan
-	for _, v := range pkg.Versions {
+	for _, v := range pkg.Offered() {
 		r, err := pkg.Recipe(v.Version)
 		if err != nil {
 			plans = append(plans, versionPlan{version: v.Version, err: err})

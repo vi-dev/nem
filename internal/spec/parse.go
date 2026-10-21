@@ -91,6 +91,7 @@ type rawVersionEntry struct {
 	Meta         map[string]string `yaml:"meta"`
 	Sha256       yaml.RawMessage   `yaml:"sha256"`
 	SourceSha256 string            `yaml:"sourceSha256"`
+	Excluded     yaml.RawMessage   `yaml:"excluded"`
 }
 
 type Files struct {
@@ -346,5 +347,27 @@ func shapeVersion(msg yaml.RawMessage) (VersionEntry, error) {
 			return VersionEntry{}, fmt.Errorf("sha256: must be a per-platform map: %w", err)
 		}
 	}
+	if len(raw.Excluded) > 0 {
+		ex, err := shapeExclusion(raw.Excluded)
+		if err != nil {
+			return VersionEntry{}, fmt.Errorf("excluded: %w", err)
+		}
+		entry.Excluded = ex
+	}
 	return entry, nil
+}
+
+func shapeExclusion(msg yaml.RawMessage) (*Exclusion, error) {
+	var reason string
+	if err := yaml.Unmarshal(msg, &reason); err == nil {
+		return &Exclusion{Reason: reason}, nil
+	}
+	var raw struct {
+		Reason string `yaml:"reason"`
+		Use    string `yaml:"use"`
+	}
+	if err := yaml.UnmarshalWithOptions(msg, &raw, yaml.Strict()); err != nil {
+		return nil, err
+	}
+	return &Exclusion{Reason: raw.Reason, Use: raw.Use}, nil
 }

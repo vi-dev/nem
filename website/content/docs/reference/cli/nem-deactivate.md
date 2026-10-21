@@ -1,6 +1,6 @@
 ---
 title: nem deactivate
-weight: 27
+weight: 29
 ---
 
 Deactivate nem for the current shell.

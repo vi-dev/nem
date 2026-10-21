@@ -1,6 +1,6 @@
 ---
 title: nem catalog lint
-weight: 12
+weight: 13
 ---
 
 Validate package manifests in a catalog.

@@ -1,6 +1,6 @@
 ---
 title: nem exec
-weight: 29
+weight: 31
 ---
 
 Run a command in the composed environment.

@@ -1,6 +1,6 @@
 ---
 title: nem catalog remove
-weight: 17
+weight: 18
 ---
 
 Remove a catalog.

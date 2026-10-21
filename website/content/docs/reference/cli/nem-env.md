@@ -1,6 +1,6 @@
 ---
 title: nem env
-weight: 28
+weight: 30
 ---
 
 Print the shell script that applies the composed environment.

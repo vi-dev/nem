@@ -1,6 +1,6 @@
 ---
 title: nem clean
-weight: 21
+weight: 23
 ---
 
 Reclaim disk space in NEM_HOME.

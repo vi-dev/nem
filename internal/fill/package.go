@@ -61,7 +61,7 @@ func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledM
 
 	filled, healed := 0, 0
 	failed := false
-	for _, v := range pkg.Versions {
+	for _, v := range pkg.Offered() {
 		r, err := pkg.Recipe(v.Version)
 		if err != nil {
 			rep.Warnf("%s %s: %v", nm.Title, v.Version, err)
@@ -165,7 +165,7 @@ func fillPackage(ctx context.Context, h home.Home, opts Options, nm ocix.TitledM
 }
 
 func anyFillable(pkg *spec.Package) bool {
-	for _, v := range pkg.Versions {
+	for _, v := range pkg.Offered() {
 		if r, err := pkg.Recipe(v.Version); err != nil || r.Artifact.OCI == "" {
 			return true
 		}
