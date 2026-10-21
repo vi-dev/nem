@@ -124,6 +124,12 @@ func planUpdate(cmd *cobra.Command, args []string, global, dryRun bool) (*catalo
 			continue
 		}
 		if v, ok := resolved[t.key.Name]; ok && spec.CompareVersions(v, t.declared) < 0 {
+			if pkg := result.Pkgs[t.key.Name]; pkg != nil {
+				if ex := pkg.Exclusion(t.declared); ex != nil {
+					return nil, nil, nil, fmt.Errorf("%s %s is excluded: %s; run `nem use %s@%s` to move to the newest version that is not",
+						t.key.Name, t.declared, ex.Reason, t.key.String(), v)
+				}
+			}
 			return nil, nil, nil, fmt.Errorf("refusing to downgrade %s from %s to %s; run `nem use %s@%s` to accept the downgrade",
 				t.key.Name, t.declared, v, t.key.String(), v)
 		}

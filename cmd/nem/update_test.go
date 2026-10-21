@@ -494,3 +494,24 @@ func TestUpdateVersionArgRefused(t *testing.T) {
 		t.Fatalf("error should point at `nem use` for version pinning: %v", err)
 	}
 }
+
+func TestUpdateExplainsExcludedPin(t *testing.T) {
+	catalogRoot := versionedDirCatalog(t, map[string][]string{"tool": {"v2.0.0", "v1.0.0"}})
+	nemHomeDir, projDir := updateProject(t, catalogRoot, "demo:tool@v2.0.0")
+	if _, errb, err := runNem(t, nemHomeDir, "catalog", "exclude", catalogRoot, "--package", "tool@v2.0.0", "--reason", "Regression in 2.0.0"); err != nil {
+		t.Fatalf("exclude: %v\n%s", err, errb)
+	}
+
+	_, _, err := runNem(t, nemHomeDir, "update")
+	if err == nil {
+		t.Fatal("update must refuse to move off an excluded pin silently")
+	}
+	want := "tool v2.0.0 is excluded: Regression in 2.0.0; run `nem use demo:tool@v1.0.0` to move to the newest version that is not"
+	if err.Error() != want {
+		t.Fatalf("error %q, want %q", err, want)
+	}
+	m, err := project.LoadManifest(filepath.Join(projDir, "nem.toml"))
+	if err != nil || len(m.Tools) != 1 || m.Tools[0].Version != "v2.0.0" {
+		t.Fatalf("a refused update must leave the manifest untouched: %+v, %v", m, err)
+	}
+}
