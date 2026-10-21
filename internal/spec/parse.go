@@ -114,6 +114,9 @@ func (r rawPackage) recipe() rawRecipe {
 }
 
 func ParseFiles(f Files) (*Package, error) {
+	if err := checkSchemaSupported(f.Pkg); err != nil {
+		return nil, err
+	}
 	var raw rawPackage
 	if err := yaml.UnmarshalWithOptions(f.Pkg, &raw, yaml.Strict()); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", PkgFileName, err)

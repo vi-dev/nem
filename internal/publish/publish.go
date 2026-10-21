@@ -55,6 +55,7 @@ type pkgEntry struct {
 	Name        string
 	Description string
 	Version     string
+	Schema      int
 	manifest    ocispec.Descriptor
 	status      string
 }
@@ -250,7 +251,7 @@ func enumerate(ctx context.Context, cat string) ([]pkgEntry, error) {
 		if len(pkg.Versions) > 0 {
 			version = pkg.Versions[0].Version
 		}
-		out = append(out, pkgEntry{Files: files, Name: pkg.Name, Description: pkg.Description, Version: version, manifest: desc})
+		out = append(out, pkgEntry{Files: files, Name: pkg.Name, Description: pkg.Description, Version: version, Schema: pkg.Schema, manifest: desc})
 	}
 	return out, nil
 }
@@ -290,7 +291,7 @@ func pushOne(ctx context.Context, target oras.Target, e *pkgEntry, force bool) e
 }
 
 func indexEntry(e pkgEntry) ocix.CatalogIndexEntry {
-	return ocix.CatalogIndexEntry{Manifest: e.manifest, Title: e.Name, Description: e.Description, Version: e.Version}
+	return ocix.CatalogIndexEntry{Manifest: e.manifest, Title: e.Name, Description: e.Description, Version: e.Version, Schema: e.Schema}
 }
 
 func compare(ctx context.Context, target oras.ReadOnlyTarget, ref string, tags []string, entries []pkgEntry, force bool, res *Result) ([]Package, error) {

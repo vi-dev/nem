@@ -182,7 +182,7 @@ func TestPublishForceDisablesSkip(t *testing.T) {
 		t.Fatalf("initial publish: %v", err)
 	}
 
-	layerDigest := content.NewDescriptorFromBytes(ocix.MediaTypePkg, []byte(validGoPkg)).Digest.String()
+	layerDigest := content.NewDescriptorFromBytes(ocix.MediaTypePkgV3, []byte(validGoPkg)).Digest.String()
 
 	beforeSkip := ct.existsCount(layerDigest)
 	if _, err := Publish(ctx, dir, "example.com/cat", Options{}); err != nil {

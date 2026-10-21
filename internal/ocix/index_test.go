@@ -32,7 +32,7 @@ func TestAssembleIndexAnnotationsAndOrder(t *testing.T) {
 	if idx.MediaType != ocispec.MediaTypeImageIndex {
 		t.Fatalf("index mediaType = %q", idx.MediaType)
 	}
-	if idx.Annotations[ocix.AnnotationSchemaVersion] != ocix.CatalogSchema {
+	if idx.Annotations[ocix.AnnotationSchemaVersion] != "3" {
 		t.Fatalf("schemaVersion annotation = %q", idx.Annotations[ocix.AnnotationSchemaVersion])
 	}
 
@@ -113,10 +113,10 @@ func TestPushPackageManifestDeterministicAndShaped(t *testing.T) {
 	if m.SchemaVersion != ocix.OCISchemaVersion {
 		t.Fatalf("manifest schemaVersion = %d, want 2", m.SchemaVersion)
 	}
-	if m.ArtifactType != ocix.MediaTypePkg {
-		t.Fatalf("artifactType = %q, want %q", m.ArtifactType, ocix.MediaTypePkg)
+	if m.ArtifactType != ocix.MediaTypePkgV3 {
+		t.Fatalf("artifactType = %q, want %q", m.ArtifactType, ocix.MediaTypePkgV3)
 	}
-	if len(m.Layers) != 1 || m.Layers[0].MediaType != ocix.MediaTypePkg || m.Layers[0].Annotations[ocix.AnnotationTitle] != spec.PkgFileName {
+	if len(m.Layers) != 1 || m.Layers[0].MediaType != ocix.MediaTypePkgV3 || m.Layers[0].Annotations[ocix.AnnotationTitle] != spec.PkgFileName {
 		t.Fatalf("layers = %+v", m.Layers)
 	}
 }
@@ -151,7 +151,7 @@ func TestFetchIndexReturnsParsedIndex(t *testing.T) {
 	}
 	ocixtest.PushFakeCatalog(t, store, []ocixtest.FakeEntry{
 		{Name: "atool", Description: "A tool", Latest: "1.0.0", YAML: []byte("name: atool")},
-	}, ocix.CatalogSchema)
+	}, "3")
 
 	idx, desc, err := ocix.FetchCatalogIndex(context.Background(), store, "v2")
 	if err != nil {

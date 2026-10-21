@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
@@ -19,14 +20,17 @@ type CatalogIndexEntry struct {
 	Title       string
 	Description string
 	Version     string
+	Schema      int
 }
 
 func AssembleCatalogIndex(entries []CatalogIndexEntry) ([]byte, ocispec.Descriptor) {
 	sorted := append([]CatalogIndexEntry(nil), entries...)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Title < sorted[j].Title })
 
+	schema := minIndexSchema
 	mans := make([]ocispec.Descriptor, len(sorted))
 	for i, e := range sorted {
+		schema = max(schema, e.Schema)
 		d := e.Manifest
 		ann := map[string]string{AnnotationTitle: e.Title}
 		if e.Description != "" {
@@ -43,7 +47,7 @@ func AssembleCatalogIndex(entries []CatalogIndexEntry) ([]byte, ocispec.Descript
 		MediaType:     ocispec.MediaTypeImageIndex,
 		Manifests:     mans,
 		Annotations: map[string]string{
-			AnnotationSchemaVersion: CatalogSchema,
+			AnnotationSchemaVersion: strconv.Itoa(schema),
 		},
 	}
 	b, _ := json.Marshal(idx)
@@ -71,18 +75,23 @@ func FetchCatalogIndex(ctx context.Context, src oras.ReadOnlyTarget, ref string)
 
 func validateCatalogIndexSchema(idx ocispec.Index) error {
 	got := idx.Annotations[AnnotationSchemaVersion]
-	if got != CatalogSchema && got != CatalogSchemaV2 {
-		return fmt.Errorf("unsupported catalog schema %q (want %s; a newer nem may be required)", got, CatalogSchema)
+	if n, err := strconv.Atoi(got); err != nil || n < spec.MinSchema || n > spec.MaxSchema {
+		return fmt.Errorf("unsupported catalog schema %q (want at most %d; a newer nem may be required)", got, spec.MaxSchema)
 	}
 	return nil
 }
 
-func packageLayers(files spec.Files) []ocispec.Descriptor {
-	layers := []ocispec.Descriptor{titled(content.NewDescriptorFromBytes(MediaTypePkg, files.Pkg), spec.PkgFileName)}
-	for _, name := range files.Names() {
-		layers = append(layers, titled(content.NewDescriptorFromBytes(MediaTypeRecipe, files.Recipes[name]), name))
+func packageLayers(files spec.Files) (string, []ocispec.Descriptor, error) {
+	schema, _ := spec.PeekSchema(files.Pkg)
+	pkgType, recipeType, err := MediaTypes(schema)
+	if err != nil {
+		return "", nil, err
 	}
-	return layers
+	layers := []ocispec.Descriptor{titled(content.NewDescriptorFromBytes(pkgType, files.Pkg), spec.PkgFileName)}
+	for _, name := range files.Names() {
+		layers = append(layers, titled(content.NewDescriptorFromBytes(recipeType, files.Recipes[name]), name))
+	}
+	return pkgType, layers, nil
 }
 
 func titled(d ocispec.Descriptor, title string) ocispec.Descriptor {
@@ -91,12 +100,16 @@ func titled(d ocispec.Descriptor, title string) ocispec.Descriptor {
 }
 
 func PackageManifest(files spec.Files) ([]byte, ocispec.Descriptor, error) {
+	pkgType, layers, err := packageLayers(files)
+	if err != nil {
+		return nil, ocispec.Descriptor{}, err
+	}
 	man := ocispec.Manifest{
 		SchemaVersion: OCISchemaVersion,
 		MediaType:     ocispec.MediaTypeImageManifest,
-		ArtifactType:  MediaTypePkg,
+		ArtifactType:  pkgType,
 		Config:        ocispec.DescriptorEmptyJSON,
-		Layers:        packageLayers(files),
+		Layers:        layers,
 	}
 	manBytes, err := json.Marshal(man)
 	if err != nil {
@@ -110,7 +123,11 @@ func PushPackageManifest(ctx context.Context, target oras.Target, files spec.Fil
 	for name, b := range files.Recipes {
 		blobs[name] = b
 	}
-	for _, layer := range packageLayers(files) {
+	_, layers, err := packageLayers(files)
+	if err != nil {
+		return ocispec.Descriptor{}, err
+	}
+	for _, layer := range layers {
 		data := blobs[layer.Annotations[AnnotationTitle]]
 		if err := PushBlobIfAbsent(ctx, target, layer, bytes.NewReader(data)); err != nil {
 			return ocispec.Descriptor{}, err

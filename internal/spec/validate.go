@@ -28,8 +28,8 @@ func validateHTTPURL(s string) error {
 }
 
 func (p *Package) Validate() error {
-	if p.Schema != 2 && p.Schema != 3 {
-		return fmt.Errorf("schema must be 2 or 3, got %d", p.Schema)
+	if p.Schema < MinSchema || p.Schema > MaxSchema {
+		return fmt.Errorf("schema must be %d to %d, got %d", MinSchema, MaxSchema, p.Schema)
 	}
 	if !NameRE.MatchString(p.Name) {
 		return fmt.Errorf("invalid name %q", p.Name)

@@ -29,7 +29,7 @@ func FormatPackage(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := path.FilterFile(f); err == nil {
+	if node, err := path.FilterFile(f); err == nil && strings.TrimSpace(node.String()) == "2" {
 		if err := path.ReplaceWithReader(f, strings.NewReader("3")); err != nil {
 			return nil, fmt.Errorf("set schema: %w", err)
 		}

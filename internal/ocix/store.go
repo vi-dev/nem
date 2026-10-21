@@ -188,34 +188,51 @@ func FetchFiles(ctx context.Context, src oras.ReadOnlyTarget, man ocispec.Descri
 		return spec.Files{}, fmt.Errorf("parse manifest: %w", err)
 	}
 	var files spec.Files
+	pkgSchema := 0
+	recipeSchemas := map[string]int{}
 	for _, layer := range m.Layers {
-		switch layer.MediaType {
-		case MediaTypePkg, MediaTypePkgV2:
+		if schema, ok := pkgLayerSchema(layer.MediaType); ok {
 			data, err := content.FetchAll(ctx, src, layer)
 			if err != nil {
 				return spec.Files{}, fmt.Errorf("read %s layer: %w", spec.PkgFileName, err)
 			}
-			files.Pkg = data
-		case MediaTypeRecipe:
-			title := layer.Annotations[AnnotationTitle]
-			if _, ok := spec.ParseRecipeFileName(title); !ok {
-				return spec.Files{}, fmt.Errorf("recipe layer %s: title %q must be recipe@<prefix>.yaml", layer.Digest, title)
-			}
-			if _, dup := files.Recipes[title]; dup {
-				return spec.Files{}, fmt.Errorf("recipe layer %s: duplicate title %q", layer.Digest, title)
-			}
-			data, err := content.FetchAll(ctx, src, layer)
-			if err != nil {
-				return spec.Files{}, fmt.Errorf("read %s layer: %w", title, err)
-			}
-			if files.Recipes == nil {
-				files.Recipes = map[string][]byte{}
-			}
-			files.Recipes[title] = data
+			files.Pkg, pkgSchema = data, schema
+			continue
 		}
+		schema, ok := recipeLayerSchema(layer.MediaType)
+		if !ok {
+			continue
+		}
+		title := layer.Annotations[AnnotationTitle]
+		if _, ok := spec.ParseRecipeFileName(title); !ok {
+			return spec.Files{}, fmt.Errorf("recipe layer %s: title %q must be recipe@<prefix>.yaml", layer.Digest, title)
+		}
+		if _, dup := files.Recipes[title]; dup {
+			return spec.Files{}, fmt.Errorf("recipe layer %s: duplicate title %q", layer.Digest, title)
+		}
+		data, err := content.FetchAll(ctx, src, layer)
+		if err != nil {
+			return spec.Files{}, fmt.Errorf("read %s layer: %w", title, err)
+		}
+		if files.Recipes == nil {
+			files.Recipes = map[string][]byte{}
+		}
+		files.Recipes[title] = data
+		recipeSchemas[title] = schema
 	}
 	if files.Pkg == nil {
 		return spec.Files{}, errors.New("manifest has no pkg.yaml layer")
+	}
+	for _, title := range files.Names() {
+		switch rs := recipeSchemas[title]; {
+		case pkgSchema == 2:
+			return spec.Files{}, fmt.Errorf("%s: pkg.v2 manifests carry no recipe layers", title)
+		case rs != pkgSchema:
+			return spec.Files{}, fmt.Errorf("%s is recipe.v%d but %s is pkg.v%d", title, rs, spec.PkgFileName, pkgSchema)
+		}
+	}
+	if declared, _ := spec.PeekSchema(files.Pkg); !layerMatchesSchema(pkgSchema, declared) {
+		return spec.Files{}, fmt.Errorf("%s declares schema %d but its layer is pkg.v%d", spec.PkgFileName, declared, pkgSchema)
 	}
 	return files, nil
 }

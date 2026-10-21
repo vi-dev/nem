@@ -144,7 +144,7 @@ func seedUpdatedCatalog(t *testing.T, nemHomeDir, catalogName string, entries []
 	if err != nil {
 		t.Fatal(err)
 	}
-	ocixtest.PushFakeCatalog(t, src, entries, ocix.CatalogSchema)
+	ocixtest.PushFakeCatalog(t, src, entries, "3")
 	storePath := filepath.Join(nemHomeDir, "catalogs", catalogName, "store")
 	if _, err := ocix.UpdateLocalCatalog(context.Background(), src, "v2", storePath, nil); err != nil {
 		t.Fatal(err)

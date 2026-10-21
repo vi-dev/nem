@@ -26,14 +26,14 @@ func TestPackageManifestCarriesRecipeLayers(t *testing.T) {
 	if err := json.Unmarshal(manBytes, &m); err != nil {
 		t.Fatal(err)
 	}
-	if m.ArtifactType != MediaTypePkg || len(m.Layers) != 3 {
+	if m.ArtifactType != MediaTypePkgV3 || len(m.Layers) != 3 {
 		t.Fatalf("manifest: %+v", m)
 	}
-	if m.Layers[0].MediaType != MediaTypePkg || m.Layers[0].Annotations[AnnotationTitle] != "pkg.yaml" {
+	if m.Layers[0].MediaType != MediaTypePkgV3 || m.Layers[0].Annotations[AnnotationTitle] != "pkg.yaml" {
 		t.Fatalf("layer 0: %+v", m.Layers[0])
 	}
 	if m.Layers[1].Annotations[AnnotationTitle] != "recipe@1.yaml" || m.Layers[2].Annotations[AnnotationTitle] != "recipe@2.yaml" ||
-		m.Layers[1].MediaType != MediaTypeRecipe {
+		m.Layers[1].MediaType != MediaTypeRecipeV3 {
 		t.Fatalf("recipe layers must be sorted and typed: %+v", m.Layers[1:])
 	}
 	_, again, _ := PackageManifest(files)
@@ -46,21 +46,23 @@ func TestPackageManifestCarriesRecipeLayers(t *testing.T) {
 	}
 }
 
-func TestCatalogIndexSchemaAcceptsV2AndV3(t *testing.T) {
-	for _, s := range []string{CatalogSchemaV2, CatalogSchema} {
+func TestCatalogIndexSchemaAcceptsV2ToV4(t *testing.T) {
+	for _, s := range []string{"2", "3", "4"} {
 		idx := ocispec.Index{Annotations: map[string]string{AnnotationSchemaVersion: s}}
 		if err := validateCatalogIndexSchema(idx); err != nil {
 			t.Fatalf("schema %s: %v", s, err)
 		}
 	}
-	idx := ocispec.Index{Annotations: map[string]string{AnnotationSchemaVersion: "4"}}
-	if err := validateCatalogIndexSchema(idx); err == nil || !strings.Contains(err.Error(), "a newer nem may be required") {
-		t.Fatalf("schema 4: %v", err)
+	for _, s := range []string{"5", "", "x"} {
+		idx := ocispec.Index{Annotations: map[string]string{AnnotationSchemaVersion: s}}
+		if err := validateCatalogIndexSchema(idx); err == nil || !strings.Contains(err.Error(), "a newer nem may be required") {
+			t.Fatalf("schema %q: %v", s, err)
+		}
 	}
 	b, _ := AssembleCatalogIndex(nil)
 	var out ocispec.Index
 	_ = json.Unmarshal(b, &out)
-	if out.Annotations[AnnotationSchemaVersion] != CatalogSchema || out.SchemaVersion != OCISchemaVersion {
+	if out.Annotations[AnnotationSchemaVersion] != "3" || out.SchemaVersion != OCISchemaVersion {
 		t.Fatalf("assembled index: %+v", out)
 	}
 }

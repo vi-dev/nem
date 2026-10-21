@@ -79,7 +79,7 @@ versions:
 func newPulledStore(t *testing.T, entries []ocixtest.FakeEntry) *ocix.Store {
 	t.Helper()
 	mem := memory.New()
-	ocixtest.PushFakeCatalog(t, mem, entries, ocix.CatalogSchema)
+	ocixtest.PushFakeCatalog(t, mem, entries, "3")
 	store, err := ocix.OpenStoreInMemory(context.Background(), mem, "v2", nil)
 	if err != nil {
 		t.Fatalf("OpenStoreInMemory: %v", err)
@@ -193,7 +193,7 @@ func TestOCIPackageAssemblesRecipeLayers(t *testing.T) {
 	store := memory.New()
 	y := []byte(strings.ReplaceAll(dirPkgYAML, "%NAME%", "go"))
 	ocixtest.PushFakeCatalog(t, store, []ocixtest.FakeEntry{{Name: "go", YAML: y,
-		Recipes: map[string][]byte{"recipe@1.yaml": []byte(dirRecipeYAML)}}}, ocix.CatalogSchema)
+		Recipes: map[string][]byte{"recipe@1.yaml": []byte(dirRecipeYAML)}}}, "3")
 	s, err := ocix.OpenStore(context.Background(), store, "v2")
 	if err != nil {
 		t.Fatal(err)

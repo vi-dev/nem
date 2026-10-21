@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -107,8 +108,8 @@ versions:
 	}
 }
 
-func TestValidateAcceptsSchema2And3(t *testing.T) {
-	for _, s := range []string{"2", "3"} {
+func TestValidateAcceptsSchema2To4(t *testing.T) {
+	for _, s := range []string{"2", "3", "4"} {
 		p, err := Parse([]byte(strings.Replace(filesPkgYAML, "schema: 3", "schema: "+s, 1)))
 		if err != nil {
 			t.Fatalf("Parse schema %s: %v", s, err)
@@ -117,9 +118,9 @@ func TestValidateAcceptsSchema2And3(t *testing.T) {
 			t.Fatalf("schema %s: %v", s, err)
 		}
 	}
-	p, _ := Parse([]byte(strings.Replace(filesPkgYAML, "schema: 3", "schema: 4", 1)))
+	p, _ := Parse([]byte(strings.Replace(filesPkgYAML, "schema: 3", "schema: 1", 1)))
 	if err := p.Validate(); err == nil {
-		t.Fatal("schema 4 must be rejected")
+		t.Fatal("schema 1 must be rejected")
 	}
 }
 
@@ -134,5 +135,24 @@ func TestFormatPackageSetsSchema3(t *testing.T) {
 	again, _ := FormatPackage(out)
 	if string(again) != string(out) {
 		t.Fatalf("not idempotent: %q vs %q", again, out)
+	}
+}
+
+func TestFormatPackageKeepsSchema4(t *testing.T) {
+	in := "schema: 4\nname: t\n"
+	out, err := FormatPackage([]byte(in))
+	if err != nil || string(out) != in {
+		t.Fatalf("FormatPackage(schema 4) = %q, %v", out, err)
+	}
+}
+
+func TestParseRefusesNewerSchemaBeforeStrictDecode(t *testing.T) {
+	_, err := Parse([]byte("schema: 5\nname: future\nversions:\n  - version: 1.0.0\n    futureKey: x\n"))
+	se, ok := errors.AsType[*UnsupportedSchemaError](err)
+	if !ok {
+		t.Fatalf("err = %v, want UnsupportedSchemaError", err)
+	}
+	if se.Error() != "package future uses schema 5; this nem supports up to 4" {
+		t.Fatalf("message: %q", se.Error())
 	}
 }

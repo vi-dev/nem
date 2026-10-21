@@ -507,7 +507,7 @@ func pushLegacyEncodedCatalog(t *testing.T, store oras.Target, name, yaml string
 		SchemaVersion: ocix.OCISchemaVersion,
 		MediaType:     ocispec.MediaTypeImageIndex,
 		Manifests:     []ocispec.Descriptor{manDesc},
-		Annotations:   map[string]string{ocix.AnnotationSchemaVersion: ocix.CatalogSchemaV2},
+		Annotations:   map[string]string{ocix.AnnotationSchemaVersion: "2"},
 	})
 	if err != nil {
 		t.Fatal(err)

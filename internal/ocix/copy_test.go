@@ -36,7 +36,7 @@ func TestCopyIndexClosureWithProgressArithmetic(t *testing.T) {
 		t.Fatalf("oci.New: %v", err)
 	}
 	const n = 5
-	ocixtest.PushFakeCatalog(t, store, fakeCatalogEntries(n), ocix.CatalogSchema)
+	ocixtest.PushFakeCatalog(t, store, fakeCatalogEntries(n), "3")
 
 	rec := &progressRecorder{}
 	if _, err := ocix.CopyIndexClosureWithProgress(ctx, store, "v2", memory.New(), "v2", rec.record); err != nil {
@@ -71,7 +71,7 @@ func TestCopyIndexClosureWithProgressCountsSkippedManifestsToo(t *testing.T) {
 		t.Fatalf("oci.New: %v", err)
 	}
 	const n = 3
-	ocixtest.PushFakeCatalog(t, store, fakeCatalogEntries(n), ocix.CatalogSchema)
+	ocixtest.PushFakeCatalog(t, store, fakeCatalogEntries(n), "3")
 
 	idx, _, err := ocix.FetchCatalogIndex(ctx, store, "v2")
 	if err != nil {
@@ -133,7 +133,7 @@ func TestCopyIndexClosureWithProgressNoExtraRequests(t *testing.T) {
 		if err != nil {
 			t.Fatalf("oci.New: %v", err)
 		}
-		ocixtest.PushFakeCatalog(t, store, fakeCatalogEntries(5), ocix.CatalogSchema)
+		ocixtest.PushFakeCatalog(t, store, fakeCatalogEntries(5), "3")
 		return store
 	}
 
@@ -231,7 +231,7 @@ func TestCopyIndexClosureWithProgressAgainstRealRemoteRepository(t *testing.T) {
 		t.Fatalf("oci.New: %v", err)
 	}
 	const n = 6
-	root := ocixtest.PushFakeCatalog(t, local, fakeCatalogEntries(n), ocix.CatalogSchema)
+	root := ocixtest.PushFakeCatalog(t, local, fakeCatalogEntries(n), "3")
 
 	cc, err := snapshotClosure(ctx, local, root, "v2")
 	if err != nil {

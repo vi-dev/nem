@@ -41,7 +41,7 @@ func stubUpdateEmptyCatalog(ctx context.Context, _, storePath string, _ ocix.Pro
 	idx := ocispec.Index{
 		SchemaVersion: ocix.OCISchemaVersion,
 		MediaType:     ocispec.MediaTypeImageIndex,
-		Annotations:   map[string]string{ocix.AnnotationSchemaVersion: ocix.CatalogSchema},
+		Annotations:   map[string]string{ocix.AnnotationSchemaVersion: "3"},
 	}
 	data, err := json.Marshal(idx)
 	if err != nil {

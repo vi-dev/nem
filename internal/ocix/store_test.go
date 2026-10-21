@@ -120,8 +120,8 @@ func TestUpdateDetectsMovingTag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("oci.New: %v", err)
 	}
-	oldDesc := ocixtest.PushFakeCatalog(t, store, []ocixtest.FakeEntry{{Name: "go", YAML: []byte("old")}}, ocix.CatalogSchema)
-	newDesc := ocixtest.PushFakeCatalog(t, store, []ocixtest.FakeEntry{{Name: "go", YAML: []byte("new")}}, ocix.CatalogSchema)
+	oldDesc := ocixtest.PushFakeCatalog(t, store, []ocixtest.FakeEntry{{Name: "go", YAML: []byte("old")}}, "3")
+	newDesc := ocixtest.PushFakeCatalog(t, store, []ocixtest.FakeEntry{{Name: "go", YAML: []byte("new")}}, "3")
 	if oldDesc.Digest == newDesc.Digest {
 		t.Fatal("fixture bug: old and new catalog content must digest differently")
 	}
@@ -157,7 +157,7 @@ func TestFetchFilesReturnsPkgLayer(t *testing.T) {
 	yaml := []byte("name: atool\n")
 	ocixtest.PushFakeCatalog(t, store, []ocixtest.FakeEntry{
 		{Name: "atool", Latest: "1.0.0", YAML: yaml},
-	}, ocix.CatalogSchema)
+	}, "3")
 	idx, _, err := ocix.FetchCatalogIndex(context.Background(), store, "v2")
 	if err != nil {
 		t.Fatal(err)
@@ -204,7 +204,7 @@ func TestStageIndexClosureStable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("oci.New: %v", err)
 	}
-	desc := ocixtest.PushFakeCatalog(t, store, []ocixtest.FakeEntry{{Name: "go", YAML: []byte("y")}}, ocix.CatalogSchema)
+	desc := ocixtest.PushFakeCatalog(t, store, []ocixtest.FakeEntry{{Name: "go", YAML: []byte("y")}}, "3")
 
 	staged, err := ocix.OpenStoreInMemory(ctx, store, "v2", nil)
 	if err != nil {
@@ -262,7 +262,7 @@ func BenchmarkOpenLocalStore(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	ocixtest.PushFakeCatalog(b, src, fakeCatalogEntries(300), ocix.CatalogSchema)
+	ocixtest.PushFakeCatalog(b, src, fakeCatalogEntries(300), "3")
 	storePath := filepath.Join(b.TempDir(), "store")
 	if _, err := ocix.UpdateLocalCatalog(ctx, src, "v2", storePath, nil); err != nil {
 		b.Fatal(err)

@@ -63,7 +63,7 @@ func TestPushIndexRoundTrip(t *testing.T) {
 	if err := validateCatalogIndexSchema(loaded); err != nil {
 		t.Fatalf("validateSchema on pushed index: %v", err)
 	}
-	if loaded.Annotations[AnnotationSchemaVersion] != CatalogSchema {
+	if loaded.Annotations[AnnotationSchemaVersion] != "3" {
 		t.Fatalf("loaded index schemaVersion annotation = %q", loaded.Annotations[AnnotationSchemaVersion])
 	}
 }

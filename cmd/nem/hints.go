@@ -13,11 +13,18 @@ import (
 	"github.com/vi-dev/nem/internal/fetch"
 	"github.com/vi-dev/nem/internal/ocix"
 	"github.com/vi-dev/nem/internal/resolve"
+	"github.com/vi-dev/nem/internal/spec"
 )
 
 func hintFor(err error) string {
 	if errors.Is(err, ocix.ErrNotUpdated) {
 		return "Run `nem catalog update`"
+	}
+	if _, ok := errors.AsType[*spec.UnsupportedSchemaError](err); ok {
+		return "Run `nem self update`"
+	}
+	if _, ok := errors.AsType[*spec.UnsupportedSchemaError](err); ok {
+		return "Run `nem self update`"
 	}
 	if _, ok := errors.AsType[*catalog.NotFoundError](err); ok {
 		return "Run `nem catalog add <name> <ref>`"
