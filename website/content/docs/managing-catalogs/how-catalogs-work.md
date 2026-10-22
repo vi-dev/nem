@@ -9,13 +9,16 @@ mirror, fill, publish, or pin, is an operation on one of those two things.
 
 ## The index
 
-A catalog reference such as `ghcr.io/vi-dev/nem-catalog:v3` points at an
+A catalog reference such as `ghcr.io/vi-dev/nem-catalog:v4` points at an
 OCI index with one entry per package. Each entry is a small OCI image
 manifest carrying the package name, description, and latest version as
 annotations. That manifest has a layer for the package's `pkg.yaml` as
 written, with media type `application/vnd.nem.pkg.v3+yaml`, plus one
 layer per frozen recipe, with media type
 `application/vnd.nem.recipe.v3+yaml` and the file name as its title.
+A schema 4 package carries the same layers with `v4` in place of `v3`
+in both media types; schema 2 and 3 packages keep the `v3` types, so
+their manifest digests do not change when a catalog moves to a `v4` tag.
 A catalog with hundreds of packages is one index, one such manifest per
 package, and one blob per `pkg.yaml` and frozen recipe; nothing else. The
 digest of a package's manifest is what `nem.lock` records as `digest`, so

@@ -16,9 +16,9 @@ nem catalog diff <base> <target> [flags]
 ## Examples
 
 ```shell
-nem catalog diff . ghcr.io/vi-dev/nem-catalog:v3                 # a checkout against the published catalog
-nem catalog diff . ghcr.io/vi-dev/nem-catalog:v3 --output json   # for CI
-nem catalog diff . ghcr.io/vi-dev/nem-catalog:v3 --package jq    # one package
+nem catalog diff . ghcr.io/vi-dev/nem-catalog:v4                 # a checkout against the published catalog
+nem catalog diff . ghcr.io/vi-dev/nem-catalog:v4 --output json   # for CI
+nem catalog diff . ghcr.io/vi-dev/nem-catalog:v4 --package jq    # one package
 ```
 
 ## Flags

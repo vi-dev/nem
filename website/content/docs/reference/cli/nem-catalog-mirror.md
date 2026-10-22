@@ -16,8 +16,8 @@ nem catalog mirror <src> <dst> [flags]
 ## Examples
 
 ```shell
-nem catalog mirror ghcr.io/vi-dev/nem-catalog:v3 registry.corp.example/nem/catalog:v3             # copy
-nem catalog mirror ghcr.io/vi-dev/nem-catalog:v3 registry.corp.example/nem/catalog:v3 --dry-run   # the plan only
+nem catalog mirror ghcr.io/vi-dev/nem-catalog:v4 registry.corp.example/nem/catalog:v4             # copy
+nem catalog mirror ghcr.io/vi-dev/nem-catalog:v4 registry.corp.example/nem/catalog:v4 --dry-run   # the plan only
 ```
 
 ## Flags

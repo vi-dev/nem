@@ -18,7 +18,7 @@ func newCatalogLintCmd() *cobra.Command {
 			"reference all work.",
 		Example: "  nem catalog lint                                 # the current directory\n" +
 			"  nem catalog lint . --package kubectl             # one package\n" +
-			"  nem catalog lint ghcr.io/vi-dev/nem-catalog:v3   # a published catalog",
+			"  nem catalog lint ghcr.io/vi-dev/nem-catalog:v4   # a published catalog",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: firstArgOnly(completeYAMLOrDir),
 		RunE: func(cmd *cobra.Command, args []string) error {

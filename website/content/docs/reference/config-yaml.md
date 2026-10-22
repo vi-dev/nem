@@ -12,7 +12,7 @@ by default; see [NEM_HOME](../nem-home/).
 catalogs:
   - name: official
     type: oci
-    ref: ghcr.io/vi-dev/nem-catalog:v3
+    ref: ghcr.io/vi-dev/nem-catalog:v4
   - name: dev
     type: dir
     path: /home/me/src/my-catalog

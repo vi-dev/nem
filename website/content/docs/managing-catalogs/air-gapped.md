@@ -22,8 +22,8 @@ exactly like any other catalog.
 ## Connected side
 
 ```shell
-nem catalog mirror ghcr.io/vi-dev/nem-catalog:v3 registry.corp.example/nem/catalog:v3   # index, manifests, existing archives
-nem catalog fill registry.corp.example/nem/catalog:v3                                   # every remaining archive
+nem catalog mirror ghcr.io/vi-dev/nem-catalog:v4 registry.corp.example/nem/catalog:v4   # index, manifests, existing archives
+nem catalog fill registry.corp.example/nem/catalog:v4                                   # every remaining archive
 ```
 
 Inside there is no upstream to fall back to, so every package that
@@ -34,7 +34,7 @@ what each command copies and skips.
 ## Inside
 
 ```shell
-nem catalog add corp registry.corp.example/nem/catalog:v3   # the mirrored catalog
+nem catalog add corp registry.corp.example/nem/catalog:v4   # the mirrored catalog
 nem catalog disable official                                # nothing tries to reach ghcr.io
 nem catalog update                                          # update the store
 nem use kubectl                                             # from your registry
