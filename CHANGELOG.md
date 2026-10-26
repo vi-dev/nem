@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/vi-dev/nem/compare/v0.11.0...v0.11.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **publish:** Default to the v4 tag and v4 release tags ([a88ddfc](https://github.com/vi-dev/nem/commit/a88ddfce190b5989b8af1bad703d18d9bd4f82a5))
+
 ## [0.11.0](https://github.com/vi-dev/nem/compare/v0.10.0...v0.11.0) (2026-10-22)
 
 
