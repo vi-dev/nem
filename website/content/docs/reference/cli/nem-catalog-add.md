@@ -16,7 +16,7 @@ nem catalog add <name> <ref> [flags]
 ## Examples
 
 ```shell
-nem catalog add corp registry.example/nem/catalog:v3             # an OCI catalog
+nem catalog add corp registry.example/nem/catalog:v4             # an OCI catalog
 nem catalog add corp registry.example/nem/catalog@sha256:0123...  # pinned to a digest
 nem catalog add local ./my-catalog                                # a directory
 ```

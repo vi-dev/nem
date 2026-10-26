@@ -16,9 +16,9 @@ nem catalog fill <ref> [flags]
 ## Examples
 
 ```shell
-nem catalog fill registry.corp.example/nem/catalog:v3                     # every package
-nem catalog fill registry.corp.example/nem/catalog:v3 --package kubectl   # one package
-nem catalog fill registry.corp.example/nem/catalog:v3 --dry-run           # the plan only
+nem catalog fill registry.corp.example/nem/catalog:v4                     # every package
+nem catalog fill registry.corp.example/nem/catalog:v4 --package kubectl   # one package
+nem catalog fill registry.corp.example/nem/catalog:v4 --dry-run           # the plan only
 ```
 
 ## Flags

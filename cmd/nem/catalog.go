@@ -45,7 +45,7 @@ func newCatalogCmd() *cobra.Command {
 			"catalog's contents, whether a local directory of package manifests or a " +
 			"published OCI reference.",
 		Example: "  nem catalog list                                        # what is configured\n" +
-			"  nem catalog add corp registry.example/nem/catalog:v3    # add one\n" +
+			"  nem catalog add corp registry.example/nem/catalog:v4    # add one\n" +
 			"  nem catalog lint .                                      # validate a checkout",
 	}
 	cmd.AddGroup(
@@ -67,7 +67,7 @@ func newCatalogAddCmd() *cobra.Command {
 			"<ref> is an OCI reference or a local directory; the type is detected from it " +
 			"unless --type says otherwise. nem use, lock, sync, and update pull a new oci catalog " +
 			"the first time they need it; nem catalog update pulls it right away.",
-		Example: "  nem catalog add corp registry.example/nem/catalog:v3             # an OCI catalog\n" +
+		Example: "  nem catalog add corp registry.example/nem/catalog:v4             # an OCI catalog\n" +
 			"  nem catalog add corp registry.example/nem/catalog@sha256:0123...  # pinned to a digest\n" +
 			"  nem catalog add local ./my-catalog                                # a directory",
 		Args: cobra.ExactArgs(2),

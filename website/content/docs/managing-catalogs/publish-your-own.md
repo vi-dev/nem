@@ -85,10 +85,10 @@ The official catalog publishes to a staging tag, proves it, then
 promotes, and the same shape works for any catalog:
 
 ```shell
-nem catalog publish registry.example/nem/catalog . --tag v3-staging     # 1. stage
-nem catalog build registry.example/nem/catalog:v3-staging --missing --push   # 2. archives against staging
-nem catalog test registry.example/nem/catalog:v3-staging --package jq   # 3. prove it, on each platform's runner
-oras tag registry.example/nem/catalog:v3-staging v3                     # 4. promote by retagging
+nem catalog publish registry.example/nem/catalog . --tag v4-staging     # 1. stage
+nem catalog build registry.example/nem/catalog:v4-staging --missing --push   # 2. archives against staging
+nem catalog test registry.example/nem/catalog:v4-staging --package jq   # 3. prove it, on each platform's runner
+oras tag registry.example/nem/catalog:v4-staging v4                     # 4. promote by retagging
 ```
 
 Promotion retags the same index, so what was tested is what ships. The
@@ -97,7 +97,7 @@ release tag written in step 1 is the permanent name for that state.
 ## Telling consumers
 
 ```shell
-nem catalog add corp registry.example/nem/catalog:v3           # follow the moving tag
+nem catalog add corp registry.example/nem/catalog:v4           # follow the moving tag
 nem catalog add corp registry.example/nem/catalog@sha256:…     # or freeze one state
 ```
 

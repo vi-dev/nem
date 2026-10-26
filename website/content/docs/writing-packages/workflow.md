@@ -42,8 +42,8 @@ writing, which is the right first step in automation.
 that is live:
 
 ```shell
-nem catalog diff . registry.example/nem/catalog:v3                  # what this checkout changes
-nem catalog diff . registry.example/nem/catalog:v3 --output json    # only changed rows, for scripts
+nem catalog diff . registry.example/nem/catalog:v4                  # what this checkout changes
+nem catalog diff . registry.example/nem/catalog:v4 --output json    # only changed rows, for scripts
 ```
 
 The base, your checkout, is linted first. Each row is `new`, `updated`,
