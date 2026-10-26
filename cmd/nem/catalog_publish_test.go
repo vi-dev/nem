@@ -74,11 +74,11 @@ func TestCatalogPublishDryRunPrintsPlanToStdout(t *testing.T) {
 	if !strings.Contains(out, "STATUS") || !strings.Contains(out, "go") || !strings.Contains(out, "v1.26.5") || !strings.Contains(out, "new") {
 		t.Fatalf("stdout = %q, want the plan table with a STATUS column", out)
 	}
-	if !strings.Contains(errb, "Would publish example.com/cat: 1 to push, tags v3, v3.") {
+	if !strings.Contains(errb, "Would publish example.com/cat: 1 to push, tags v4, v4.") {
 		t.Fatalf("stderr = %q, want the dry-run summary", errb)
 	}
-	if _, err := store.Resolve(context.Background(), "v3"); err == nil {
-		t.Fatal("dry run must not move the v3 tag")
+	if _, err := store.Resolve(context.Background(), "v4"); err == nil {
+		t.Fatal("dry run must not move the v4 tag")
 	}
 }
 
@@ -132,7 +132,7 @@ func TestCatalogPublishDryRunListsOnlyChanges(t *testing.T) {
 	if strings.Contains(out, "\ngo ") {
 		t.Fatalf("stdout = %q, must not list the unchanged package", out)
 	}
-	if !strings.Contains(errb, "Would publish example.com/cat: 1 to push, 1 unchanged, tags v3, v3.") {
+	if !strings.Contains(errb, "Would publish example.com/cat: 1 to push, 1 unchanged, tags v4, v4.") {
 		t.Fatalf("stderr = %q, want the dry-run summary", errb)
 	}
 }
@@ -151,7 +151,7 @@ func TestCatalogPublishDryRunWithoutChangesPrintsNoTable(t *testing.T) {
 	if out != "" {
 		t.Fatalf("stdout = %q, want no table when nothing changes", out)
 	}
-	if !strings.Contains(errb, "Would publish example.com/cat: 1 unchanged, tags v3, v3.") {
+	if !strings.Contains(errb, "Would publish example.com/cat: 1 unchanged, tags v4, v4.") {
 		t.Fatalf("stderr = %q, want the dry-run summary", errb)
 	}
 }
@@ -169,7 +169,7 @@ func TestCatalogPublishSummaryCountsRemovedPackages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second publish: %v\n%s", err, errb)
 	}
-	if !strings.Contains(errb, "Published example.com/cat: 0 pushed, 1 removed, 1 unchanged, tags v3, v3.") {
+	if !strings.Contains(errb, "Published example.com/cat: 0 pushed, 1 removed, 1 unchanged, tags v4, v4.") {
 		t.Fatalf("stderr = %q, want the summary with the removed group", errb)
 	}
 }
@@ -203,7 +203,7 @@ func TestCatalogPublishOutputJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &dry); err != nil {
 		t.Fatalf("stdout = %q, want a JSON document: %v", out, err)
 	}
-	if dry.Ref != "example.com/cat" || len(dry.Tags) != 2 || dry.Tags[0] != "v3" || !strings.HasPrefix(dry.Index, "sha256:") {
+	if dry.Ref != "example.com/cat" || len(dry.Tags) != 2 || dry.Tags[0] != "v4" || !strings.HasPrefix(dry.Index, "sha256:") {
 		t.Fatalf("document = %+v", dry)
 	}
 	if len(dry.Packages) != 1 || dry.Packages[0].Name != "helm" || dry.Packages[0].Version != "v1.26.5" || dry.Packages[0].Status != "new" {
@@ -221,7 +221,7 @@ func TestCatalogPublishOutputJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &real); err != nil {
 		t.Fatalf("stdout = %q, want a JSON document: %v", out, err)
 	}
-	desc, err := store.Resolve(context.Background(), "v3")
+	desc, err := store.Resolve(context.Background(), "v4")
 	if err != nil {
 		t.Fatal(err)
 	}

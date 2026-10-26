@@ -18,8 +18,8 @@ Aliases: `pub`
 ## Examples
 
 ```shell
-nem catalog publish registry.example/nem/catalog .                        # publish a checkout under tag v3
-nem catalog publish registry.example/nem/catalog --tag v3 --tag 2026.09   # several tags
+nem catalog publish registry.example/nem/catalog .                        # publish a checkout under tag v4
+nem catalog publish registry.example/nem/catalog --tag v4 --tag 2026.09   # several tags
 nem catalog publish registry.example/nem/catalog --dry-run                # what would change
 ```
 
@@ -30,7 +30,7 @@ nem catalog publish registry.example/nem/catalog --dry-run                # what
 | `--dry-run` | report what would change without writing anything |
 | `--force` | push every package manifest even when unchanged |
 | `--output <string>` | output format: text or json (default `text`) |
-| `--tag <strings>` | tag to move to the published index (repeatable; default v3) |
+| `--tag <strings>` | tag to move to the published index (repeatable; default v4) |
 
 ## Global flags
 

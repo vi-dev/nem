@@ -67,7 +67,7 @@ format.
 
 ## Pinning to a digest
 
-A tag such as `:v3` moves with every release of the catalog. To freeze a
+A tag such as `:v4` moves with every release of the catalog. To freeze a
 catalog for a reproducible setup, point its entry at a digest instead.
 Edit the `ref` in `$NEM_HOME/config.yaml` in place so the catalog keeps its
 position in the order:

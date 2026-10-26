@@ -147,13 +147,13 @@ func (r *Result) count(force bool) {
 
 func baseTags(optTags []string) []string {
 	if len(optTags) == 0 {
-		return []string{"v3"}
+		return []string{"v4"}
 	}
 	return optTags
 }
 
 func effectiveTags(optTags []string, now time.Time) []string {
-	release := "v3." + now.UTC().Format("20060102T150405Z")
+	release := "v4." + now.UTC().Format("20060102T150405Z")
 	return append(append([]string(nil), baseTags(optTags)...), release)
 }
 

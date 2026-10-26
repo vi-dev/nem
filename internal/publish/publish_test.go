@@ -110,7 +110,7 @@ func TestPublishHappyPathAndIdempotency(t *testing.T) {
 	}
 
 	assertTagResolves(t, store, "v2")
-	assertTagResolves(t, store, "v3.20260102T030405Z")
+	assertTagResolves(t, store, "v4.20260102T030405Z")
 
 	blobsAfterFirst := countBlobs(t, storeDir)
 
@@ -122,7 +122,7 @@ func TestPublishHappyPathAndIdempotency(t *testing.T) {
 		t.Fatalf("re-publish pushed new blobs: %d → %d", blobsAfterFirst, got)
 	}
 	assertTagResolves(t, store, "v2")
-	assertTagResolves(t, store, "v3.20260102T030405Z")
+	assertTagResolves(t, store, "v4.20260102T030405Z")
 }
 
 func TestPublishRejectsEmptyCatalog(t *testing.T) {
@@ -156,7 +156,7 @@ func TestPublishReportsResult(t *testing.T) {
 	if len(res.Packages) != 1 || res.Packages[0].Name != "go" || res.Packages[0].Status != StatusNew {
 		t.Fatalf("packages = %+v", res.Packages)
 	}
-	if want := []string{"v2", "v3.20260102T030405Z"}; !slices.Equal(res.Tags, want) {
+	if want := []string{"v2", "v4.20260102T030405Z"}; !slices.Equal(res.Tags, want) {
 		t.Fatalf("tags = %v, want %v", res.Tags, want)
 	}
 
@@ -212,8 +212,8 @@ func TestPublishDefaultsTagsToV3(t *testing.T) {
 	if _, err := Publish(ctx, dir, "example.com/cat", Options{}); err != nil {
 		t.Fatal(err)
 	}
-	assertTagResolves(t, store, "v3")
-	assertTagResolves(t, store, "v3.20260304T050607Z")
+	assertTagResolves(t, store, "v4")
+	assertTagResolves(t, store, "v4.20260304T050607Z")
 }
 
 func TestPublishRejectsTaggedRef(t *testing.T) {
@@ -244,7 +244,7 @@ func TestPublishSingleFile(t *testing.T) {
 	if _, err := Publish(ctx, filepath.Join(dir, "pkgs", "go", "pkg.yaml"), "example.com/cat", Options{}); err != nil {
 		t.Fatal(err)
 	}
-	assertTagResolves(t, store, "v3")
+	assertTagResolves(t, store, "v4")
 }
 
 func TestPublishTargetOpenFailureLeavesTagsUntouched(t *testing.T) {
@@ -286,9 +286,9 @@ func TestPublishMidPushFailureLeavesTagsUntouched(t *testing.T) {
 		}
 	}()
 
-	indexA, err := store.Resolve(ctx, "v3")
+	indexA, err := store.Resolve(ctx, "v4")
 	if err != nil {
-		t.Fatalf("resolve v3 after initial publish: %v", err)
+		t.Fatalf("resolve v4 after initial publish: %v", err)
 	}
 
 	changedGoPkg := strings.Replace(validGoPkg,
@@ -307,15 +307,15 @@ func TestPublishMidPushFailureLeavesTagsUntouched(t *testing.T) {
 		t.Fatal("expected the mid-push manifest failure to surface")
 	}
 
-	indexAfter, err := store.Resolve(ctx, "v3")
+	indexAfter, err := store.Resolve(ctx, "v4")
 	if err != nil {
-		t.Fatalf("resolve v3 after failed publish: %v", err)
+		t.Fatalf("resolve v4 after failed publish: %v", err)
 	}
 	if indexAfter.Digest != indexA.Digest {
-		t.Fatalf("tag v3 moved despite a mid-push failure: %s -> %s", indexA.Digest, indexAfter.Digest)
+		t.Fatalf("tag v4 moved despite a mid-push failure: %s -> %s", indexA.Digest, indexAfter.Digest)
 	}
 
-	if _, err := store.Resolve(ctx, "v3.20260203T040506Z"); !errors.Is(err, errdef.ErrNotFound) {
+	if _, err := store.Resolve(ctx, "v4.20260203T040506Z"); !errors.Is(err, errdef.ErrNotFound) {
 		t.Fatalf("the failed publish's release tag must never be created, got %v", err)
 	}
 }
@@ -332,10 +332,10 @@ func TestPublishPushesFrozenRecipeLayers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	if res.Pushed != 1 || res.Tags[0] != "v3" || !strings.HasPrefix(res.Tags[1], "v3.") {
+	if res.Pushed != 1 || res.Tags[0] != "v4" || !strings.HasPrefix(res.Tags[1], "v4.") {
 		t.Fatalf("result: %+v", res)
 	}
-	s, err := ocix.OpenStore(ctx, store, "v3")
+	s, err := ocix.OpenStore(ctx, store, "v4")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,7 +432,7 @@ func TestPublishClassifiesPackagesAgainstTargetIndex(t *testing.T) {
 		t.Fatalf("counts = %d pushed, %d unchanged, %d removed, want 2/0/1", res.Pushed, res.Unchanged, res.Removed)
 	}
 
-	s, err := ocix.OpenStore(ctx, store, "v3")
+	s, err := ocix.OpenStore(ctx, store, "v4")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,7 +471,7 @@ func TestPublishDryRunClassifiesWithoutWriting(t *testing.T) {
 	if got := countBlobs(t, storeDir); got != blobsBefore {
 		t.Fatalf("dry run wrote blobs: %d → %d", blobsBefore, got)
 	}
-	if _, err := store.Resolve(ctx, "v3.20260102T030405Z"); !errors.Is(err, errdef.ErrNotFound) {
+	if _, err := store.Resolve(ctx, "v4.20260102T030405Z"); !errors.Is(err, errdef.ErrNotFound) {
 		t.Fatalf("dry run must not create the release tag, got %v", err)
 	}
 }
@@ -500,11 +500,11 @@ func TestPublishNarratesCompareAndPushesAsTasks(t *testing.T) {
 	if _, err := Publish(ctxA, dirA, "example.com/cat", Options{}); err != nil {
 		t.Fatalf("initial publish: %v", err)
 	}
-	first := repA.TaskFor("Comparing with example.com/cat:v3")
+	first := repA.TaskFor("Comparing with example.com/cat:v4")
 	if first == nil {
 		t.Fatalf("tasks = %v, want the compare task", labelsOf(repA.Tasks()))
 	}
-	if done, _, outcome := first.Snapshot(); !done || outcome != "Compared with example.com/cat:v3: 2 to push (tag not found)" {
+	if done, _, outcome := first.Snapshot(); !done || outcome != "Compared with example.com/cat:v4: 2 to push (tag not found)" {
 		t.Fatalf("first compare outcome = %q (done %v)", outcome, done)
 	}
 
@@ -515,11 +515,11 @@ func TestPublishNarratesCompareAndPushesAsTasks(t *testing.T) {
 		t.Fatalf("second publish: %v", err)
 	}
 
-	compare := repB.TaskFor("Comparing with example.com/cat:v3")
+	compare := repB.TaskFor("Comparing with example.com/cat:v4")
 	if compare == nil {
 		t.Fatalf("tasks = %v, want the compare task", labelsOf(repB.Tasks()))
 	}
-	if done, _, outcome := compare.Snapshot(); !done || outcome != "Compared with example.com/cat:v3: 2 to push, 1 removed" {
+	if done, _, outcome := compare.Snapshot(); !done || outcome != "Compared with example.com/cat:v4: 2 to push, 1 removed" {
 		t.Fatalf("compare outcome = %q (done %v)", outcome, done)
 	}
 	push := repB.TaskFor("Pushing go v1.26.5")
@@ -555,11 +555,11 @@ func TestPublishUnchangedPackagesGetNoTask(t *testing.T) {
 	if rep.TaskFor("Pushing go v1.26.5") != nil {
 		t.Fatal("an unchanged package must not get a push task")
 	}
-	compare := rep.TaskFor("Comparing with example.com/cat:v3")
+	compare := rep.TaskFor("Comparing with example.com/cat:v4")
 	if compare == nil {
 		t.Fatalf("tasks = %v, want the compare task", labelsOf(rep.Tasks()))
 	}
-	if done, _, outcome := compare.Snapshot(); !done || outcome != "Compared with example.com/cat:v3: 1 unchanged" {
+	if done, _, outcome := compare.Snapshot(); !done || outcome != "Compared with example.com/cat:v4: 1 unchanged" {
 		t.Fatalf("compare outcome = %q (done %v)", outcome, done)
 	}
 }
@@ -605,7 +605,7 @@ func TestPublishReportsIndexDigest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("publish: %v", err)
 	}
-	desc, err := store.Resolve(ctx, "v3")
+	desc, err := store.Resolve(ctx, "v4")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -627,24 +627,24 @@ func TestPublishClassifiesAgainstTheFirstResolvedTagOnly(t *testing.T) {
 		t.Fatalf("publish under old: %v", err)
 	}
 	dirB := writeCatalog(t, map[string]string{"go": validGoPkg})
-	if _, err := Publish(ctx, dirB, "example.com/cat", Options{Tags: []string{"v3"}}); err != nil {
-		t.Fatalf("publish under v3: %v", err)
+	if _, err := Publish(ctx, dirB, "example.com/cat", Options{Tags: []string{"v4"}}); err != nil {
+		t.Fatalf("publish under v4: %v", err)
 	}
 
-	res, err := Publish(ctx, dirB, "example.com/cat", Options{Tags: []string{"v3", "old"}})
+	res, err := Publish(ctx, dirB, "example.com/cat", Options{Tags: []string{"v4", "old"}})
 	if err != nil {
-		t.Fatalf("publish under v3 and old: %v", err)
+		t.Fatalf("publish under v4 and old: %v", err)
 	}
 	if res.Removed != 0 || res.Unchanged != 1 || res.Pushed != 0 {
 		t.Fatalf("counts = %d pushed, %d removed, %d unchanged; the stale old tag must not make alpha look removed", res.Pushed, res.Removed, res.Unchanged)
 	}
 
-	res, err = Publish(ctx, dirA, "example.com/cat", Options{Tags: []string{"v3", "old"}})
+	res, err = Publish(ctx, dirA, "example.com/cat", Options{Tags: []string{"v4", "old"}})
 	if err != nil {
 		t.Fatalf("re-add alpha: %v", err)
 	}
 	if res.Packages[0].Name != "alpha" || res.Packages[0].Status != StatusNew || res.Pushed != 1 {
-		t.Fatalf("result = %+v, want alpha new relative to v3", res)
+		t.Fatalf("result = %+v, want alpha new relative to v4", res)
 	}
 }
 

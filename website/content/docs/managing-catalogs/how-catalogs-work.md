@@ -47,8 +47,8 @@ bytes are checked against what the manifest pins.
 
 ## Tags and digests
 
-A tag such as `v3` moves every time the catalog is published. `nem catalog
-publish` also writes a release tag of the form `v3.20260930T092433Z` on
+A tag such as `v4` moves every time the catalog is published. `nem catalog
+publish` also writes a release tag of the form `v4.20260930T092433Z` on
 every run, so each published state keeps a permanent name. A digest,
 `@sha256:…`, names one exact index: a consumer who adds a catalog by
 digest gets that state until they choose another, and `nem catalog

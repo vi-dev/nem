@@ -25,8 +25,8 @@ func newCatalogPublishCmd() *cobra.Command {
 			"what would change. --output json prints the ref, tags, index digest and changed " +
 			"packages on stdout. Archives built with nem catalog build --push and nem " +
 			"catalog fill live beside the index and are not touched.",
-		Example: "  nem catalog publish registry.example/nem/catalog .                        # publish a checkout under tag v3\n" +
-			"  nem catalog publish registry.example/nem/catalog --tag v3 --tag 2026.09   # several tags\n" +
+		Example: "  nem catalog publish registry.example/nem/catalog .                        # publish a checkout under tag v4\n" +
+			"  nem catalog publish registry.example/nem/catalog --tag v4 --tag 2026.09   # several tags\n" +
 			"  nem catalog publish registry.example/nem/catalog --dry-run                # what would change",
 		Args: cobra.RangeArgs(1, 2),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -73,7 +73,7 @@ func newCatalogPublishCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringArrayVar(&tags, "tag", nil, "tag to move to the published index (repeatable; default v3)")
+	cmd.Flags().StringArrayVar(&tags, "tag", nil, "tag to move to the published index (repeatable; default v4)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what would change without writing anything")
 	cmd.Flags().BoolVar(&force, "force", false, "push every package manifest even when unchanged")
 	clix.AddOutputFlag(cmd, &output)

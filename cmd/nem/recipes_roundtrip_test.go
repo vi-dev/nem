@@ -47,7 +47,7 @@ func TestFrozenRecipeSurvivesPublishUpdateAndUse(t *testing.T) {
 		t.Fatalf("publish: %v\n%s", err, errb)
 	}
 
-	store, err := ocix.OpenStore(ctx, shared, "v3")
+	store, err := ocix.OpenStore(ctx, shared, "v4")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,11 +62,11 @@ func TestFrozenRecipeSurvivesPublishUpdateAndUse(t *testing.T) {
 
 	home := t.TempDir()
 	chdir(t, t.TempDir())
-	if _, errb, err := runNem(t, home, "catalog", "add", "team", "example.com/cat:v3"); err != nil {
+	if _, errb, err := runNem(t, home, "catalog", "add", "team", "example.com/cat:v4"); err != nil {
 		t.Fatalf("catalog add: %v\n%s", err, errb)
 	}
 	testx.Swap(t, &updateCatalogStore, func(ctx context.Context, ref, storePath string, progress ocix.ProgressFunc) error {
-		_, err := ocix.UpdateLocalCatalog(ctx, shared, "v3", storePath, progress)
+		_, err := ocix.UpdateLocalCatalog(ctx, shared, "v4", storePath, progress)
 		return err
 	})
 	defer archive.SetRepoOpener(func(string) (oras.Target, error) { return memory.New(), nil })()

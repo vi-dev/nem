@@ -14,7 +14,7 @@ catalog, a directory or a single `pkg.yaml`:
 
 ```shell
 nem catalog publish registry.example/nem/catalog . --dry-run   # the plan, nothing pushed
-nem catalog publish registry.example/nem/catalog .             # publish under tag v3
+nem catalog publish registry.example/nem/catalog .             # publish under tag v4
 ```
 
 It lints the catalog first and refuses on findings. Both runs start by
@@ -25,28 +25,28 @@ dry run prints the packages that would change, as `new`, `updated` or
 ```
 PACKAGE  VERSION  STATUS
 jq       1.8.2    new
-OK Would publish registry.example/nem/catalog: 1 to push, tags v3, v3.20260930T092433Z
+OK Would publish registry.example/nem/catalog: 1 to push, tags v4, v4.20260930T092433Z
 ```
 
 The real run pushes each changed package manifest, assembles the index,
 and tags it:
 
 ```
-OK Compared with registry.example/nem/catalog:v3: 1 to push
+OK Compared with registry.example/nem/catalog:v4: 1 to push
 OK Pushed jq 1.8.2
-OK Published registry.example/nem/catalog: 1 pushed, 0 unchanged, tags v3, v3.20260930T092433Z
+OK Published registry.example/nem/catalog: 1 pushed, 0 unchanged, tags v4, v4.20260930T092433Z
 ```
 
 Two things to notice. The reference carries no tag: `--tag` says which
-tags to move, `v3` by default, and the reference with a tag is refused
+tags to move, `v4` by default, and the reference with a tag is refused
 with `must be a bare repository ref`. And every run also writes a release
-tag, `v3.` followed by the UTC time, so each published state keeps a name
+tag, `v4.` followed by the UTC time, so each published state keeps a name
 you can pin or roll back to. A second run with nothing changed pushes
 nothing and moves the tags to the same index:
 
 ```
-OK Compared with registry.example/nem/catalog:v3: 1 unchanged
-OK Published registry.example/nem/catalog: 0 pushed, 1 unchanged, tags v3, v3.20260930T092512Z
+OK Compared with registry.example/nem/catalog:v4: 1 unchanged
+OK Published registry.example/nem/catalog: 0 pushed, 1 unchanged, tags v4, v4.20260930T092512Z
 ```
 
 A package that the published index lists but the catalog no longer has
@@ -63,7 +63,7 @@ produce, so a pipeline can tag that exact index later.
 ```json
 {
   "ref": "registry.example/nem/catalog",
-  "tags": ["v3", "v3.20260930T092433Z"],
+  "tags": ["v4", "v4.20260930T092433Z"],
   "index": "sha256:…",
   "packages": [{"name": "jq", "version": "1.8.2", "status": "new"}]
 }
