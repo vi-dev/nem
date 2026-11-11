@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.2](https://github.com/vi-dev/nem/compare/v0.11.1...v0.11.2) (2026-11-11)
+
+
+### Bug Fixes
+
+* **build:** Order builds by their resolved dependencies ([76ee802](https://github.com/vi-dev/nem/commit/76ee802c976efda2c6fd03e69bd328160b52c9be))
+
 ## [0.11.1](https://github.com/vi-dev/nem/compare/v0.11.0...v0.11.1) (2026-10-26)
 
 
