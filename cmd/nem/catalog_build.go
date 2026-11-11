@@ -121,7 +121,8 @@ func runCatalogBuild(cmd *cobra.Command, cat string, in buildInput) error {
 		}
 		sels = build.Merge(sels, deps)
 	}
-	plan, err := build.ComputePlan(sels)
+	sources := configured.Prepend(target.Entry)
+	plan, err := build.ComputePlan(ctx, sources, sels)
 	if err != nil {
 		return err
 	}
@@ -135,7 +136,6 @@ func runCatalogBuild(cmd *cobra.Command, cat string, in buildInput) error {
 		return narrateDryRunPushes(plan, target, in.push)
 	}
 
-	sources := configured.Prepend(target.Entry)
 	opts := build.BatchOptions{Target: target, Push: in.push, Force: in.force,
 		TestFor: batchTestFor(sources)}
 	rows, err := build.RunBatch(ctx, nemHome, sources, plan, opts)

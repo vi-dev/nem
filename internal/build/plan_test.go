@@ -1,11 +1,15 @@
 package build_test
 
 import (
+	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/vi-dev/nem/internal/build"
+	"github.com/vi-dev/nem/internal/catalog"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -32,6 +36,102 @@ func selV(pkg *spec.Package, version string, plats []spec.Platform) build.Select
 	}
 }
 
+func planCatalog(t *testing.T, manifests ...string) (*catalog.Set, func(name string) *spec.Package) {
+	t.Helper()
+	root := t.TempDir()
+	for _, m := range manifests {
+		pkg, err := spec.Parse([]byte(m))
+		if err != nil {
+			t.Fatalf("parse fixture: %v", err)
+		}
+		dir := filepath.Join(root, "pkgs", pkg.Name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "pkg.yaml"), []byte(m), 0o644); err != nil {
+			t.Fatalf("write pkg.yaml: %v", err)
+		}
+	}
+	dir := catalog.NewDir(root)
+	load := func(name string) *spec.Package {
+		t.Helper()
+		p, _, err := dir.Package(context.Background(), name)
+		if err != nil {
+			t.Fatalf("load %s: %v", name, err)
+		}
+		return p
+	}
+	return catalog.NewSet(catalog.Entry{Name: "cat", Catalog: dir}), load
+}
+
+const planLib = `schema: 2
+name: lib
+libs: [lib]
+artifact: {oci: ":{{.Version}}"}
+install: [{extract: {}}]
+versions: ["1.0.0"]
+`
+
+const planApp = `schema: 2
+name: app
+artifact: {oci: ":{{.Version}}"}
+install: [{extract: {}}]
+versions: ["1.0.0"]
+build:
+  source: {url: "https://example.invalid/app.tar.gz"}
+  output: out
+  deps: [{name: mid, kind: link}]
+  steps: [{run: "true"}]
+`
+
+func TestComputePlanOrdersADependencyReachedThroughAnotherPackage(t *testing.T) {
+	set, load := planCatalog(t, planLib, planApp, `schema: 2
+name: mid
+libs: [lib]
+deps: [{name: lib, kind: link}]
+artifact: {oci: ":{{.Version}}"}
+install: [{extract: {}}]
+versions: ["1.0.0"]
+`)
+	p, err := build.ComputePlan(context.Background(), set, []build.Selection{
+		selV(load("app"), "1.0.0", []spec.Platform{linuxAmd}),
+		selV(load("lib"), "1.0.0", []spec.Platform{linuxAmd}),
+	})
+	if err != nil {
+		t.Fatalf("ComputePlan: %v", err)
+	}
+	w := waves(t, p)
+	if w["lib"] != 1 || w["app"] != 2 {
+		t.Fatalf("waves: %+v, want lib before app", w)
+	}
+	for _, e := range p.Entries {
+		if e.Pkg.Name == "app" && (len(e.Needs) != 1 || e.Needs[0] != "lib") {
+			t.Fatalf("app.Needs = %v, want [lib]", e.Needs)
+		}
+	}
+}
+
+func TestComputePlanIgnoresADependencyReachedOnlyOnAnotherPlatform(t *testing.T) {
+	set, load := planCatalog(t, planLib, planApp, `schema: 2
+name: mid
+libs: [lib]
+deps: [{name: lib, kind: link, platforms: [linux/amd64]}]
+artifact: {oci: ":{{.Version}}"}
+install: [{extract: {}}]
+versions: ["1.0.0"]
+`)
+	p, err := build.ComputePlan(context.Background(), set, []build.Selection{
+		selV(load("app"), "1.0.0", []spec.Platform{darwin}),
+		selV(load("lib"), "1.0.0", []spec.Platform{darwin, linuxAmd}),
+	})
+	if err != nil {
+		t.Fatalf("ComputePlan: %v", err)
+	}
+	if w := waves(t, p); w["app"] != 1 || w["lib"] != 1 {
+		t.Fatalf("waves: %+v, want both in wave 1", w)
+	}
+}
+
 func waves(t *testing.T, p build.Plan) map[string]int {
 	t.Helper()
 	out := map[string]int{}
@@ -42,7 +142,7 @@ func waves(t *testing.T, p build.Plan) map[string]int {
 }
 
 func TestComputePlanOrdersDeps(t *testing.T) {
-	p, err := build.ComputePlan([]build.Selection{
+	p, err := build.ComputePlan(context.Background(), catalog.NewSet(), []build.Selection{
 		sel("app", []spec.Platform{linuxAmd}, spec.Dep{Name: "lib"}),
 		sel("lib", []spec.Platform{linuxAmd}),
 		sel("solo", []spec.Platform{linuxAmd}),
@@ -63,7 +163,7 @@ func TestComputePlanOrdersDeps(t *testing.T) {
 
 func TestComputePlanPlatformFilteredEdgeIsNoEdge(t *testing.T) {
 
-	p, err := build.ComputePlan([]build.Selection{
+	p, err := build.ComputePlan(context.Background(), catalog.NewSet(), []build.Selection{
 		sel("app", []spec.Platform{darwin},
 			spec.Dep{Name: "lib", Platforms: []spec.Platform{{OS: "linux", Arch: "amd64"}}}),
 		sel("lib", []spec.Platform{linuxAmd}),
@@ -78,7 +178,7 @@ func TestComputePlanPlatformFilteredEdgeIsNoEdge(t *testing.T) {
 }
 
 func TestComputePlanCycle(t *testing.T) {
-	_, err := build.ComputePlan([]build.Selection{
+	_, err := build.ComputePlan(context.Background(), catalog.NewSet(), []build.Selection{
 		sel("a", []spec.Platform{linuxAmd}, spec.Dep{Name: "b"}),
 		sel("b", []spec.Platform{linuxAmd}, spec.Dep{Name: "a"}),
 	})
@@ -93,7 +193,7 @@ func TestComputePlanCycle(t *testing.T) {
 
 func TestComputePlanExpandsVersionsPerName(t *testing.T) {
 	aPkg := &spec.Package{Schema: 2, Name: "a", Versions: []spec.VersionEntry{{Version: "v2"}, {Version: "v1"}}}
-	p, err := build.ComputePlan([]build.Selection{
+	p, err := build.ComputePlan(context.Background(), catalog.NewSet(), []build.Selection{
 		selV(aPkg, "v2", []spec.Platform{linuxAmd}),
 		selV(aPkg, "v1", []spec.Platform{linuxAmd}),
 		sel("b", []spec.Platform{linuxAmd}, spec.Dep{Name: "a"}),
@@ -134,7 +234,7 @@ func TestComputePlanExpandsVersionsPerName(t *testing.T) {
 
 func TestComputePlanRejectsDuplicateNameVersion(t *testing.T) {
 	aPkg := &spec.Package{Schema: 2, Name: "a", Versions: []spec.VersionEntry{{Version: "v2"}, {Version: "v1"}}}
-	_, err := build.ComputePlan([]build.Selection{
+	_, err := build.ComputePlan(context.Background(), catalog.NewSet(), []build.Selection{
 		selV(aPkg, "v1", []spec.Platform{linuxAmd}),
 		selV(aPkg, "v1", []spec.Platform{darwin}),
 	})
@@ -148,7 +248,7 @@ func TestComputePlanRejectsDuplicateNameVersion(t *testing.T) {
 
 func TestComputePlanUnionsPlatformsForEdges(t *testing.T) {
 	aPkg := &spec.Package{Schema: 2, Name: "a", Versions: []spec.VersionEntry{{Version: "v2"}, {Version: "v1"}}}
-	p, err := build.ComputePlan([]build.Selection{
+	p, err := build.ComputePlan(context.Background(), catalog.NewSet(), []build.Selection{
 		selV(aPkg, "v2", []spec.Platform{darwin}),
 		selV(aPkg, "v1", []spec.Platform{linuxAmd}),
 		sel("b", []spec.Platform{linuxAmd}, spec.Dep{Name: "a"}),

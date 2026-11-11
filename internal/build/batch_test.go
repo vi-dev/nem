@@ -129,7 +129,7 @@ func batchStep(group []batchSpec) string {
 	return b.String()
 }
 
-func batchPlan(t *testing.T, pkgs map[string]*spec.Package, specs ...batchSpec) Plan {
+func batchPlan(t *testing.T, set *catalog.Set, pkgs map[string]*spec.Package, specs ...batchSpec) Plan {
 	t.Helper()
 	sels := make([]Selection, 0, len(specs))
 	for _, s := range specs {
@@ -137,7 +137,7 @@ func batchPlan(t *testing.T, pkgs map[string]*spec.Package, specs ...batchSpec) 
 			Pkg: pkgs[s.name], Version: s.version, Reason: "forced", Platforms: s.platforms(),
 		})
 	}
-	plan, err := ComputePlan(sels)
+	plan, err := ComputePlan(context.Background(), set, sels)
 	if err != nil {
 		t.Fatalf("ComputePlan: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestRunBatchHandsDepArchiveToDependentThroughLocalStore(t *testing.T) {
 		step: `mkdir -p "$NEM_OUTPUT" && exit 5`}
 
 	sources, pkgs := batchFixture(t, lib, app, elsewhere)
-	plan := batchPlan(t, pkgs, lib, app, elsewhere)
+	plan := batchPlan(t, sources, pkgs, lib, app, elsewhere)
 
 	var tested []string
 	rows, out := runBatch(t, h, sources, plan, BatchOptions{
@@ -267,7 +267,7 @@ func TestRunBatchSkipsDependentsOfAFailedBuild(t *testing.T) {
 		step: `mkdir -p "$NEM_OUTPUT/bin" && echo web > "$NEM_OUTPUT/bin/web"`}
 
 	sources, pkgs := batchFixture(t, lib, app, web)
-	rows, out := runBatch(t, h, sources, batchPlan(t, pkgs, lib, app, web), BatchOptions{})
+	rows, out := runBatch(t, h, sources, batchPlan(t, sources, pkgs, lib, app, web), BatchOptions{})
 
 	if len(rows) != 3 {
 		t.Fatalf("rows = %v, want three", rowStrings(rows))
@@ -304,7 +304,7 @@ func TestRunBatchBuildsAllVersionsOfAPackage(t *testing.T) {
 	older := batchSpec{name: "dual", version: "1.0.0", step: step("one")}
 
 	sources, pkgs := batchFixture(t, newer, older)
-	rows, out := runBatch(t, h, sources, batchPlan(t, pkgs, newer, older), BatchOptions{})
+	rows, out := runBatch(t, h, sources, batchPlan(t, sources, pkgs, newer, older), BatchOptions{})
 
 	assertRows(t, rows, []string{"dual@2.0.0 built -", "dual@1.0.0 built -"}, out)
 	newer2, older1 := strings.Index(out, "OK Built dual 2.0.0"), strings.Index(out, "OK Built dual 1.0.0")
@@ -326,7 +326,7 @@ func TestRunBatchSkipsOnlyWhenAllVersionsFail(t *testing.T) {
 		bad := batchSpec{name: "lib", version: "1.0.0", step: fails}
 
 		sources, pkgs := batchFixture(t, good, bad, app)
-		rows, out := runBatch(t, h, sources, batchPlan(t, pkgs, good, bad, app), BatchOptions{})
+		rows, out := runBatch(t, h, sources, batchPlan(t, sources, pkgs, good, bad, app), BatchOptions{})
 
 		if len(rows) != 3 {
 			t.Fatalf("rows = %v, want three", rowStrings(rows))
@@ -349,7 +349,7 @@ func TestRunBatchSkipsOnlyWhenAllVersionsFail(t *testing.T) {
 		older := batchSpec{name: "lib", version: "1.0.0", step: fails}
 
 		sources, pkgs := batchFixture(t, newer, older, app)
-		rows, out := runBatch(t, h, sources, batchPlan(t, pkgs, newer, older, app), BatchOptions{})
+		rows, out := runBatch(t, h, sources, batchPlan(t, sources, pkgs, newer, older, app), BatchOptions{})
 
 		if len(rows) != 3 {
 			t.Fatalf("rows = %v, want three", rowStrings(rows))
@@ -387,7 +387,7 @@ func TestRunBatchPushesEachSuccessAndIsolatesPushFailures(t *testing.T) {
 		return fixtures.Open(name), nil
 	}}
 
-	rows, out := runBatch(t, h, sources, batchPlan(t, pkgs, a, b, c),
+	rows, out := runBatch(t, h, sources, batchPlan(t, sources, pkgs, a, b, c),
 		BatchOptions{Target: target, Push: true})
 
 	if len(rows) != 3 {
@@ -431,7 +431,7 @@ func TestRunBatchReportsAnUnchangedPushAsPushed(t *testing.T) {
 	store := memory.New()
 	target := ociTarget("ghcr.io/x/cat:v2")
 	target.Store = funcStore{openRW: func(string) (oras.Target, error) { return store, nil }}
-	plan := batchPlan(t, pkgs, a)
+	plan := batchPlan(t, sources, pkgs, a)
 
 	opts := BatchOptions{Target: target, Push: true}
 	firstRows, firstOut := runBatch(t, h, sources, plan, opts)
@@ -466,7 +466,7 @@ func TestRunBatchDirPushStagesIntoOverlay(t *testing.T) {
 	}))
 
 	target := dirBatchTarget(t)
-	rows, out := runBatch(t, h, sources, batchPlan(t, pkgs, a, b), BatchOptions{
+	rows, out := runBatch(t, h, sources, batchPlan(t, sources, pkgs, a, b), BatchOptions{
 		Target: target, Push: true,
 		TestFor: func(_ *spec.Package, store *archive.Dir) func(context.Context, console.Task, *spec.Package, string, string) error {
 			if store != target.Overlay {
@@ -509,7 +509,7 @@ func TestRunBatchDirPushStagesNothingWhenTestsFail(t *testing.T) {
 	sources, pkgs := batchFixture(t, good, bad)
 
 	target := dirBatchTarget(t)
-	rows, out := runBatch(t, h, sources, batchPlan(t, pkgs, good, bad), BatchOptions{
+	rows, out := runBatch(t, h, sources, batchPlan(t, sources, pkgs, good, bad), BatchOptions{
 		Target: target, Push: true,
 		TestFor: func(pkg *spec.Package, _ *archive.Dir) func(context.Context, console.Task, *spec.Package, string, string) error {
 			if pkg.Name != "bravo" {
@@ -549,7 +549,7 @@ func TestRunBatchNoPushStillUsesTmpStore(t *testing.T) {
 	target := dirBatchTarget(t)
 	var duringWasOverlay bool
 	var duringStores []string
-	rows, out := runBatch(t, h, sources, batchPlan(t, pkgs, a), BatchOptions{
+	rows, out := runBatch(t, h, sources, batchPlan(t, sources, pkgs, a), BatchOptions{
 		Target: target,
 		TestFor: func(_ *spec.Package, store *archive.Dir) func(context.Context, console.Task, *spec.Package, string, string) error {
 			duringWasOverlay = store == target.Overlay
@@ -602,7 +602,7 @@ cp "$NEM_OUTPUT/bin/app" "$NEM_OUTPUT/libexec/a/b/c/d/app"`
 	lib := batchSpec{name: "demo", version: "1.0.0", step: libStep}
 	app := batchSpec{name: "app", version: "2.0.0", step: appStep, links: []string{"demo"}}
 	sources, pkgs := batchFixture(t, lib, app)
-	plan := batchPlan(t, pkgs, lib, app)
+	plan := batchPlan(t, sources, pkgs, lib, app)
 
 	store := archive.NewDir(t.TempDir())
 	rows, out := runBatch(t, h, sources, plan, BatchOptions{Target: &Target{Dir: "x", Overlay: store, Store: store}, Push: true})
@@ -716,7 +716,7 @@ func TestRunBatchNarratesEachPushWithByteProgress(t *testing.T) {
 	store := memory.New()
 	target := ociTarget("ghcr.io/x/cat:v2")
 	target.Store = funcStore{openRW: func(string) (oras.Target, error) { return store, nil }}
-	plan := batchPlan(t, pkgs, a)
+	plan := batchPlan(t, sources, pkgs, a)
 	opts := BatchOptions{Target: target, Push: true}
 
 	ctx, rep := consoletest.Context(context.Background())
@@ -766,7 +766,7 @@ func TestRunBatchFailedPushFailsItsTask(t *testing.T) {
 	}}
 
 	ctx, rep := consoletest.Context(context.Background())
-	rows, err := RunBatch(ctx, h, sources, batchPlan(t, pkgs, a), BatchOptions{Target: target, Push: true})
+	rows, err := RunBatch(ctx, h, sources, batchPlan(t, sources, pkgs, a), BatchOptions{Target: target, Push: true})
 	if err != nil {
 		t.Fatalf("RunBatch: %v", err)
 	}

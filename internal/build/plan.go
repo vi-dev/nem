@@ -1,10 +1,13 @@
 package build
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"sort"
 
+	"github.com/vi-dev/nem/internal/catalog"
+	"github.com/vi-dev/nem/internal/resolve"
 	"github.com/vi-dev/nem/internal/spec"
 )
 
@@ -29,7 +32,7 @@ func (e *CycleError) Error() string {
 	return fmt.Sprintf("dependency cycle detected among packages: %v", e.Names)
 }
 
-func ComputePlan(sels []Selection) (Plan, error) {
+func ComputePlan(ctx context.Context, set *catalog.Set, sels []Selection) (Plan, error) {
 	byName := make(map[string][]Selection, len(sels))
 	seenVersions := make(map[string]bool, len(sels))
 	for _, s := range sels {
@@ -71,18 +74,27 @@ func ComputePlan(sels []Selection) (Plan, error) {
 		indegree[name] = 0
 	}
 
+	addNeed := func(name, dep string) {
+		if needs[name][dep] {
+			return
+		}
+		needs[name][dep] = true
+		indegree[name]++
+		dependents[dep] = append(dependents[dep], name)
+	}
 	for name := range byName {
 		for _, dep := range unionDeps[name] {
 			if _, ok := byName[dep.Name]; !ok || dep.Name == name {
 				continue
 			}
 			if sharesFilteredPlatform(unionPlatforms[name], unionPlatforms[dep.Name], dep.Platforms) {
-				if !needs[name][dep.Name] {
-					needs[name][dep.Name] = true
-					indegree[name]++
-					dependents[dep.Name] = append(dependents[dep.Name], name)
-				}
+				addNeed(name, dep.Name)
 			}
+		}
+	}
+	for _, s := range sels {
+		for _, dep := range installedSelections(ctx, set, s, unionPlatforms) {
+			addNeed(s.Pkg.Name, dep)
 		}
 	}
 
@@ -151,6 +163,37 @@ func ComputePlan(sels []Selection) (Plan, error) {
 	})
 
 	return Plan{Entries: entries}, nil
+}
+
+func installedSelections(ctx context.Context, set *catalog.Set, s Selection, selected map[string][]spec.Platform) []string {
+	r, err := s.Pkg.Recipe(s.Version)
+	if err != nil {
+		return nil
+	}
+	deps := r.Deps
+	if r.Build != nil {
+		deps = slices.Concat(r.Deps, r.Build.Deps)
+	}
+	if len(deps) == 0 {
+		return nil
+	}
+	result, err := resolve.Dependencies(ctx, s.Pkg.Name, r.Platforms, deps, set)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range result.Entries {
+		plats, ok := selected[e.Name]
+		if !ok || e.Name == s.Pkg.Name {
+			continue
+		}
+		if slices.ContainsFunc(s.Platforms, func(p spec.Platform) bool {
+			return slices.Contains(plats, p) && slices.Contains(e.Platforms, p.String())
+		}) {
+			names = append(names, e.Name)
+		}
+	}
+	return names
 }
 
 func sharesFilteredPlatform(aPlats, bPlats []spec.Platform, depPlats []spec.Platform) bool {
